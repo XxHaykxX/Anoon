@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CheckCheck, ImageOff, Play } from "lucide-react";
+import { Check, CheckCheck, ImageOff, Loader2, Play } from "lucide-react";
 
 import type { LightboxItem } from "@/components/media-lightbox";
 import { VoiceBubble } from "@/components/voice-bubble";
@@ -14,12 +14,21 @@ export function MessageBubble({ m, onOpenMedia }: { m: Msg; onOpenMedia: (item: 
     m.mine ? "rounded-2xl rounded-br-md bg-accent text-accent-fg" : "rounded-2xl rounded-bl-md bg-surface-2 text-fg",
   );
 
-  // Медиа недоступно после перезагрузки (blob-URL умер) — плашка вместо тайла.
-  if ((m.kind === "image" || m.kind === "video") && (m.stale || !m.url)) {
+  // Медиа без готового url: stale → недоступно; иначе (есть mediaPath) → резолвим signed URL.
+  if ((m.kind === "image" || m.kind === "video") && !m.url) {
     return (
       <div className={cn(base, "flex items-center gap-2 px-3.5 py-3 text-fg-muted")}>
-        <ImageOff size={16} />
-        <span className="text-xs">Медиа недоступно</span>
+        {m.stale ? (
+          <>
+            <ImageOff size={16} />
+            <span className="text-xs">Медиа недоступно</span>
+          </>
+        ) : (
+          <>
+            <Loader2 size={16} className="animate-spin" />
+            <span className="text-xs">Загрузка…</span>
+          </>
+        )}
       </div>
     );
   }

@@ -48,6 +48,7 @@ export type HistoryMsg = {
   mine: boolean;
   kind: "text" | "image" | "video" | "voice";
   text?: string;
+  mediaPath?: string;
   status: "sent" | "delivered" | "read";
   at: number;
 };
@@ -58,8 +59,9 @@ export async function persistMessage(
   kind: string,
   text: string | undefined,
   accessToken: string,
+  mediaId?: string,
 ): Promise<{ id: string; at: string } | null> {
-  const res = await post("/messages", { peer, kind, text }, accessToken);
+  const res = await post("/messages", { peer, kind, text, mediaId }, accessToken);
   if (!res.ok) return null;
   return res.json();
 }

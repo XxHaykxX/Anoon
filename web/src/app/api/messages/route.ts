@@ -21,10 +21,11 @@ export async function POST(req: Request) {
   if (!uid) return unauthorized();
   if (!rateLimit(`msg:${uid}`, 30, 10_000)) return Response.json({ error: "rate limited" }, { status: 429 });
 
-  const body = (await req.json().catch(() => ({}))) as { peer?: unknown; kind?: unknown; text?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { peer?: unknown; kind?: unknown; text?: unknown; mediaId?: unknown };
   const peer = typeof body.peer === "string" ? body.peer : "";
   const kind = KIND_MAP[typeof body.kind === "string" ? body.kind : "text"] ?? "text";
   const text = typeof body.text === "string" ? body.text.slice(0, 4000) : null;
+  const mediaId = typeof body.mediaId === "string" ? body.mediaId : null;
   if (!peer) return Response.json({ error: "peer required" }, { status: 400 });
 
   const admin = supabaseAdmin();
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
   if (!convId) return Response.json({ error: "conversation failed" }, { status: 400 });
 
   const { data: msg, error } = await admin
-    .from("Message").insert({ conversationId: convId, senderId, kind, text, status: "sent" }).select("id,createdAt").single();
+    .from("Message").insert({ conversationId: convId, senderId, kind, text, mediaId, status: "sent" }).select("id,createdAt").single();
   if (error) return Response.json({ error: error.message }, { status: 400 });
   await admin.from("Conversation").update({ lastMessageAt: new Date().toISOString() }).eq("id", convId);
 
@@ -66,13 +67,24 @@ export async function GET(req: Request) {
   const convId = (conv as IdRow)?.id;
   if (!convId) return Response.json({ messages: [] });
   const { data: rows } = await admin
-    .from("Message").select("id,senderId,kind,text,status,createdAt")
+    .from("Message").select("id,senderId,kind,text,mediaId,status,createdAt")
     .eq("conversationId", convId).order("createdAt", { ascending: true }).limit(200);
-  const messages = ((rows ?? []) as Array<{ id: string; senderId: string; kind: string; text: string | null; status: string; createdAt: string }>).map((m) => ({
+  const list = (rows ?? []) as Array<{ id: string; senderId: string; kind: string; text: string | null; mediaId: string | null; status: string; createdAt: string }>;
+
+  // Пути медиа — вторым запросом (без PostgREST embed).
+  const mediaIds = list.map((m) => m.mediaId).filter((x): x is string => Boolean(x));
+  const pathById = new Map<string, string>();
+  if (mediaIds.length) {
+    const { data: assets } = await admin.from("MediaAsset").select("id,r2Key").in("id", mediaIds);
+    for (const a of (assets ?? []) as Array<{ id: string; r2Key: string }>) pathById.set(a.id, a.r2Key);
+  }
+
+  const messages = list.map((m) => ({
     id: m.id,
     mine: m.senderId === senderId,
     kind: KIND_MAP_OUT[m.kind] ?? m.kind,
     text: m.text ?? undefined,
+    mediaPath: m.mediaId ? pathById.get(m.mediaId) : undefined,
     status: m.status,
     at: new Date(m.createdAt).getTime(),
   }));

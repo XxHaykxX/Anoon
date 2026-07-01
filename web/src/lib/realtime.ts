@@ -11,6 +11,7 @@ export type WirePayload = {
   kind: "text" | "image" | "video" | "voice";
   text?: string;
   url?: string;
+  mediaPath?: string; // путь в Supabase Storage (собеседник резолвит в signed URL)
   w?: number;
   h?: number;
   durationSec?: number;

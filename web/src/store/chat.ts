@@ -5,6 +5,7 @@ import { persist } from "zustand/middleware";
 
 import { fetchHistory, markRead, persistMessage } from "@/lib/api";
 import { chatChannelName, joinChat, type ChatHandle, type WirePayload } from "@/lib/realtime";
+import { resolveMediaUrl, uploadMedia } from "@/lib/storage";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
 export type MsgKind = "text" | "image" | "video" | "voice";
@@ -14,11 +15,12 @@ export type Msg = {
   mine: boolean;
   kind: MsgKind;
   text?: string;
-  url?: string; // object URL (image/video/voice blob) или picsum для входящих моков
+  url?: string; // текущий отображаемый URL (blob для своих / signed URL из Storage)
+  mediaPath?: string; // путь в Supabase Storage → резолвим в signed URL (переживает reload)
   w?: number;
   h?: number;
   durationSec?: number;
-  stale?: boolean; // blob-URL умер после перезагрузки → медиа недоступно
+  stale?: boolean; // медиа недоступно (blob умер и нет mediaPath)
   status?: MsgStatus; // только для mine: sent | read
   replyToId?: string; // ответ на сообщение
   replyText?: string; // краткая цитата оригинала
@@ -61,7 +63,7 @@ async function token(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-// Persist сообщения в БД (best-effort, не блокирует realtime-транспорт).
+// Persist текстового сообщения в БД (best-effort).
 async function persistRemote(peer: string, kind: MsgKind, text?: string): Promise<void> {
   const t = await token();
   if (t) await persistMessage(peer, kind, text, t).catch(() => {});
@@ -73,15 +75,55 @@ async function markReadRemote(peer: string): Promise<void> {
   if (t) await markRead(peer, t);
 }
 
-// Чат. Транспорт — Supabase Realtime (broadcast). Persist истории; медиа = object URL
-// (после reload мертвы → stale). Медиа по сети peer увидит после R2 (Фаза E).
+// Чат. Транспорт — Supabase Realtime (broadcast). Persist истории в БД; медиа — в Supabase
+// Storage (mediaPath → signed URL), переживают reload и видны собеседнику.
 export const useChat = create<ChatState>()(
   persist(
     (set, get) => {
       const pushLocal = (peer: string, msg: Msg) =>
         set((s) => ({ byPeer: { ...s.byPeer, [peer]: [...(s.byPeer[peer] ?? []), msg] } }));
 
+      const patch = (peer: string, mid: string, p: Partial<Msg>) =>
+        set((s) => ({ byPeer: { ...s.byPeer, [peer]: (s.byPeer[peer] ?? []).map((m) => (m.id === mid ? { ...m, ...p } : m)) } }));
+
       const tx = (p: WirePayload) => active?.sendMessage(p);
+
+      // Резолв signed-URL для сообщений с mediaPath без готового url.
+      const resolveMediaFor = async (peer: string) => {
+        const t = await token();
+        if (!t) return;
+        const msgs = get().byPeer[peer] ?? [];
+        await Promise.all(
+          msgs
+            .filter((m) => m.mediaPath && !m.url)
+            .map(async (m) => {
+              const url = await resolveMediaUrl(m.mediaPath!, t);
+              if (url) patch(peer, m.id, { url, stale: false });
+            }),
+        );
+      };
+
+      // Отправка медиа (image/video/voice): мгновенно локально, затем аплоад в Storage.
+      const sendUpload = (peer: string, kind: "image" | "video" | "voice", localUrl: string, extra: Partial<Msg>) => {
+        const mid = id();
+        const msg: Msg = { id: mid, mine: true, kind, url: localUrl, status: "sent", at: Date.now(), ...extra };
+        pushLocal(peer, msg);
+        void (async () => {
+          const t = await token();
+          const blob = await fetch(localUrl).then((r) => r.blob()).catch(() => null);
+          if (t && blob) {
+            const up = await uploadMedia(blob, kind, blob.type || "application/octet-stream", t);
+            if (up) {
+              patch(peer, mid, { mediaPath: up.path });
+              tx({ id: mid, kind, mediaPath: up.path, w: extra.w, h: extra.h, durationSec: extra.durationSec, at: msg.at });
+              await persistMessage(peer, kind, undefined, t, up.mediaId).catch(() => {});
+              return;
+            }
+          }
+          // Фолбэк: без Storage — метаданные (собеседник увидит после reload только если БД).
+          tx({ id: mid, kind, w: extra.w, h: extra.h, durationSec: extra.durationSec, at: msg.at });
+        })();
+      };
 
       return {
         byPeer: {},
@@ -98,9 +140,17 @@ export const useChat = create<ChatState>()(
           const handle = joinChat(chatChannelName(myId, peer), myId, {
             onMessage: (p) => {
               set((s) => ({ byPeer: { ...s.byPeer, [peer]: [...(s.byPeer[peer] ?? []), { ...p, mine: false } as Msg] } }));
-              // Мы видим чат → сразу квитанция «прочитано» отправителю + в БД.
               active?.sendRead();
               void markReadRemote(peer);
+              // Входящее медиа → резолвим signed URL.
+              if (p.mediaPath) {
+                void (async () => {
+                  const t = await token();
+                  if (!t) return;
+                  const url = await resolveMediaUrl(p.mediaPath!, t);
+                  if (url) patch(peer, p.id, { url, stale: false });
+                })();
+              }
             },
             onPresence: (online) => set({ peerOnline: online }),
             onTyping: (t) => set({ peerTyping: t }),
@@ -118,7 +168,6 @@ export const useChat = create<ChatState>()(
           });
           active = handle;
 
-          // Гидратация истории из БД, если локально пусто (новое устройство / очистка).
           void (async () => {
             const cur = get().byPeer[peer];
             const t = await token();
@@ -134,6 +183,7 @@ export const useChat = create<ChatState>()(
                       mine: h.mine,
                       kind: h.kind,
                       text: h.text,
+                      mediaPath: h.mediaPath,
                       status: h.mine ? (h.status === "read" ? "read" : "sent") : undefined,
                       at: h.at,
                     })),
@@ -141,7 +191,8 @@ export const useChat = create<ChatState>()(
                 }));
               }
             }
-            // Мы открыли чат → отметить входящие прочитанными.
+            // Резолв медиа (история + локально сохранённые stale) + read-квитанции.
+            await resolveMediaFor(peer);
             await markRead(peer, t).catch(() => {});
             active?.sendRead();
           })();
@@ -178,18 +229,11 @@ export const useChat = create<ChatState>()(
         },
 
         sendMedia: (peer, media) => {
-          const msg: Msg = { id: id(), mine: true, kind: media.kind, url: media.url, w: media.w, h: media.h, durationSec: media.durationSec, status: "sent", at: Date.now() };
-          pushLocal(peer, msg);
-          // url — локальный blob; peer получит метаданные, файл — после R2 (Фаза E).
-          tx({ id: msg.id, kind: media.kind, url: media.url, w: media.w, h: media.h, durationSec: media.durationSec, at: msg.at });
-          void persistRemote(peer, media.kind);
+          sendUpload(peer, media.kind, media.url, { w: media.w, h: media.h, durationSec: media.durationSec });
         },
 
         sendVoice: (peer, url, durationSec) => {
-          const msg: Msg = { id: id(), mine: true, kind: "voice", url, durationSec, status: "sent", at: Date.now() };
-          pushLocal(peer, msg);
-          tx({ id: msg.id, kind: "voice", url, durationSec, at: msg.at });
-          void persistRemote(peer, "voice");
+          sendUpload(peer, "voice", url, { durationSec });
         },
 
         setTyping: (typing) => active?.sendTyping(typing),
@@ -202,7 +246,8 @@ export const useChat = create<ChatState>()(
         if (!state) return;
         for (const peer of Object.keys(state.byPeer)) {
           state.byPeer[peer] = state.byPeer[peer].map((m) =>
-            m.kind !== "text" && m.url?.startsWith("blob:") ? { ...m, url: undefined, stale: true } : m,
+            // blob-URL мёртв после reload: если есть mediaPath — восстановим (не stale), иначе stale.
+            m.kind !== "text" && m.url?.startsWith("blob:") ? { ...m, url: undefined, stale: !m.mediaPath } : m,
           );
         }
       },
