@@ -1,0 +1,268 @@
+// anoon — общая Prisma-схема (shared между v2-backend и admin-панелью).
+// Schema-first (GSTACK REVIEW, Этап 0). Postgres/Supabase.
+// Анонимность: собеседник видит только nickname+emoji+publicId. Admin — по политике приватности
+// (см. admin/questions.md B1/B2): email-hash/providerId в admin-UI НЕ показываются.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (pgbouncer) — для рантайма приложения
+  directUrl = env("DIRECT_URL")   // прямое соединение — для миграций Prisma
+}
+
+enum AuthProvider {
+  google
+  apple
+  anonymous
+}
+
+enum Gender {
+  male
+  female
+  any
+}
+
+enum MessageKind {
+  text
+  image
+  video
+  audio
+}
+
+enum MessageStatus {
+  sent
+  delivered
+  read
+}
+
+// --- Модерация (добавлено ревью) ---
+
+enum ReportStatus {
+  open
+  in_review
+  resolved_banned
+  resolved_dismissed
+}
+
+enum ReportReason {
+  spam
+  abuse
+  sexual
+  illegal // CSAM/противоправное → эскалация (см. admin/questions.md B3)
+  other
+}
+
+enum BanState {
+  active
+  expired
+  lifted
+}
+
+enum AdminRole {
+  super_admin
+  moderator
+}
+
+enum ModeratorActionType {
+  ban
+  unban
+  mute
+  view_private // просмотр приватного контента — аудируется (приватность)
+  dismiss_report
+  escalate
+  login
+}
+
+/// Аккаунт авторизации. Хранит непрозрачный provider-id и хеш email.
+model User {
+  id         String       @id @default(cuid())
+  provider   AuthProvider
+  providerId String
+  emailHash  String?
+  createdAt  DateTime     @default(now())
+  profile    Profile?
+
+  @@unique([provider, providerId])
+}
+
+/// Анонимный профиль. reportCount денормализован (без N+1 в UsersTable).
+model Profile {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicId    String    @unique // человекочитаемый #ID (напр. 00001)
+  nickname    String
+  emoji       String    @default("🤫")
+  realGender  Gender    @default(any)
+  online      Boolean   @default(false)
+  lastSeen    DateTime?
+  reportCount Int       @default(0) // денормализация для сортировки/списка
+  createdAt   DateTime  @default(now())
+
+  reportsMade     Report[]      @relation("Reporter")
+  reportsReceived Report[]      @relation("ReportTarget")
+  bans            Ban[]
+  media           MediaAsset[]
+
+  conversationsA  Conversation[] @relation("ConvA")
+  conversationsB  Conversation[] @relation("ConvB")
+  messages        Message[]      @relation("MessageSender")
+  blocksMade      Block[]        @relation("Blocker")
+  blocksReceived  Block[]        @relation("Blocked")
+  pushSubs        PushSubscription[]
+
+  @@index([reportCount])
+}
+
+/// Диалог между двумя анонимными профилями (результат матчинга «Найти собеседника»).
+model Conversation {
+  id           String    @id @default(cuid())
+  profileAId   String
+  profileA     Profile   @relation("ConvA", fields: [profileAId], references: [id], onDelete: Cascade)
+  profileBId   String
+  profileB     Profile   @relation("ConvB", fields: [profileBId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  endedAt      DateTime? // разрыв диалога
+  lastMessageAt DateTime?
+  messages     Message[]
+
+  @@index([profileAId, lastMessageAt])
+  @@index([profileBId, lastMessageAt])
+}
+
+/// Сообщение чата. Медиа — по ссылке на MediaAsset (r2). status для доставки/прочтения.
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         Profile       @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  kind           MessageKind   @default(text)
+  text           String?
+  mediaId        String?       @unique
+  media          MediaAsset?   @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+  status         MessageStatus @default(sent)
+  createdAt      DateTime      @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+/// Блокировка одним юзером другого (клиентская модерация, отдельно от админ-бана).
+model Block {
+  id           String   @id @default(cuid())
+  blockerId    String
+  blocker      Profile  @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId    String
+  blocked      Profile  @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+}
+
+/// Жалоба. Имеет lifecycle (status) + назначение, чтобы 2 модератора не разбирали одну.
+model Report {
+  id              String       @id @default(cuid())
+  reporterId      String
+  reporter        Profile      @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetProfileId String
+  targetProfile   Profile      @relation("ReportTarget", fields: [targetProfileId], references: [id], onDelete: Cascade)
+  reason          ReportReason
+  note            String?
+  status          ReportStatus @default(open)
+  targetMessageId String? // привязка к конкретному сообщению (для scoped-просмотра)
+  targetMediaId   String?
+  assignedToId    String? // AdminUser.id, взявший в работу
+  resolvedById    String?
+  resolvedAt      DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([status, createdAt])
+  @@index([targetProfileId, status])
+}
+
+/// Бан как строка (не boolean): причина, срок, кто выдал, история повторных.
+model Ban {
+  id         String    @id @default(cuid())
+  profileId  String
+  profile    Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  reason     String
+  expiresAt  DateTime? // null = перманентный
+  state      BanState  @default(active)
+  issuedById String // AdminUser.id
+  liftedById String?
+  liftedAt   DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([profileId, state])
+  @@index([state, expiresAt])
+}
+
+/// Отдельная система админ-доступа (НЕ роль в пользовательском JWT). Пароли argon2id.
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         AdminRole @default(moderator)
+  totpSecret   String? // 2FA (TOTP), см. admin/questions.md D2
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  actions ModeratorAction[]
+}
+
+/// Аудит-леджер действий модератора (обязателен: приватность/комплаенс).
+model ModeratorAction {
+  id              String              @id @default(cuid())
+  adminId         String
+  admin           AdminUser           @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  type            ModeratorActionType
+  targetProfileId String?
+  targetReportId  String?
+  reason          String?
+  meta            Json?
+  ip              String?
+  createdAt       DateTime            @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetProfileId, createdAt])
+}
+
+/// Метаданные медиа (R2). ephemeral/expiresAt/deletedAt — для «медиа удалено» состояния.
+/// retainedForReport — retention hold на жалобное медиа сверх обычного TTL.
+model MediaAsset {
+  id              String      @id @default(cuid())
+  ownerProfileId  String
+  ownerProfile    Profile     @relation(fields: [ownerProfileId], references: [id], onDelete: Cascade)
+  r2Key           String      @unique
+  mime            String
+  kind            MessageKind
+  durationMs      Int?
+  sizeBytes       Int?
+  ephemeral       Boolean     @default(false)
+  expiresAt       DateTime?
+  deletedAt       DateTime?
+  retainedForReport Boolean   @default(false)
+  createdAt       DateTime    @default(now())
+
+  message         Message?
+
+  @@index([ownerProfileId, createdAt])
+}
+
+/// Web Push подписка (VAPID). Один профиль может иметь несколько устройств/браузеров.
+/// endpoint уникален. Рассылка через `web-push` при офлайн-получателе (backend).
+model PushSubscription {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
+}

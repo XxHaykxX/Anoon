@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/*
+ * anoon-admin — бренд-токены (DESIGN.md), OLED dark-only.
+ * A11y-фиксы ревью: --fg-muted поднят до #8A8A8A (AA на #000),
+ * --warning смещён от бренд-жёлтого, focus-ring с контрастным гало.
+ */
+:root {
+  --bg: #000000;
+  --surface-1: #0d0d0d;
+  --surface-2: #161616;
+  --border: #262626;
+  --fg: #fafafa;
+  --fg-secondary: #a3a3a3; /* ≥4.5:1 на #000 */
+  --fg-muted: #8a8a8a;     /* поднят с #6B7280 (тот ~4.0:1 < AA) */
+  --accent: #fdbf2d;
+  --accent-hover: #e0a800;
+  --accent-fg: #000000;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #fb923c;      /* оранжевый — отделён от бренд-жёлтого */
+  --ring: #fdbf2d;
+  --radius: 12px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-background: var(--bg);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-foreground: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-geist-mono, ui-monospace, monospace);
+  --radius-brand: 12px;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  color-scheme: dark;
+}
+
+/* Focus-ring: контрастный гало (тёмный зазор + жёлтый снаружи), читается и на жёлтых поверхностях */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Reduced-motion: жёстко — opacity-only, без translate/scale/анимаций */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

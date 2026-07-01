@@ -1,0 +1,203 @@
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--black:#000000;--yellow:#FDBF2D;--yellow-dark:#c99300;--yellow-light:#fff3cc}
+.wrap{padding:1.5rem 0;font-family:var(--font-sans,sans-serif)}
+.header{background:var(--black);border-radius:16px;padding:2rem;margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between}
+.header h1{color:var(--yellow);font-size:22px;font-weight:500}
+.logo{width:44px;height:44px;background:var(--yellow);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:500;color:var(--black)}
+.section-label{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin:1.5rem 0 .75rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.card{background:var(--surface-1,#f9f8f6);border:0.5px solid var(--border);border-radius:12px;padding:1rem}
+.card.accent{background:var(--black);border-color:var(--black)}
+.card.accent .card-title{color:var(--yellow)}
+.card.accent .card-sub{color:#888}
+.card.yellow{background:var(--yellow);border-color:var(--yellow-dark)}
+.card.yellow .card-title{color:var(--black)}
+.card.yellow .card-sub{color:#7a5800}
+.card.highlight{border:1.5px solid var(--yellow);background:var(--surface-1)}
+.card-icon{font-size:20px;color:var(--yellow-dark);margin-bottom:8px}
+.card-title{font-size:14px;font-weight:500;color:var(--text-primary);margin-bottom:4px}
+.card-sub{font-size:12px;color:var(--text-secondary);line-height:1.6}
+.anon-box{background:var(--black);border-radius:16px;padding:1.5rem;margin-bottom:12px}
+.anon-box h2{color:var(--yellow);font-size:16px;font-weight:500;margin-bottom:.5rem}
+.anon-box p{color:#aaa;font-size:13px;line-height:1.7;margin-bottom:1rem}
+.anon-row{display:flex;gap:10px;flex-wrap:wrap}
+.anon-yes{background:#0d200d;border:0.5px solid #1a5c1a;border-radius:10px;padding:.6rem 1rem;flex:1;min-width:140px}
+.anon-yes .label{font-size:11px;color:#4caf50;font-weight:500;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em}
+.anon-yes .val{font-size:13px;color:#ccc;line-height:1.5}
+.anon-no{background:#200d0d;border:0.5px solid #5c1a1a;border-radius:10px;padding:.6rem 1rem;flex:1;min-width:140px}
+.anon-no .label{font-size:11px;color:#e05555;font-weight:500;margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em}
+.anon-no .val{font-size:13px;color:#aaa;line-height:1.5}
+.phase-row{display:flex;gap:12px;margin-bottom:12px}
+.phase{flex:1;border-radius:12px;padding:1rem;border:0.5px solid var(--border);background:var(--surface-1)}
+.phase-num{width:28px;height:28px;background:var(--yellow);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:var(--black);margin-bottom:10px}
+.phase-title{font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:6px}
+.phase-item{font-size:12px;color:var(--text-secondary);padding:3px 0;display:flex;align-items:flex-start;gap:6px}
+.phase-item::before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--yellow-dark);margin-top:5px;flex-shrink:0}
+.stack-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.stack-pill{background:var(--surface-2,#fff);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;color:var(--text-primary);display:flex;align-items:center;gap:6px}
+.stack-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--yellow-dark);flex-shrink:0}
+.price-row{display:flex;gap:12px;margin-bottom:12px}
+.price-card{flex:1;border-radius:12px;padding:1rem;border:0.5px solid var(--border);background:var(--surface-1);text-align:center}
+.price-amount{font-size:22px;font-weight:500;color:var(--text-primary);margin:6px 0}
+.price-amount span{font-size:13px;font-weight:400;color:var(--text-muted)}
+.price-label{font-size:12px;color:var(--text-secondary)}
+.price-card.free .price-amount{color:var(--yellow-dark)}
+.cta{background:var(--yellow);border:none;border-radius:10px;padding:.75rem 1.5rem;font-size:14px;font-weight:500;color:var(--black);cursor:pointer;width:100%;margin-top:.5rem}
+.cta:hover{background:var(--yellow-dark);color:#fff}
+.req-block{border-left:3px solid var(--yellow);padding:.75rem 1rem;background:var(--surface-1);border-radius:0 10px 10px 0;margin-bottom:8px}
+.req-block p{font-size:13px;color:var(--text-primary);line-height:1.7}
+.req-block .who{font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em}
+</style>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <h1>Dating App — план v2</h1>
+      <p style="color:#888;font-size:13px;margin-top:4px">Анонимный чат · Next.js + Bun + Hono · #000 & #FDBF2D</p>
+    </div>
+    <div class="logo">N</div>
+  </div>
+
+  <div class="section-label">Что хочет пользователь — человеческим языком</div>
+  <div class="req-block">
+    <div class="who">Главная идея</div>
+    <p>Хочу сделать анонимный чат для знакомств, похожий на nekto.me. После регистрации у каждого пользователя есть только никнейм и уникальный ID. Больше никакой личной информации — ни фото, ни возраста, ни города, ни описания. Ни в профиле, ни в чатах ничего лишнего не показывается. Люди общаются анонимно: можно отправлять текст, фото, видео и голосовые сообщения — как в Telegram. Приложение должно работать как PWA — устанавливается на телефон без App Store.</p>
+  </div>
+
+  <div class="section-label">Профиль пользователя — что есть, чего нет</div>
+  <div class="anon-box">
+    <h2>Полная анонимность</h2>
+    <p>Пользователь видит только то, что нужно для общения — и ничего лишнего.</p>
+    <div class="anon-row">
+      <div class="anon-yes">
+        <div class="label">Показываем</div>
+        <div class="val">Никнейм (выбирает сам)<br>Уникальный ID (#00001)<br>Онлайн-статус</div>
+      </div>
+      <div class="anon-no">
+        <div class="label">Не показываем</div>
+        <div class="val">Фото / аватар<br>Возраст, пол, город<br>О себе / биография<br>Номер телефона / email</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Что можно делать в чате</div>
+  <div class="grid2">
+    <div class="card highlight">
+      <div class="card-icon"><i class="ti ti-message-circle" aria-hidden="true"></i></div>
+      <div class="card-title">Текстовые сообщения</div>
+      <div class="card-sub">Обычный чат в реальном времени через WebSocket. Мгновенная доставка.</div>
+    </div>
+    <div class="card highlight">
+      <div class="card-icon"><i class="ti ti-photo" aria-hidden="true"></i></div>
+      <div class="card-title">Фото и видео</div>
+      <div class="card-sub">Нажимаешь на сообщение — открывается. Хранится в облаке (Cloudflare R2).</div>
+    </div>
+    <div class="card highlight">
+      <div class="card-icon"><i class="ti ti-microphone" aria-hidden="true"></i></div>
+      <div class="card-title">Голосовые сообщения</div>
+      <div class="card-sub">Зажимаешь кнопку — записываешь. Отпускаешь — отправляется. Как в Telegram.</div>
+    </div>
+    <div class="card highlight">
+      <div class="card-icon"><i class="ti ti-users" aria-hidden="true"></i></div>
+      <div class="card-title">Случайный собеседник</div>
+      <div class="card-sub">Нажимаешь "найти" — система подбирает случайного человека онлайн.</div>
+    </div>
+  </div>
+
+  <div class="section-label">Стек технологий</div>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-icon"><i class="ti ti-layout" aria-hidden="true"></i></div>
+      <div class="card-title">Фронтенд</div>
+      <div class="stack-row">
+        <div class="stack-pill"><span class="dot"></span>Next.js 15</div>
+        <div class="stack-pill"><span class="dot"></span>Tailwind CSS</div>
+        <div class="stack-pill"><span class="dot"></span>shadcn/ui</div>
+        <div class="stack-pill"><span class="dot"></span>Zustand</div>
+        <div class="stack-pill"><span class="dot"></span>Socket.io-client</div>
+        <div class="stack-pill"><span class="dot"></span>PWA (Serwist)</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon"><i class="ti ti-server" aria-hidden="true"></i></div>
+      <div class="card-title">Бэкенд</div>
+      <div class="stack-row">
+        <div class="stack-pill"><span class="dot"></span>Bun</div>
+        <div class="stack-pill"><span class="dot"></span>Hono</div>
+        <div class="stack-pill"><span class="dot"></span>Socket.io</div>
+        <div class="stack-pill"><span class="dot"></span>Prisma</div>
+        <div class="stack-pill"><span class="dot"></span>PostgreSQL</div>
+        <div class="stack-pill"><span class="dot"></span>Redis</div>
+      </div>
+    </div>
+  </div>
+  <div class="grid3">
+    <div class="card">
+      <div class="card-icon"><i class="ti ti-database" aria-hidden="true"></i></div>
+      <div class="card-title">База данных</div>
+      <div class="card-sub">Supabase (PostgreSQL) · Upstash (Redis)</div>
+    </div>
+    <div class="card">
+      <div class="card-icon"><i class="ti ti-photo" aria-hidden="true"></i></div>
+      <div class="card-title">Медиафайлы</div>
+      <div class="card-sub">Cloudflare R2 · CDN · presigned URL</div>
+    </div>
+    <div class="card">
+      <div class="card-icon"><i class="ti ti-cloud" aria-hidden="true"></i></div>
+      <div class="card-title">Деплой</div>
+      <div class="card-sub">Vercel (фронт) · Railway (бэкенд) · Docker</div>
+    </div>
+  </div>
+
+  <div class="section-label">Этапы разработки</div>
+  <div class="phase-row">
+    <div class="phase">
+      <div class="phase-num">1</div>
+      <div class="phase-title">Основа (2–3 нед.)</div>
+      <div class="phase-item">Регистрация → никнейм + ID</div>
+      <div class="phase-item">Поиск случайного собеседника</div>
+      <div class="phase-item">Текстовый чат (WebSocket)</div>
+      <div class="phase-item">PWA манифест</div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">2</div>
+      <div class="phase-title">Медиа (2 нед.)</div>
+      <div class="phase-item">Отправка фото и видео</div>
+      <div class="phase-item">Голосовые сообщения</div>
+      <div class="phase-item">Просмотр по нажатию</div>
+      <div class="phase-item">S3 + presigned URL</div>
+    </div>
+    <div class="phase">
+      <div class="phase-num">3</div>
+      <div class="phase-title">Полировка (1–2 нед.)</div>
+      <div class="phase-item">Push-уведомления</div>
+      <div class="phase-item">Блокировки / жалобы</div>
+      <div class="phase-item">Тёмная тема (#000 по умолчанию)</div>
+      <div class="phase-item">Деплой на продакшн</div>
+    </div>
+  </div>
+
+  <div class="section-label">Стоимость</div>
+  <div class="price-row">
+    <div class="price-card free">
+      <div class="price-label">Старт (0–10k юзеров)</div>
+      <div class="price-amount">$0<span>/мес</span></div>
+      <div class="price-label">Vercel + Supabase + R2</div>
+    </div>
+    <div class="price-card">
+      <div class="price-label">Рост (10k–100k)</div>
+      <div class="price-amount">$20–50<span>/мес</span></div>
+      <div class="price-label">Railway Pro + Supabase Pro</div>
+    </div>
+    <div class="price-card">
+      <div class="price-label">Масштаб (100k–1M)</div>
+      <div class="price-amount">$200+<span>/мес</span></div>
+      <div class="price-label">Hetzner VPS + своя инфра</div>
+    </div>
+  </div>
+
+  <button class="cta" onclick="sendPrompt('Начинаем! Создай структуру Next.js проекта с цветами #000000 и #FDBF2D, анонимным профилем — только никнейм и ID')">
+    Начать писать код ↗
+  </button>
+</div>

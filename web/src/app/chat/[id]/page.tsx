@@ -1,0 +1,119 @@
+"use client";
+
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+
+import { ChatComposer } from "@/components/chat-composer";
+import { ChatMenu } from "@/components/chat-menu";
+import { MediaLightbox, type LightboxItem } from "@/components/media-lightbox";
+import { MessageRow } from "@/components/message-row";
+import { useChat, type Msg, type ReplyRef } from "@/store/chat";
+import { useModeration } from "@/store/moderation";
+import { useSession } from "@/store/session";
+import { cn } from "@/lib/utils";
+
+export default function ChatPage() {
+  const params = useParams<{ id: string }>();
+  const peer = params.id;
+  const router = useRouter();
+  const { byPeer, seed, connect, deleteMsg, peerOnline, peerTyping } = useChat();
+  const myPublicId = useSession((s) => s.publicId);
+  const blocked = useModeration((s) => s.isBlocked(peer));
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [reply, setReply] = useState<ReplyRef | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  // Краткая цитата сообщения для ответа.
+  const quote = (m: Msg): string =>
+    m.text ?? (m.kind === "image" ? "📷 Фото" : m.kind === "video" ? "🎬 Видео" : "🎤 Голос");
+
+  // Заблокированного собеседника не открываем — назад на экран поиска.
+  useEffect(() => {
+    if (blocked) router.replace("/");
+  }, [blocked, router]);
+
+  useEffect(() => {
+    seed(peer);
+  }, [peer, seed]);
+
+  // Подключение к realtime-каналу диалога (broadcast/presence).
+  useEffect(() => {
+    if (blocked) return;
+    const disconnect = connect(peer, myPublicId);
+    return disconnect;
+  }, [peer, myPublicId, blocked, connect]);
+
+  const msgs = byPeer[peer] ?? [];
+
+  // Медиа диалога для лайтбокса (свайп между ними).
+  const mediaItems: LightboxItem[] = msgs
+    .filter((m) => (m.kind === "image" || m.kind === "video") && m.url)
+    .map((m) => ({ kind: m.kind as "image" | "video", url: m.url! }));
+
+  const openMedia = (item: LightboxItem) => {
+    const i = mediaItems.findIndex((x) => x.url === item.url);
+    setLightboxIndex(i >= 0 ? i : null);
+  };
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs.length]);
+
+  if (blocked) return null;
+
+  return (
+    <div className="flex h-dvh flex-col">
+      <header className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-full text-fg-secondary hover:bg-surface-2" aria-label="Назад">
+          <ArrowLeft size={20} />
+        </Link>
+        <div>
+          <div className="text-sm font-semibold">Собеседник</div>
+          <div className="font-mono text-xs text-fg-muted" aria-live="polite">
+            {peerTyping ? <span className="text-accent">печатает…</span> : `#${peer}`}
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5">
+          <span
+            className={cn("h-2 w-2 rounded-full", peerOnline ? "bg-success" : "bg-fg-muted")}
+            title={peerOnline ? "онлайн" : "оффлайн"}
+          />
+          <ChatMenu peer={peer} />
+        </div>
+      </header>
+
+      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
+        <AnimatePresence initial={false}>
+          {msgs.map((m) => (
+            <motion.div
+              key={m.id}
+              initial={{ opacity: 0, y: 8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+            >
+              <MessageRow
+                m={m}
+                onOpenMedia={openMedia}
+                onReply={(msg) => setReply({ id: msg.id, text: quote(msg) })}
+                onDelete={(msg) => deleteMsg(peer, msg.id)}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        <div ref={endRef} />
+      </div>
+
+      <ChatComposer peer={peer} reply={reply} onClearReply={() => setReply(null)} />
+
+      <MediaLightbox
+        items={mediaItems}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onIndex={setLightboxIndex}
+      />
+    </div>
+  );
+}
