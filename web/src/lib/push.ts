@@ -29,7 +29,9 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 export async function getExistingSubscription(): Promise<PushSubscription | null> {
   if (!PUSH_SUPPORTED) return null;
-  const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+  // Ждём активации SW — иначе getSubscription может ложно вернуть null (Android) и сбросить тумблер.
+  await navigator.serviceWorker.ready.catch(() => {});
+  const reg = (await navigator.serviceWorker.getRegistration("/sw.js")) ?? (await navigator.serviceWorker.getRegistration());
   if (!reg) return null;
   return reg.pushManager.getSubscription();
 }
@@ -47,6 +49,8 @@ export async function subscribeToPush(): Promise<PushSubscription | null> {
 
   const reg = (await navigator.serviceWorker.getRegistration("/sw.js")) ?? (await registerServiceWorker());
   if (!reg) return null;
+  // Android Chrome: subscribe до активации SW падает. Ждём активный worker.
+  await navigator.serviceWorker.ready.catch(() => {});
 
   const existing = await reg.pushManager.getSubscription();
   if (existing) return existing;

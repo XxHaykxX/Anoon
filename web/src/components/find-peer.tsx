@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { InstallPwa } from "@/components/install-pwa";
 import { MatchSetup } from "@/components/match-setup";
+import { PushPrompt } from "@/components/push-prompt";
 import { PushToggle } from "@/components/push-toggle";
 import { SearchingPulse } from "@/components/searching-pulse";
 import { findMatch } from "@/lib/realtime";
@@ -92,6 +93,7 @@ export function FindPeer() {
       </header>
 
       <div className="relative flex-1 overflow-y-auto px-5 pt-2">
+        {!searching && <PushPrompt />}
         {searching ? <SearchingPulse onCancel={cancelSearch} /> : <MatchSetup onStart={find} searching={searching} />}
       </div>
     </div>

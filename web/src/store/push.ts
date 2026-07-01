@@ -11,8 +11,14 @@ import { supabase, supabaseConfigured } from "@/lib/supabase";
 // на backend (POST /push/subscribe); рассылка — через web-push при офлайн-получателе.
 async function pushToken(): Promise<string | null> {
   if (!supabaseConfigured) return null;
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+  // Ретрай — на мобиле supabase-сессия может быть не готова в момент включения push.
+  for (let i = 0; i < 5; i++) {
+    const { data } = await supabase.auth.getSession();
+    const t = data.session?.access_token;
+    if (t) return t;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return null;
 }
 type PushState = {
   enabled: boolean;
