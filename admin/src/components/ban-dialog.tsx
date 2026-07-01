@@ -19,14 +19,18 @@ export function BanDialog({
   target,
   onConfirm,
   onClose,
+  allowPermanent = true,
 }: {
   target: BanTarget | null;
   onConfirm: (r: BanResult) => void;
   onClose: () => void;
+  allowPermanent?: boolean; // false для moderator — перманентный бан только у super_admin
 }) {
+  // Модератору перманент недоступен: убираем опцию и дефолтимся на «7 дней».
+  const durations = allowPermanent ? DURATIONS : DURATIONS.filter((d) => d.days !== null);
   const [reason, setReason] = useState<string>("");
   const [note, setNote] = useState("");
-  const [duration, setDuration] = useState(DURATIONS[0]);
+  const [duration, setDuration] = useState(durations[0]);
 
   // Сброс полей при смене цели — паттерн «правка состояния во время рендера»
   // (react.dev: предпочтительнее setState в эффекте).
@@ -35,7 +39,7 @@ export function BanDialog({
     setPrevTarget(target);
     setReason("");
     setNote("");
-    setDuration(DURATIONS[0]);
+    setDuration(durations[0]);
   }
 
   useEffect(() => {
@@ -100,7 +104,7 @@ export function BanDialog({
 
             <p className="mt-5 mb-2 text-xs font-medium text-fg-secondary">Срок</p>
             <div className="flex gap-2">
-              {DURATIONS.map((d) => (
+              {durations.map((d) => (
                 <button
                   key={d.label}
                   onClick={() => setDuration(d)}

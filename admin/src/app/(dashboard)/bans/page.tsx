@@ -1,6 +1,6 @@
 "use client";
 
-import { useList, useUpdate } from "@refinedev/core";
+import { useList, usePermissions, useUpdate } from "@refinedev/core";
 import { motion } from "framer-motion";
 import { useState } from "react";
 
@@ -24,6 +24,8 @@ export default function BansPage() {
     pagination: { mode: "off" },
   });
   const { mutate: update } = useUpdate();
+  const { data: role } = usePermissions<string>({});
+  const isSuper = role === "super_admin";
   const [filter, setFilter] = useState<Filter>("active");
   const all = result?.data ?? [];
   const rows = all.filter((b) => b.state === filter);
@@ -80,7 +82,7 @@ export default function BansPage() {
               ) : (
                 <Badge tone={b.expiresAt ? "warning" : "danger"}>{b.expiresAt ? "Временный" : "Перманентный"}</Badge>
               )}
-              {b.state === "active" && (
+              {b.state === "active" && isSuper && (
                 <button
                   onClick={() => {
                     update({ resource: "bans", id: b.id, values: { state: "lifted" } });

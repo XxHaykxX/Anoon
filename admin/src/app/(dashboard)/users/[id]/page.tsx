@@ -1,6 +1,6 @@
 "use client";
 
-import { useList, useOne, useUpdate } from "@refinedev/core";
+import { useList, useOne, usePermissions, useUpdate } from "@refinedev/core";
 import { ArrowLeft, Lock } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -24,6 +24,8 @@ export default function UserDetailPage() {
     pagination: { mode: "off" },
   });
   const { mutate: update } = useUpdate();
+  const { data: role } = usePermissions<string>({});
+  const isSuper = role === "super_admin";
   const [banOpen, setBanOpen] = useState<BanTarget | null>(null);
 
   const u = user;
@@ -73,6 +75,7 @@ export default function UserDetailPage() {
 
       <BanDialog
         target={banOpen}
+        allowPermanent={isSuper}
         onClose={() => setBanOpen(null)}
         onConfirm={(res) => {
           const expiresAt = res.expiresDays ? new Date(Date.now() + res.expiresDays * 86400_000).toISOString() : null;

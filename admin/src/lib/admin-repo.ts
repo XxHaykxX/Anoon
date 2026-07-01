@@ -172,27 +172,48 @@ export async function updateReport(id: string, values: { status?: string }, admi
   return getOne("reports", id);
 }
 
-export async function updateResource(resource: string, id: string, values: Record<string, unknown>, adminId: string) {
+export type AdminRoleName = "super_admin" | "moderator";
+
+// Право отклонено (нехватка роли) → route возвращает 403.
+export class PermissionError extends Error {}
+
+export async function updateResource(
+  resource: string,
+  id: string,
+  values: Record<string, unknown>,
+  adminId: string,
+  role: AdminRoleName = "moderator",
+) {
   if (resource === "reports") return updateReport(id, values as { status?: string }, adminId);
 
   // Бан/разбан юзера: в Profile НЕТ поля banned — состояние живёт в таблице Ban.
   // Создаём/снимаем строку Ban(active) + аудит. `id` здесь = Profile.id.
+  // Ролевой гейт: перманентный бан и разбан — только super_admin. Модератор — временный бан.
   if ((resource === "users" || resource === "profiles") && "banned" in values) {
     const admin = supabaseAdmin();
     const now = new Date().toISOString();
     if (values.banned) {
+      const expiresAt = typeof values.expiresAt === "string" ? values.expiresAt : null;
+      if (!expiresAt && role !== "super_admin") {
+        throw new PermissionError("Перманентный бан доступен только super_admin. Задайте срок.");
+      }
       const { data: existing } = await admin.from("Ban").select("id").eq("profileId", id).eq("state", "active").limit(1);
       if (!((existing ?? []) as any[]).length) {
         const reason = typeof values.reason === "string" && values.reason ? values.reason : "Заблокирован модератором";
-        const expiresAt = typeof values.expiresAt === "string" ? values.expiresAt : null;
         await admin.from("Ban").insert({ id: crypto.randomUUID(), profileId: id, reason, expiresAt, state: "active", issuedById: adminId });
         await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "ban", targetProfileId: id });
       }
     } else {
+      if (role !== "super_admin") throw new PermissionError("Разбан доступен только super_admin.");
       await admin.from("Ban").update({ state: "lifted", liftedById: adminId, liftedAt: now }).eq("profileId", id).eq("state", "active");
       await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "unban", targetProfileId: id });
     }
     return getOne(resource, id);
+  }
+
+  // Снятие бана из раздела «Баны» (resource=bans, state=lifted) — тоже только super_admin.
+  if (resource === "bans" && values.state === "lifted" && role !== "super_admin") {
+    throw new PermissionError("Снятие бана доступно только super_admin.");
   }
 
   // Прочие ресурсы: прямое обновление (минимум). Таблица = PascalCase.

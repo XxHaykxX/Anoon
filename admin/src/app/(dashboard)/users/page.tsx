@@ -1,6 +1,6 @@
 "use client";
 
-import { useList, useUpdate } from "@refinedev/core";
+import { useList, usePermissions, useUpdate } from "@refinedev/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CheckSquare, Square } from "lucide-react";
 import Link from "next/link";
@@ -26,6 +26,8 @@ export default function UsersPage() {
     pagination: { mode: "off" },
   });
   const { mutate: update } = useUpdate();
+  const { data: role } = usePermissions<string>({});
+  const isSuper = role === "super_admin";
   const [banFor, setBanFor] = useState<{ id: string; target: BanTarget } | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const sel = useSelection();
@@ -59,7 +61,7 @@ export default function UsersPage() {
   const Row = (u: ProfileRow) => (
     <tr key={u.id} className={cn("border-t border-border bg-surface-1/50", sel.has(u.id) && "bg-surface-2")} style={{ height: ROW_H }}>
       <td className="w-10 px-4 py-3">
-        {!u.banned && (
+        {!u.banned && isSuper && (
           <button onClick={() => sel.toggle(u.id)} aria-label={sel.has(u.id) ? "Снять выбор" : "Выбрать"} className="text-fg-secondary transition hover:text-accent">
             {sel.has(u.id) ? <CheckSquare size={18} className="text-accent" /> : <Square size={18} />}
           </button>
@@ -104,9 +106,11 @@ export default function UsersPage() {
             <thead className="sticky top-0 z-10 bg-surface-1 text-left text-fg-muted">
               <tr>
                 <th className="w-10 px-4 py-3">
-                  <button onClick={toggleAll} aria-label="Выбрать всех" className="text-fg-secondary transition hover:text-accent">
-                    {allSelected ? <CheckSquare size={18} className="text-accent" /> : <Square size={18} />}
-                  </button>
+                  {isSuper && (
+                    <button onClick={toggleAll} aria-label="Выбрать всех" className="text-fg-secondary transition hover:text-accent">
+                      {allSelected ? <CheckSquare size={18} className="text-accent" /> : <Square size={18} />}
+                    </button>
+                  )}
                 </th>
                 <th className="px-4 py-3 font-medium">Ник</th>
                 <th className="px-4 py-3 font-medium">#ID</th>
@@ -131,7 +135,7 @@ export default function UsersPage() {
       )}
 
       <BulkBar
-        count={sel.count}
+        count={isSuper ? sel.count : 0}
         onClear={sel.clear}
         actions={[{ label: "Забанить выбранных", tone: "danger", onClick: () => setBulkConfirm(true) }]}
       />
@@ -153,10 +157,12 @@ export default function UsersPage() {
 
       <BanDialog
         target={banFor?.target ?? null}
+        allowPermanent={isSuper}
         onClose={() => setBanFor(null)}
         onConfirm={(res) => {
           if (!banFor) return;
-          update({ resource: "users", id: banFor.id, values: { banned: true } });
+          const expiresAt = res.expiresDays ? new Date(Date.now() + res.expiresDays * 86400_000).toISOString() : null;
+          update({ resource: "users", id: banFor.id, values: { banned: true, reason: res.reason || undefined, expiresAt } });
           addAction({ type: "ban", target: `${banFor.target.nickname} #${banFor.target.publicId}`, reason: `${res.reason} · ${res.durationLabel}` });
           toast(`Забанен: ${banFor.target.nickname}`, "danger");
           setBanFor(null);
