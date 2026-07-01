@@ -9,6 +9,31 @@ const BUCKET = "media";
 
 type UploadOk = { path: string; mediaId: string };
 
+// Сжатие/ресайз фото перед загрузкой: телефонные снимки 3-5МБ → ~200-500КБ.
+// Быстрее аплоад И быстрее показ у собеседника. Фолбэк — оригинал при ошибке/если больше.
+const MAX_DIM = 1600;
+export async function compressImage(blob: Blob): Promise<{ blob: Blob; mime: string }> {
+  try {
+    if (typeof createImageBitmap === "undefined" || typeof document === "undefined") return { blob, mime: blob.type || "image/jpeg" };
+    const bmp = await createImageBitmap(blob);
+    const scale = Math.min(1, MAX_DIM / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { blob, mime: blob.type || "image/jpeg" };
+    ctx.drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const out = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.82));
+    if (out && out.size < blob.size) return { blob: out, mime: "image/jpeg" };
+    return { blob, mime: blob.type || "image/jpeg" };
+  } catch {
+    return { blob, mime: blob.type || "image/jpeg" };
+  }
+}
+
 // Одна попытка аплоада: успех → объект, ошибка → строка-причина (для лога/ретрая).
 async function tryUpload(
   blob: Blob,

@@ -5,7 +5,7 @@ import { persist } from "zustand/middleware";
 
 import { endConversation, fetchHistory, type HistoryMsg, markRead, persistMessage } from "@/lib/api";
 import { chatChannelName, joinChat, type ChatHandle, type WirePayload } from "@/lib/realtime";
-import { resolveMediaUrl, uploadMedia } from "@/lib/storage";
+import { compressImage, resolveMediaUrl, uploadMedia } from "@/lib/storage";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useSession } from "@/store/session";
 
@@ -196,13 +196,15 @@ export const useChat = create<ChatState>()(
           // Гарантируем профиль в БД до аплоада — иначе create-upload вернёт 404 (гонка синка).
           await useSession.getState().ensureProfile();
           const t = await tokenReady();
-          const blob = await fetch(localUrl).then((r) => r.blob()).catch(() => null);
-          if (!t || !blob) {
+          const raw = await fetch(localUrl).then((r) => r.blob()).catch(() => null);
+          if (!t || !raw) {
             tx({ id: mid, kind, mediaFailed: true, at });
             patch(peer, mid, { stale: true });
             return;
           }
-          const up = await uploadMedia(blob, kind, blob.type || "application/octet-stream", t);
+          // Фото сжимаем/ресайзим перед загрузкой — быстрее вверх и вниз (собеседнику).
+          const { blob, mime } = kind === "image" ? await compressImage(raw) : { blob: raw, mime: raw.type || "application/octet-stream" };
+          const up = await uploadMedia(blob, kind, mime, t);
           if (!up) {
             tx({ id: mid, kind, mediaFailed: true, at });
             patch(peer, mid, { stale: true });
