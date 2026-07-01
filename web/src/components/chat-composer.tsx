@@ -45,6 +45,7 @@ export function ChatComposer({
   const [pending, setPending] = useState<Pending[]>([]);
   const [once, setOnce] = useState(false); // одноразовое медиа (view-once)
   const [sending, setSending] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const rec = useVoiceRecorder();
 
@@ -78,16 +79,29 @@ export function ChatComposer({
     typingTimer.current = setTimeout(() => setTyping(false), 1500);
   };
 
+  // Видео не сжимаем на клиенте (ffmpeg.wasm тяжёл/медленен на телефоне) — ограничиваем размер,
+  // чтобы гигантский файл не грузился минутами. Фото сжимаются при отправке.
+  const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 МБ
+
   const onPick = async (files: File[]) => {
+    setPickError(null);
+    const allowed: File[] = [];
+    for (const file of files) {
+      if (file.type.startsWith("video") && file.size > MAX_VIDEO_BYTES) {
+        setPickError(`Видео «${file.name}» больше 50 МБ — выбери покороче или меньшего качества.`);
+        continue;
+      }
+      allowed.push(file);
+    }
     const picked = await Promise.all(
-      files.map(async (file) => {
+      allowed.map(async (file) => {
         const kind: "image" | "video" = file.type.startsWith("video") ? "video" : "image";
         const url = URL.createObjectURL(file);
         const meta = await probe(kind, url);
         return { kind, url, name: file.name, ...meta } as Pending;
       }),
     );
-    setPending((prev) => [...prev, ...picked]);
+    if (picked.length) setPending((prev) => [...prev, ...picked]);
   };
 
   const sendPending = async () => {
@@ -221,6 +235,12 @@ export function ChatComposer({
             style={{ width: "50%" }}
           />
         </div>
+      )}
+
+      {pickError && (
+        <p role="alert" className="px-4 pt-2 text-xs text-danger">
+          {pickError}
+        </p>
       )}
 
       {(rec.status === "denied" || rec.status === "unsupported") && (
