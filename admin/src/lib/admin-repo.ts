@@ -211,6 +211,22 @@ export async function updateResource(
     return getOne(resource, id);
   }
 
+  // Мут/размут юзера (мягче бана): пишем Profile.mutedUntil/muteReason + аудит. Доступно модератору.
+  if ((resource === "users" || resource === "profiles") && "muted" in values) {
+    const admin = supabaseAdmin();
+    if (values.muted) {
+      const mutedUntil = typeof values.mutedUntil === "string" ? values.mutedUntil : null;
+      if (!mutedUntil) throw new Error("mute requires mutedUntil"); // мут всегда временный
+      const muteReason = typeof values.muteReason === "string" && values.muteReason ? values.muteReason : "Ограничение модератора";
+      await admin.from("Profile").update({ mutedUntil, muteReason }).eq("id", id);
+      await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "mute", targetProfileId: id });
+    } else {
+      await admin.from("Profile").update({ mutedUntil: null, muteReason: null }).eq("id", id);
+      await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "mute", targetProfileId: id, reason: "unmute" });
+    }
+    return getOne(resource, id);
+  }
+
   // Снятие бана из раздела «Баны» (resource=bans, state=lifted) — тоже только super_admin.
   if (resource === "bans" && values.state === "lifted" && role !== "super_admin") {
     throw new PermissionError("Снятие бана доступно только super_admin.");

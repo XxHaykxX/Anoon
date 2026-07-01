@@ -1,5 +1,6 @@
 import {
   activeBan,
+  activeMute,
   findOrCreateConversation,
   getUid,
   KIND_MAP,
@@ -37,6 +38,10 @@ export async function POST(req: Request) {
   // Забаненный не может отправлять сообщения.
   const ban = await activeBan(admin, senderId);
   if (ban) return Response.json({ error: "banned", reason: ban.reason, until: ban.expiresAt }, { status: 403 });
+
+  // Замьюченный не может отправлять (но может читать) — до mutedUntil.
+  const mute = await activeMute(admin, senderId);
+  if (mute) return Response.json({ error: "muted", reason: mute.reason, until: mute.until }, { status: 403 });
 
   const convId = await findOrCreateConversation(admin, senderId, peerId);
   if (!convId) return Response.json({ error: "conversation failed" }, { status: 400 });

@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { BanDialog, type BanTarget } from "@/components/ban-dialog";
+import { MuteDialog, type MuteTarget } from "@/components/mute-dialog";
 import { MediaGallery } from "@/components/media-gallery";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
@@ -27,6 +28,7 @@ export default function UserDetailPage() {
   const { data: role } = usePermissions<string>({});
   const isSuper = role === "super_admin";
   const [banOpen, setBanOpen] = useState<BanTarget | null>(null);
+  const [muteOpen, setMuteOpen] = useState<MuteTarget | null>(null);
 
   const u = user;
   const media = mediaRes?.data ?? [];
@@ -53,12 +55,20 @@ export default function UserDetailPage() {
           {u.reportCount > 0 && <Badge tone="warning">{u.reportCount} жалоб</Badge>}
         </div>
         {!u.banned && (
-          <button
-            onClick={() => setBanOpen({ nickname: u.nickname, publicId: u.publicId })}
-            className="ml-auto rounded-lg bg-danger/15 px-3 py-1.5 text-sm font-medium text-danger transition hover:bg-danger/25"
-          >
-            Забанить
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setMuteOpen({ nickname: u.nickname, publicId: u.publicId })}
+              className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-fg-secondary transition hover:text-fg"
+            >
+              Замьютить
+            </button>
+            <button
+              onClick={() => setBanOpen({ nickname: u.nickname, publicId: u.publicId })}
+              className="rounded-lg bg-danger/15 px-3 py-1.5 text-sm font-medium text-danger transition hover:bg-danger/25"
+            >
+              Забанить
+            </button>
+          </div>
         )}
       </div>
 
@@ -83,6 +93,18 @@ export default function UserDetailPage() {
           addAction({ type: "ban", target: ownerLabel, reason: `${res.reason} · ${res.durationLabel}` });
           toast(`Забанен: ${u.nickname}`, "danger");
           setBanOpen(null);
+        }}
+      />
+
+      <MuteDialog
+        target={muteOpen}
+        onClose={() => setMuteOpen(null)}
+        onConfirm={(res) => {
+          const mutedUntil = new Date(Date.now() + res.hours * 3600_000).toISOString();
+          update({ resource: "users", id: u.id, values: { muted: true, muteReason: res.reason || undefined, mutedUntil } });
+          addAction({ type: "ban", target: ownerLabel, reason: `Мут ${res.durationLabel}: ${res.reason}` });
+          toast(`Замьючен: ${u.nickname} (${res.durationLabel})`);
+          setMuteOpen(null);
         }}
       />
     </div>

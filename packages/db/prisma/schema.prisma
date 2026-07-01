@@ -99,6 +99,8 @@ model Profile {
   realGender  Gender    @default(any)
   online      Boolean   @default(false)
   lastSeen    DateTime?
+  mutedUntil  DateTime? // мут (мягче бана): не может ОТПРАВЛЯТЬ до этого времени, читать/сидеть может
+  muteReason  String?
   reportCount Int       @default(0) // денормализация для сортировки/списка
   ratingSum   Int       @default(0) // сумма оценок собеседников (пост-чат)
   ratingCount Int       @default(0) // число оценок → avg = sum/count (trust-сигнал)

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { useVoiceRecorder } from "@/lib/use-voice-recorder";
 import { useChat, type OutgoingMedia, type ReplyRef } from "@/store/chat";
+import { useSession } from "@/store/session";
 import { cn } from "@/lib/utils";
 
 type Pending = OutgoingMedia & { name: string };
@@ -128,6 +129,22 @@ export function ChatComposer({
   };
 
   const recording = rec.status === "recording";
+
+  // Мут: не может писать (сервер вернёт 403), но может читать. Блокируем композер + уведомление.
+  const muted = useSession((s) => s.muted);
+  const muteReason = useSession((s) => s.muteReason);
+  const muteUntil = useSession((s) => s.muteUntil);
+  if (muted) {
+    return (
+      <div className="border-t border-border px-4 py-4 text-center">
+        <p className="text-sm font-medium text-fg">🔇 Вы не можете отправлять сообщения</p>
+        <p className="mt-1 text-xs text-fg-muted">
+          {muteReason ? `Причина: ${muteReason}.` : "Ограничение установлено модерацией."}
+          {muteUntil ? ` До ${new Date(muteUntil).toLocaleString("ru-RU")}.` : ""}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="border-t border-border">

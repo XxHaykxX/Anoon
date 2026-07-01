@@ -23,8 +23,13 @@ async function beat() {
     body: JSON.stringify({ gender: useMatchPrefs.getState().gender }),
   }).catch(() => null);
   if (!res || !res.ok) return;
-  const body = (await res.json().catch(() => null)) as { banned?: boolean; reason?: string | null; until?: string | null } | null;
-  if (body) useSession.getState().setBan(Boolean(body.banned), body.reason, body.until);
+  const body = (await res.json().catch(() => null)) as
+    | { banned?: boolean; reason?: string | null; until?: string | null; muted?: boolean; muteReason?: string | null; muteUntil?: string | null }
+    | null;
+  if (body) {
+    useSession.getState().setBan(Boolean(body.banned), body.reason, body.until);
+    useSession.getState().setMute(Boolean(body.muted), body.muteReason, body.muteUntil);
+  }
 }
 
 // Корневые провайдеры приложения:

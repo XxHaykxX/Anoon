@@ -86,6 +86,21 @@ export async function activeBan(admin: SupabaseClient, profileId: string): Promi
   return { reason: ban.reason, expiresAt: ban.expiresAt };
 }
 
+export type ActiveMute = { reason: string | null; until: string };
+
+// Активный мут профиля (или null). Мягче бана: запрет только на отправку. Ленивое истечение:
+// просроченный мут чистим (mutedUntil→null).
+export async function activeMute(admin: SupabaseClient, profileId: string): Promise<ActiveMute | null> {
+  const { data } = await admin.from("Profile").select("mutedUntil,muteReason").eq("id", profileId).maybeSingle();
+  const row = data as { mutedUntil: string | null; muteReason: string | null } | null;
+  if (!row?.mutedUntil) return null;
+  if (new Date(row.mutedUntil).getTime() <= Date.now()) {
+    await admin.from("Profile").update({ mutedUntil: null, muteReason: null }).eq("id", profileId);
+    return null;
+  }
+  return { reason: row.muteReason, until: row.mutedUntil };
+}
+
 export async function findOrCreateConversation(admin: SupabaseClient, p1: string, p2: string): Promise<string | null> {
   const [a, b] = [p1, p2].sort();
   const { data: existing } = await admin.from("Conversation").select("id").eq("profileAId", a).eq("profileBId", b).maybeSingle();
