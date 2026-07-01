@@ -1,7 +1,8 @@
 "use client";
 
-// Вызовы backend (@supabase/server). Токен — из Supabase-сессии (anon JWT).
-const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
+// Вызовы серверных route handlers (web/app/api/*, same-origin). Токен — anon JWT из
+// Supabase-сессии. Backend co-located в web (нет отдельного хоста/CORS).
+const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "/api";
 
 export type ProfileDTO = { id: string; publicId: string; nickname: string };
 

@@ -5,7 +5,7 @@ import { test, expect } from "@playwright/test";
 // (moderate/minor фиксим отдельно; часть — стили Liquid Glass вне нашего контроля).
 const SEVERE = ["serious", "critical"];
 
-function severe(violations: { impact?: string | null }[]) {
+function severe(violations: { id: string; impact?: string | null }[]) {
   return violations.filter((v) => v.impact && SEVERE.includes(v.impact));
 }
 
