@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type LightboxItem = { kind: "image" | "video"; url: string };
@@ -163,34 +163,11 @@ export function MediaLightbox({
             <X size={22} />
           </button>
 
+          {/* Навигация — только свайп (стрелки убраны). Внизу счётчик 1/N. */}
           {items.length > 1 && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  go(-1);
-                }}
-                disabled={index === 0}
-                className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-surface-2/70 text-fg backdrop-blur disabled:opacity-30"
-                aria-label="Предыдущее"
-              >
-                <ChevronLeft size={24} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  go(1);
-                }}
-                disabled={index === items.length - 1}
-                className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-surface-2/70 text-fg backdrop-blur disabled:opacity-30"
-                aria-label="Следующее"
-              >
-                <ChevronRight size={24} />
-              </button>
-              <span className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full bg-surface-2/70 px-3 py-1 font-mono text-xs text-fg backdrop-blur">
-                {(index ?? 0) + 1} / {items.length}
-              </span>
-            </>
+            <span className="absolute bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 z-10 -translate-x-1/2 rounded-full bg-surface-2/70 px-3 py-1 font-mono text-xs text-fg backdrop-blur">
+              {(index ?? 0) + 1} / {items.length}
+            </span>
           )}
 
           <div
