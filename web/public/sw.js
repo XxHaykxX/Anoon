@@ -1,8 +1,8 @@
 // anoon web — service worker: Web Push + офлайн-кэш (без сборочной интеграции).
 // TODO(prod): для точного precache хешированных ассетов — Serwist с build-манифестом.
 
-const CACHE = "anoon-v1";
-const PRECACHE = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const CACHE = "anoon-v2";
+const PRECACHE = ["/", "/offline", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).catch(() => {}));
@@ -37,8 +37,9 @@ self.addEventListener("fetch", (event) => {
           cache.put(request, fresh.clone());
           return fresh;
         } catch {
+          // Офлайн: отдать кэш этой страницы, иначе красивую офлайн-заглушку.
           const cached = await caches.match(request);
-          return cached || (await caches.match("/")) || Response.error();
+          return cached || (await caches.match("/offline")) || (await caches.match("/")) || Response.error();
         }
       })(),
     );

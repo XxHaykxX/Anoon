@@ -57,9 +57,44 @@ function BannedOverlay() {
   );
 }
 
+// Авто-обновление: опрашиваем /api/version (commit sha деплоя). Сменился → перезагрузка вкладки.
+let seenVersion: string | null = null;
+async function checkVersion() {
+  try {
+    const res = await fetch("/api/version", { cache: "no-store" });
+    if (!res.ok) return;
+    const { v } = (await res.json()) as { v?: string };
+    if (!v) return;
+    if (seenVersion === null) {
+      seenVersion = v;
+      return;
+    }
+    if (v !== seenVersion) {
+      seenVersion = v;
+      window.location.reload();
+    }
+  } catch {
+    // офлайн/ошибка — молча
+  }
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void registerServiceWorker();
+  }, []);
+
+  // Проверка новой версии: на маунте, каждые 60с и при возврате на вкладку.
+  useEffect(() => {
+    void checkVersion();
+    const t = setInterval(() => void checkVersion(), 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void checkVersion();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   useEffect(() => {
