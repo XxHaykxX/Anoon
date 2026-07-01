@@ -22,10 +22,12 @@ export default function ChatPage() {
   const params = useParams<{ id: string }>();
   const peer = params.id;
   const router = useRouter();
-  const { byPeer, seed, connect, deleteMsg, peerOnline, peerTyping, peerRecording, ended, clearEnded } = useChat();
+  const { byPeer, seed, connect, deleteMsg, markViewed, peerOnline, peerTyping, peerRecording, ended, clearEnded } = useChat();
   const myPublicId = useSession((s) => s.publicId);
+  const ensureProfile = useSession((s) => s.ensureProfile);
   const blocked = useModeration((s) => s.isBlocked(peer));
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [onceItem, setOnceItem] = useState<LightboxItem | null>(null);
   const [reply, setReply] = useState<ReplyRef | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -42,6 +44,11 @@ export default function ChatPage() {
     seed(peer);
   }, [peer, seed]);
 
+  // Досинхронизировать профиль (если синк не прошёл) — иначе медиа не загрузится.
+  useEffect(() => {
+    void ensureProfile();
+  }, [ensureProfile]);
+
   // Подключение к realtime-каналу диалога (broadcast/presence).
   useEffect(() => {
     if (blocked) return;
@@ -53,12 +60,19 @@ export default function ChatPage() {
 
   // Медиа диалога для лайтбокса (свайп между ними).
   const mediaItems: LightboxItem[] = msgs
-    .filter((m) => (m.kind === "image" || m.kind === "video") && m.url)
+    .filter((m) => (m.kind === "image" || m.kind === "video") && m.url && !m.once)
     .map((m) => ({ kind: m.kind as "image" | "video", url: m.url! }));
 
   const openMedia = (item: LightboxItem) => {
     const i = mediaItems.findIndex((x) => x.url === item.url);
     setLightboxIndex(i >= 0 ? i : null);
+  };
+
+  // Открыть одноразовое медиа: показываем в отдельном просмотрщике; получатель — «расходует» просмотр.
+  const onView = (m: Msg) => {
+    if (!m.url) return;
+    setOnceItem({ kind: m.kind === "video" ? "video" : "image", url: m.url });
+    if (!m.mine) markViewed(peer, m.id);
   };
 
   // Оценить собеседника (опц.) и выйти на экран поиска.
@@ -117,6 +131,7 @@ export default function ChatPage() {
               <MessageRow
                 m={m}
                 onOpenMedia={openMedia}
+                onView={onView}
                 onReply={(msg) => setReply({ id: msg.id, text: quote(msg) })}
                 onDelete={(msg) => deleteMsg(peer, msg.id)}
               />
@@ -133,6 +148,14 @@ export default function ChatPage() {
         index={lightboxIndex}
         onClose={() => setLightboxIndex(null)}
         onIndex={setLightboxIndex}
+      />
+
+      {/* Одноразовый просмотрщик (отдельно от общей галереи) */}
+      <MediaLightbox
+        items={onceItem ? [onceItem] : []}
+        index={onceItem ? 0 : null}
+        onClose={() => setOnceItem(null)}
+        onIndex={() => {}}
       />
 
       {ended ? <RatingModal by={ended} onRate={(r) => rateAndLeave(r)} onSkip={() => rateAndLeave()} /> : null}

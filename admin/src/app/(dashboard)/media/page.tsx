@@ -1,10 +1,11 @@
 "use client";
 
-import { Folder, ImageIcon, Video } from "lucide-react";
+import { Copy, Folder, ImageIcon, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { MediaGallery } from "@/components/media-gallery";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/toaster";
 import type { MediaAssetRow } from "@/data/fixtures";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +79,26 @@ export default function MediaPage() {
                       <span className="flex items-center gap-1"><Video size={12} />{f.videos}</span>
                     </span>
                   </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Копировать #${f.publicId}`}
+                    title="Копировать #ID"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void navigator.clipboard?.writeText(`#${f.publicId}`).then(() => toast(`Скопировано: #${f.publicId}`));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void navigator.clipboard?.writeText(`#${f.publicId}`).then(() => toast(`Скопировано: #${f.publicId}`));
+                      }
+                    }}
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-fg-muted transition hover:bg-surface-2 hover:text-fg"
+                  >
+                    <Copy size={14} />
+                  </span>
                   <Badge tone="neutral">{f.count}</Badge>
                 </button>
               ))
@@ -97,7 +118,7 @@ export default function MediaPage() {
                 <h2 className="mb-3 text-sm font-medium text-fg-secondary">
                   {sel.nickname} #{sel.publicId} · {files.length}
                 </h2>
-                <MediaGallery media={files} ownerLabel={`${sel.nickname} #${sel.publicId}`} ownerBadge={`#${sel.publicId}`} />
+                <MediaGallery media={files} ownerLabel={`${sel.nickname} #${sel.publicId}`} ownerBadge={`#${sel.publicId}`} noBlur />
               </>
             )}
           </div>

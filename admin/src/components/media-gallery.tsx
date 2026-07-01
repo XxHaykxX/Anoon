@@ -37,10 +37,12 @@ export function MediaGallery({
   media,
   ownerLabel,
   ownerBadge,
+  noBlur,
 }: {
   media: MediaAssetRow[];
   ownerLabel: string;
   ownerBadge?: string; // #ID владельца — показываем на каждом тайле
+  noBlur?: boolean; // показывать сразу, без blur/«Показать» (файл-менеджер)
 }) {
   // blur-by-default: показанные тайлы — по клику «Показать», индивидуально.
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -97,7 +99,7 @@ export function MediaGallery({
         {media.map((m, i) => {
           const deleted = m.deletedAt != null;
           const escalated = m.escalated || escalatedIds.has(m.id);
-          const shown = revealed.has(m.id) && !deleted && !escalated;
+          const shown = (noBlur || revealed.has(m.id)) && !deleted && !escalated;
 
           return (
             <motion.div
@@ -186,10 +188,13 @@ export function MediaGallery({
                     )}
                   </div>
 
-                  {/* Кнопка эскалации (CSAM/illegal) */}
+                  {/* Кнопка эскалации (CSAM/illegal) — только в режиме модерации (blur). */}
                   <button
                     onClick={() => escalate(m)}
-                    className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-danger/85 px-2 py-1 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100"
+                    className={cn(
+                      "absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-danger/85 px-2 py-1 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100",
+                      noBlur && "hidden",
+                    )}
                     aria-label="Эскалировать элемент"
                   >
                     <ShieldAlert size={12} /> Эскалировать

@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageOff, Loader2, Play } from "lucide-react";
+import { Eye, EyeOff, ImageOff, Loader2, Play } from "lucide-react";
 
 import type { LightboxItem } from "@/components/media-lightbox";
 import { VoiceBubble } from "@/components/voice-bubble";
@@ -8,11 +8,44 @@ import { type Msg } from "@/store/chat";
 import { cn } from "@/lib/utils";
 
 // Пузырь сообщения: текст / фото / видео / голос. Фото и видео открываются в лайтбоксе по тапу.
-export function MessageBubble({ m, onOpenMedia }: { m: Msg; onOpenMedia: (item: LightboxItem) => void }) {
+export function MessageBubble({ m, onOpenMedia, onView }: { m: Msg; onOpenMedia: (item: LightboxItem) => void; onView?: (m: Msg) => void }) {
   const base = cn(
     "max-w-full overflow-hidden text-sm",
     m.mine ? "rounded-2xl rounded-br-md bg-accent text-accent-fg" : "rounded-2xl rounded-bl-md bg-surface-2 text-fg",
   );
+  const isMedia = m.kind === "image" || m.kind === "video";
+  const noun = m.kind === "video" ? "Видео" : "Фото";
+
+  // Одноразовое медиа (view-once): закрытый бабл → просмотр → «просмотрено».
+  if (isMedia && m.once) {
+    if (m.viewed) {
+      return (
+        <div className={cn(base, "flex items-center gap-2 px-3.5 py-3 opacity-70")}>
+          <EyeOff size={16} />
+          <span className="text-xs">{noun} просмотрено</span>
+        </div>
+      );
+    }
+    if (!m.url) {
+      return (
+        <div className={cn(base, "flex items-center gap-2 px-3.5 py-3 text-fg-muted")}>
+          {m.stale ? <ImageOff size={16} /> : <Loader2 size={16} className="animate-spin" />}
+          <span className="text-xs">{m.stale ? "Медиа недоступно" : "Загрузка…"}</span>
+        </div>
+      );
+    }
+    return (
+      <button onClick={() => onView?.(m)} className={cn(base, "flex items-center gap-2.5 px-4 py-3.5")} aria-label="Открыть одноразовое медиа">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-current/15">
+          <Eye size={18} />
+        </span>
+        <span className="text-left">
+          <span className="block text-sm font-medium">{noun} · одноразовое</span>
+          <span className="block text-xs opacity-70">{m.mine ? "нажми — посмотреть" : "нажми — 1 просмотр"}</span>
+        </span>
+      </button>
+    );
+  }
 
   // Медиа без готового url: stale → недоступно; иначе (есть mediaPath) → резолвим signed URL.
   if ((m.kind === "image" || m.kind === "video") && !m.url) {

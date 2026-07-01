@@ -27,11 +27,13 @@ function StatusTicks({ status }: { status?: MsgStatus }) {
 export function MessageRow({
   m,
   onOpenMedia,
+  onView,
   onReply,
   onDelete,
 }: {
   m: Msg;
   onOpenMedia: (item: LightboxItem) => void;
+  onView?: (m: Msg) => void;
   onReply: (m: Msg) => void;
   onDelete: (m: Msg) => void;
 }) {
@@ -61,7 +63,7 @@ export function MessageRow({
           </div>
         ) : null}
         <div className={cn("flex", m.mine ? "justify-end" : "justify-start")}>
-          <MessageBubble m={m} onOpenMedia={onOpenMedia} />
+          <MessageBubble m={m} onOpenMedia={onOpenMedia} onView={onView} />
         </div>
         {m.mine ? <StatusTicks status={m.status} /> : null}
       </div>

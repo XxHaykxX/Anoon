@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, CornerUpLeft, ImageIcon, Mic, Send, Trash2, X } from "lucide-react";
+import { Check, CornerUpLeft, Eye, ImageIcon, Mic, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { EmojiPicker } from "@/components/emoji-picker";
@@ -42,6 +42,7 @@ export function ChatComposer({
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
+  const [once, setOnce] = useState(false); // одноразовое медиа (view-once)
   const [sending, setSending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const rec = useVoiceRecorder();
@@ -97,9 +98,10 @@ export function ChatComposer({
     for (const p of queue) {
       const { name: _name, ...media } = p;
       void _name;
-      sendMedia(peer, media);
+      sendMedia(peer, { ...media, once });
       await new Promise((r) => setTimeout(r, 120));
     }
+    setOnce(false);
     setSending(false);
   };
 
@@ -157,8 +159,22 @@ export function ChatComposer({
                 </div>
               ))}
             </div>
-            <div className="px-3 pt-1.5 text-xs text-fg-muted">
-              {pending.length} {pending.length === 1 ? "файл" : "файла(ов)"} · готово к отправке
+            <div className="flex items-center justify-between gap-2 px-3 pt-2">
+              <span className="text-xs text-fg-muted">
+                {pending.length} {pending.length === 1 ? "файл" : "файла(ов)"} · готово к отправке
+              </span>
+              {/* Одноразовое: получатель посмотрит 1 раз, потом исчезнет */}
+              <button
+                onClick={() => setOnce((v) => !v)}
+                aria-pressed={once}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                  once ? "border-accent bg-accent/15 text-accent" : "border-white/10 bg-white/5 text-fg-secondary hover:text-fg",
+                )}
+              >
+                <Eye size={14} />
+                Одноразовое
+              </button>
             </div>
           </motion.div>
         )}

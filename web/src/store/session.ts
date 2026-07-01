@@ -17,6 +17,7 @@ type SessionState = {
   creating: boolean;
   error?: string;
   createProfile: (nickname: string) => Promise<void>;
+  ensureProfile: () => Promise<void>; // до-синхронизировать профиль, если синк не прошёл
   setNickname: (nickname: string) => void;
   reset: () => Promise<void>;
 };
@@ -53,6 +54,27 @@ export const useSession = create<SessionState>()(
           set({ synced: false, error: e instanceof Error ? e.message : "auth failed" });
         } finally {
           set({ creating: false });
+        }
+      },
+
+      // Профиль мог не создаться в БД (сеть/навигация оборвала POST /profile) → synced=false.
+      // Тогда бэкенд не резолвит профиль и медиа падает («недоступно»). Досинхронизируем.
+      ensureProfile: async () => {
+        const s = get();
+        if (s.synced || !supabaseConfigured || s.nickname.trim().length < 2) return;
+        try {
+          let { data } = await supabase.auth.getSession();
+          if (!data.session) {
+            const res = await supabase.auth.signInAnonymously();
+            if (res.error) return;
+            data = { session: res.data.session, user: res.data.user } as typeof data;
+          }
+          const token = data.session?.access_token;
+          if (!token) return;
+          const profile = await upsertProfile(s.nickname.trim(), token);
+          set({ authUserId: data.session?.user?.id, publicId: profile.publicId, nickname: profile.nickname, synced: true });
+        } catch {
+          // молча — останемся в несинхр. состоянии, повторим позже
         }
       },
 

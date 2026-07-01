@@ -14,6 +14,7 @@ export type WirePayload = {
   mediaPath?: string; // путь в Supabase Storage (для ре-резолва после reload)
   mediaPending?: boolean; // медиа грузится (placeholder — показать «загрузка»)
   mediaFailed?: boolean; // аплоад не удался (показать «недоступно»)
+  once?: boolean; // одноразовое медиа (view-once, Telegram-стиль)
   w?: number;
   h?: number;
   durationSec?: number;
@@ -34,6 +35,7 @@ export type ChatHandle = {
   sendDelivered: () => void; // квитанция «доставлено»
   sendRead: () => void; // квитанция «прочитано» отправителю
   sendDelete: (id: string) => void; // удалить сообщение у собеседника
+  sendViewed: (id: string) => void; // одноразовое медиа просмотрено
   sendEnd: () => void; // завершить разговор
   leave: () => void;
 };
@@ -49,6 +51,7 @@ export function joinChat(
     onDelivered?: () => void; // мои сообщения доставлены
     onRead?: () => void; // собеседник прочитал мои сообщения
     onDelete?: (id: string) => void; // собеседник удалил своё сообщение
+    onViewed?: (id: string) => void; // одноразовое медиа просмотрено собеседником
     onEnd?: () => void; // собеседник завершил разговор
   },
 ): ChatHandle {
@@ -63,6 +66,7 @@ export function joinChat(
     .on("broadcast", { event: "delivered" }, () => ev.onDelivered?.())
     .on("broadcast", { event: "read" }, () => ev.onRead?.())
     .on("broadcast", { event: "delete" }, ({ payload }) => ev.onDelete?.(String((payload as { id?: string })?.id ?? "")))
+    .on("broadcast", { event: "viewed" }, ({ payload }) => ev.onViewed?.(String((payload as { id?: string })?.id ?? "")))
     .on("broadcast", { event: "end" }, () => ev.onEnd?.())
     .on("presence", { event: "sync" }, () => {
       const state = channel.presenceState();
@@ -80,6 +84,7 @@ export function joinChat(
     sendDelivered: () => void channel.send({ type: "broadcast", event: "delivered", payload: {} }),
     sendRead: () => void channel.send({ type: "broadcast", event: "read", payload: {} }),
     sendDelete: (id) => void channel.send({ type: "broadcast", event: "delete", payload: { id } }),
+    sendViewed: (id) => void channel.send({ type: "broadcast", event: "viewed", payload: { id } }),
     sendEnd: () => void channel.send({ type: "broadcast", event: "end", payload: {} }),
     leave: () => void supabase.removeChannel(channel),
   };

@@ -24,6 +24,8 @@ export type Msg = {
   status?: MsgStatus; // только для mine: sent | read
   replyToId?: string; // ответ на сообщение
   replyText?: string; // краткая цитата оригинала
+  once?: boolean; // одноразовое медиа (view-once)
+  viewed?: boolean; // одноразовое просмотрено
   at: number;
 };
 
@@ -35,6 +37,7 @@ export type OutgoingMedia = {
   w?: number;
   h?: number;
   durationSec?: number;
+  once?: boolean;
 };
 
 type ChatState = {
@@ -48,6 +51,7 @@ type ChatState = {
   sendMedia: (peer: string, media: OutgoingMedia) => void;
   sendVoice: (peer: string, url: string, durationSec: number) => void;
   deleteMsg: (peer: string, id: string) => void;
+  markViewed: (peer: string, id: string) => void;
   endChat: () => void;
   clearEnded: () => void;
   setTyping: (typing: boolean) => void;
@@ -126,7 +130,7 @@ export const useChat = create<ChatState>()(
         const msg: Msg = { id: mid, mine: true, kind, url: localUrl, status: "sent", at, ...extra };
         pushLocal(peer, msg);
         // Мгновенный placeholder — собеседник сразу видит «загрузка», а не пустоту.
-        tx({ id: mid, kind, mediaPending: true, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
+        tx({ id: mid, kind, mediaPending: true, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
 
         void (async () => {
           const t = await tokenReady();
@@ -145,7 +149,7 @@ export const useChat = create<ChatState>()(
           patch(peer, mid, { mediaPath: up.path });
           // Готовый signed URL сразу в broadcast — получатель показывает без доп. запроса.
           const url = await resolveMediaUrl(up.path, t);
-          tx({ id: mid, kind, url: url ?? undefined, mediaPath: up.path, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
+          tx({ id: mid, kind, url: url ?? undefined, mediaPath: up.path, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
           await persistMessage(peer, kind, undefined, t, up.mediaId).catch(() => {});
         })();
       };
@@ -181,6 +185,7 @@ export const useChat = create<ChatState>()(
                   durationSec: p.durationSec,
                   replyToId: p.replyToId,
                   replyText: p.replyText,
+                  once: p.once,
                   stale: p.mediaFailed ? true : undefined,
                   at: p.at,
                 };
@@ -233,6 +238,11 @@ export const useChat = create<ChatState>()(
             onDelete: (mid) =>
               set((s) => ({
                 byPeer: { ...s.byPeer, [peer]: (s.byPeer[peer] ?? []).filter((m) => m.id !== mid) },
+              })),
+            onViewed: (mid) =>
+              // Собеседник просмотрел моё одноразовое → помечаем «просмотрено» (у отправителя тоже гаснет).
+              set((s) => ({
+                byPeer: { ...s.byPeer, [peer]: (s.byPeer[peer] ?? []).map((m) => (m.id === mid ? { ...m, viewed: true, url: undefined, mediaPath: undefined } : m)) },
               })),
             onEnd: () => set({ ended: "peer" }),
           });
@@ -298,8 +308,15 @@ export const useChat = create<ChatState>()(
           active?.sendDelete(mid);
         },
 
+        // Одноразовое просмотрено получателем: гасим у себя (url/путь убираем) + шлём отправителю.
+        // Файл в Storage/админке остаётся — удаляем только из чата.
+        markViewed: (peer, mid) => {
+          set((s) => ({ byPeer: { ...s.byPeer, [peer]: (s.byPeer[peer] ?? []).map((m) => (m.id === mid ? { ...m, viewed: true, url: undefined, mediaPath: undefined } : m)) } }));
+          active?.sendViewed(mid);
+        },
+
         sendMedia: (peer, media) => {
-          sendUpload(peer, media.kind, media.url, { w: media.w, h: media.h, durationSec: media.durationSec });
+          sendUpload(peer, media.kind, media.url, { w: media.w, h: media.h, durationSec: media.durationSec, once: media.once });
         },
 
         sendVoice: (peer, url, durationSec) => {
