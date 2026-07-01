@@ -57,8 +57,11 @@ function BannedOverlay() {
   );
 }
 
-// Авто-обновление: опрашиваем /api/version (commit sha деплоя). Сменился → перезагрузка вкладки.
+// Авто-обновление: опрашиваем /api/version (id деплоя). Сменился → НЕ дёргаем reload сразу
+// (не прерываем набор/чат), а помечаем pending и перезагружаем при возврате в приложение
+// (вкладка снова visible после сворачивания) — незаметный момент.
 let seenVersion: string | null = null;
+let updatePending = false;
 async function checkVersion() {
   try {
     const res = await fetch("/api/version", { cache: "no-store" });
@@ -71,7 +74,7 @@ async function checkVersion() {
     }
     if (v !== seenVersion) {
       seenVersion = v;
-      window.location.reload();
+      updatePending = true; // применим при следующем фокусе вкладки
     }
   } catch {
     // офлайн/ошибка — молча
@@ -83,12 +86,18 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     void registerServiceWorker();
   }, []);
 
-  // Проверка новой версии: на маунте, каждые 60с и при возврате на вкладку.
+  // Проверка новой версии: на маунте и каждые 60с (фоново, без reload).
+  // Reload — только при возврате на вкладку, если версия сменилась (не прерывает набор/чат).
   useEffect(() => {
     void checkVersion();
     const t = setInterval(() => void checkVersion(), 60_000);
     const onVis = () => {
-      if (document.visibilityState === "visible") void checkVersion();
+      if (document.visibilityState !== "visible") return;
+      if (updatePending) {
+        window.location.reload();
+        return;
+      }
+      void checkVersion();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
