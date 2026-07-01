@@ -203,12 +203,15 @@ export const useChat = create<ChatState>()(
             patch(peer, mid, { stale: true });
             return;
           }
-          // Мгновенная размытая превью собеседнику (пока грузится полное медиа) — Telegram-стиль.
-          const thumb = kind === "image" ? await makeThumbnail(raw) : kind === "video" ? await makeVideoThumbnail(raw) : null;
-          if (thumb) {
-            tx({ id: mid, kind, mediaPending: true, thumb, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
-            patch(peer, mid, { thumb });
-          }
+          // Мгновенная размытая превью собеседнику (Telegram-стиль) — ПАРАЛЛЕЛЬНО, не блокирует
+          // аплоад (иначе зависший декод видео вешал отправку → «загрузка» навсегда).
+          void (async () => {
+            const thumb = kind === "image" ? await makeThumbnail(raw) : kind === "video" ? await makeVideoThumbnail(raw) : null;
+            if (thumb) {
+              tx({ id: mid, kind, mediaPending: true, thumb, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
+              patch(peer, mid, { thumb });
+            }
+          })();
           // Фото сжимаем/ресайзим перед загрузкой — быстрее вверх и вниз (собеседнику).
           const { blob, mime } = kind === "image" ? await compressImage(raw) : { blob: raw, mime: raw.type || "application/octet-stream" };
           const up = await uploadMedia(blob, kind, mime, t);

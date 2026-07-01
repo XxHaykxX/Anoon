@@ -100,25 +100,34 @@ export async function makeThumbnail(blob: Blob): Promise<string | null> {
   }
 }
 
+const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
 // Превью-кадр (poster) из видео — мгновенный размытый показ, пока видео стримится.
+// С жёсткими таймаутами: если кадр не готов быстро — отдаём null (НЕ виснем, аплоад не блокируем).
 export async function makeVideoThumbnail(blob: Blob): Promise<string | null> {
+  if (typeof document === "undefined") return null;
+  const url = URL.createObjectURL(blob);
+  const v = document.createElement("video");
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = "metadata";
+  v.src = url;
   try {
-    if (typeof document === "undefined") return null;
-    const url = URL.createObjectURL(blob);
-    const v = document.createElement("video");
-    v.muted = true;
-    v.playsInline = true;
-    v.preload = "metadata";
-    v.src = url;
-    await new Promise<void>((res, rej) => {
-      v.onloadeddata = () => res();
-      v.onerror = () => rej(new Error("video load"));
-    });
-    await new Promise<void>((res) => {
-      v.onseeked = () => res();
-      v.currentTime = Math.min(0.1, (v.duration || 1) / 2);
-      setTimeout(res, 500); // фолбэк, если onseeked не сработал
-    });
+    await withTimeout(
+      new Promise<void>((res, rej) => {
+        v.onloadeddata = () => res();
+        v.onerror = () => rej(new Error("video load"));
+      }),
+      3000,
+    );
+    await withTimeout(
+      new Promise<void>((res) => {
+        v.onseeked = () => res();
+        v.currentTime = Math.min(0.1, (v.duration || 1) / 2);
+      }),
+      1500,
+    ).catch(() => {});
     const vw = v.videoWidth || 32;
     const vh = v.videoHeight || 32;
     const scale = Math.min(1, 32 / Math.max(vw, vh));
@@ -128,12 +137,14 @@ export async function makeVideoThumbnail(blob: Blob): Promise<string | null> {
     c.width = w;
     c.height = h;
     const ctx = c.getContext("2d");
-    URL.revokeObjectURL(url);
     if (!ctx) return null;
     ctx.drawImage(v, 0, 0, w, h);
     return c.toDataURL("image/jpeg", 0.5);
   } catch {
     return null;
+  } finally {
+    URL.revokeObjectURL(url);
+    v.removeAttribute("src");
   }
 }
 
