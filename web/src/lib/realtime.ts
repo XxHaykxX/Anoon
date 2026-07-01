@@ -93,18 +93,17 @@ export function joinChat(
 // Критерии подбора (пол+возраст свой/искомого). Строка возраста — бэнд («18-21» и т.д.).
 export type MatchCriteria = {
   gender: "nobody" | "m" | "f";
-  age: number;
+  age: string | null;
   wantGender: "any" | "m" | "f";
-  wantMin: number;
-  wantMax: number;
+  wantAges: string[];
 };
 
-type PeerMeta = { id: string; g: string; a: number; wg: string; wmin: number; wmax: number };
+type PeerMeta = { id: string; g: string; a: string | null; wg: string; wa: string[] };
 
 const FALLBACK_MS = 8000; // после — ослабляем возраст (матч по полу)
 
 const genderSat = (want: string, gender: string) => want === "any" || gender === "nobody" || want === gender;
-const ageSat = (wantMin: number, wantMax: number, age: number) => age >= wantMin && age <= wantMax;
+const ageSat = (wantAges: string[], age: string | null) => !wantAges?.length || (age != null && wantAges.includes(age));
 
 // Матчинг «Найти собеседника» через lobby-presence с взаимным фильтром.
 // Строго (пол+возраст взаимно); через FALLBACK_MS — только пол.
@@ -127,7 +126,7 @@ export function findMatch(myId: string, me: MatchCriteria, onMatched: (peerId: s
     const g = genderSat(me.wantGender, them.g) && genderSat(them.wg, me.gender);
     if (!g) return false;
     if (relax) return true;
-    return ageSat(me.wantMin, me.wantMax, them.a) && ageSat(them.wmin, them.wmax, me.age);
+    return ageSat(me.wantAges, them.a) && ageSat(them.wa, me.age);
   };
 
   const tryMatch = () => {
@@ -158,7 +157,7 @@ export function findMatch(myId: string, me: MatchCriteria, onMatched: (peerId: s
     })
     .subscribe((status) => {
       if (status === "SUBSCRIBED") {
-        void lobby.track({ id: myId, g: me.gender, a: me.age, wg: me.wantGender, wmin: me.wantMin, wmax: me.wantMax });
+        void lobby.track({ id: myId, g: me.gender, a: me.age, wg: me.wantGender, wa: me.wantAges });
         // Форсим повторную попытку в момент включения фолбэка (без новых presence-событий).
         fallbackTimer = setTimeout(tryMatch, FALLBACK_MS + 250);
       }
