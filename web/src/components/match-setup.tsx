@@ -1,47 +1,76 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Check } from "lucide-react";
 
 import { Segmented } from "@/components/segmented";
-import { AGE_BANDS, useMatchPrefs } from "@/store/match-prefs";
+import { AGE_MAX, AGE_MIN, useMatchPrefs } from "@/store/match-prefs";
 import { cn } from "@/lib/utils";
 
-// Экран фильтров подбора (пол+возраст свой/искомого). Дизайн anoon. Приложение 18+.
+const ACCENT = "#fdbf2d";
+const ageLabel = (n: number) => `${n}${n >= AGE_MAX ? "+" : ""}`;
+
+// Экран фильтров подбора (пол свой + возраст свой/искомого ползунками). Приложение 18+.
 export function MatchSetup({ onStart, searching }: { onStart: () => void; searching: boolean }) {
-  const { gender, age, wantAges, setGender, setAge, toggleWantAge, ready } = useMatchPrefs();
+  const { gender, age, wantMin, wantMax, setGender, setAge, setWantRange, ready } = useMatchPrefs();
 
   return (
     <div className="mx-auto w-full max-w-sm space-y-6 px-1 pb-8">
-      {/* Пол */}
-      <div className="space-y-5">
-        <Field label="Ваш пол">
-          <Segmented
-            groupId="self-gender"
-            ariaLabel="Ваш пол"
-            value={gender}
-            onChange={setGender}
-            options={[
-              { value: "m", label: "Мужчина" },
-              { value: "f", label: "Женщина" },
-            ]}
-          />
-        </Field>
-      </div>
-
-      {/* Возраст — компактная сетка бэндов (2 колонки, короткие подписи) */}
-      <Field label="Ваш возраст" hint="обязательно">
-        <div className="grid grid-cols-2 gap-2">
-          {AGE_BANDS.map((b) => (
-            <AgeRow key={b.value} label={b.label} active={age === b.value} onClick={() => setAge(b.value)} />
-          ))}
-        </div>
+      <Field label="Ваш пол">
+        <Segmented
+          groupId="self-gender"
+          ariaLabel="Ваш пол"
+          value={gender}
+          onChange={setGender}
+          options={[
+            { value: "m", label: "Мужчина" },
+            { value: "f", label: "Женщина" },
+          ]}
+        />
       </Field>
-      <Field label="Возраст собеседника" hint="можно несколько">
-        <div className="grid grid-cols-2 gap-2">
-          {AGE_BANDS.map((b) => (
-            <AgeRow key={b.value} label={b.label} active={wantAges.includes(b.value)} multi onClick={() => toggleWantAge(b.value)} />
-          ))}
+
+      {/* Свой возраст — одиночный ползунок */}
+      <Field label="Ваш возраст" hint={ageLabel(age)}>
+        <input
+          type="range"
+          min={AGE_MIN}
+          max={AGE_MAX}
+          value={age}
+          onChange={(e) => setAge(Number(e.target.value))}
+          aria-label="Ваш возраст"
+          className="w-full"
+          style={{ accentColor: ACCENT }}
+        />
+      </Field>
+
+      {/* Возраст собеседника — диапазон (От / До) */}
+      <Field label="Возраст собеседника" hint={`${wantMin} – ${ageLabel(wantMax)}`}>
+        <div className="space-y-3">
+          <div>
+            <div className="mb-1 text-xs text-fg-muted">От: {wantMin}</div>
+            <input
+              type="range"
+              min={AGE_MIN}
+              max={AGE_MAX}
+              value={wantMin}
+              onChange={(e) => setWantRange(Number(e.target.value), wantMax)}
+              aria-label="Возраст собеседника: от"
+              className="w-full"
+              style={{ accentColor: ACCENT }}
+            />
+          </div>
+          <div>
+            <div className="mb-1 text-xs text-fg-muted">До: {ageLabel(wantMax)}</div>
+            <input
+              type="range"
+              min={AGE_MIN}
+              max={AGE_MAX}
+              value={wantMax}
+              onChange={(e) => setWantRange(wantMin, Number(e.target.value))}
+              aria-label="Возраст собеседника: до"
+              className="w-full"
+              style={{ accentColor: ACCENT }}
+            />
+          </div>
         </div>
       </Field>
 
@@ -57,7 +86,7 @@ export function MatchSetup({ onStart, searching }: { onStart: () => void; search
       >
         {searching ? "Ищем собеседника…" : "Начать чат"}
       </motion.button>
-      {!ready() && <p className="text-center text-xs text-fg-muted">Выбери свой пол и возраст, чтобы начать</p>}
+      {!ready() && <p className="text-center text-xs text-fg-muted">Выбери свой пол, чтобы начать</p>}
     </div>
   );
 }
@@ -71,23 +100,5 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       </div>
       {children}
     </div>
-  );
-}
-
-function AgeRow({ label, active, multi, onClick }: { label: string; active: boolean; multi?: boolean; onClick: () => void }) {
-  return (
-    <motion.button
-      whileTap={{ scale: 0.98 }}
-      onClick={onClick}
-      role={multi ? "checkbox" : "radio"}
-      aria-checked={active}
-      className={cn(
-        "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-sm transition-colors",
-        active ? "border-accent bg-accent/15 text-fg" : "border-white/10 bg-white/5 text-fg-secondary hover:text-fg",
-      )}
-    >
-      <span>{label}</span>
-      {active && <Check size={16} className="text-accent" />}
-    </motion.button>
   );
 }

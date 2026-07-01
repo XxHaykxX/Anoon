@@ -32,7 +32,7 @@ export function FindPeer() {
   const find = () => {
     if (!prefs.ready()) return;
     setSearching(true);
-    const criteria = { gender: prefs.gender, age: prefs.age, wantGender: prefs.wantGender, wantAges: prefs.wantAges };
+    const criteria = { gender: prefs.gender, age: prefs.age, wantGender: prefs.wantGender, wantMin: prefs.wantMin, wantMax: prefs.wantMax };
     // Реальный матчинг через Supabase Realtime lobby-presence с фильтрами; фолбэк — мок.
     if (supabaseConfigured && publicId) {
       matchRef.current = findMatch(publicId, criteria, (peer) => router.push(`/chat/${peer}`));

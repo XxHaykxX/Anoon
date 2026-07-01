@@ -3,53 +3,67 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-// Фильтры подбора собеседника. Приложение 18+ (бэнда «до 17» нет).
+// Фильтры подбора собеседника. Приложение 18+.
 export type SelfGender = "nobody" | "m" | "f"; // Некто / М / Ж
 export type PeerGender = "any" | "m" | "f"; // Не важно / М / Ж
-export type AgeBand = "18-21" | "22-25" | "26-35" | "36+";
 
-export const AGE_BANDS: { value: AgeBand; label: string }[] = [
-  { value: "18-21", label: "18–21" },
-  { value: "22-25", label: "22–25" },
-  { value: "26-35", label: "26–35" },
-  { value: "36+", label: "36+" },
-];
+export const AGE_MIN = 18;
+export const AGE_MAX = 80; // верхняя граница ползунка (80 = «80+»)
 
 export type MatchCriteria = {
   gender: SelfGender;
-  age: AgeBand | null;
+  age: number; // свой возраст (ползунок)
   wantGender: PeerGender;
-  wantAges: AgeBand[];
+  wantMin: number; // возраст собеседника: диапазон [wantMin, wantMax]
+  wantMax: number;
 };
 
 type MatchPrefsState = MatchCriteria & {
   setGender: (g: SelfGender) => void;
-  setAge: (a: AgeBand) => void;
+  setAge: (a: number) => void;
   setWantGender: (g: PeerGender) => void;
-  toggleWantAge: (a: AgeBand) => void;
-  ready: () => boolean; // возраст обязателен
+  setWantRange: (min: number, max: number) => void;
+  ready: () => boolean; // нужен свой пол (возраст всегда задан ползунком)
 };
+
+const clampAge = (n: number) => Math.min(AGE_MAX, Math.max(AGE_MIN, Math.round(n)));
 
 export const useMatchPrefs = create<MatchPrefsState>()(
   persist(
     (set, get) => ({
       gender: "nobody",
-      age: null,
+      age: 25,
       wantGender: "any",
-      wantAges: [],
+      wantMin: AGE_MIN,
+      wantMax: AGE_MAX,
 
       // Пол собеседника выбирается автоматически: мужчина ищет женщину и наоборот.
       setGender: (g) => set({ gender: g, wantGender: g === "m" ? "f" : g === "f" ? "m" : "any" }),
-      setAge: (a) => set({ age: a }),
+      setAge: (a) => set({ age: clampAge(a) }),
       setWantGender: (g) => set({ wantGender: g }),
-      toggleWantAge: (a) =>
-        set((s) => ({ wantAges: s.wantAges.includes(a) ? s.wantAges.filter((x) => x !== a) : [...s.wantAges, a] })),
+      setWantRange: (min, max) => {
+        const lo = clampAge(min);
+        const hi = clampAge(max);
+        set({ wantMin: Math.min(lo, hi), wantMax: Math.max(lo, hi) });
+      },
 
-      ready: () => get().age !== null && get().gender !== "nobody", // нужен свой пол (для авто-подбора противоположного)
+      ready: () => get().gender !== "nobody",
     }),
     {
       name: "anoon-match",
-      partialize: (s) => ({ gender: s.gender, age: s.age, wantGender: s.wantGender, wantAges: s.wantAges }),
+      version: 2, // v1 хранил возраст бэндами (age:string, wantAges:[]) — мигрируем в числа
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Record<string, unknown>;
+        const num = (v: unknown, d: number) => (typeof v === "number" ? clampAge(v) : d);
+        return {
+          gender: p.gender === "m" || p.gender === "f" ? p.gender : "nobody",
+          age: num(p.age, 25),
+          wantGender: p.wantGender === "m" || p.wantGender === "f" ? p.wantGender : "any",
+          wantMin: num(p.wantMin, AGE_MIN),
+          wantMax: num(p.wantMax, AGE_MAX),
+        } as MatchCriteria;
+      },
+      partialize: (s) => ({ gender: s.gender, age: s.age, wantGender: s.wantGender, wantMin: s.wantMin, wantMax: s.wantMax }),
     },
   ),
 );
