@@ -69,7 +69,7 @@ export function ChatMenu({ peer }: { peer: string }) {
               role="menuitem"
               onClick={() => {
                 setOpen(false);
-                endChat();
+                endChat(peer);
               }}
               className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left text-sm text-fg transition hover:bg-surface-2"
             >

@@ -65,20 +65,27 @@ export async function persistMessage(
   text: string | undefined,
   accessToken: string,
   mediaId?: string,
+  clientId?: string, // тот же id, что в broadcast/local — БД пишет его же → merge без дублей
 ): Promise<{ id: string; at: string } | null> {
-  const res = await post("/messages", { peer, kind, text, mediaId }, accessToken);
+  const res = await post("/messages", { peer, kind, text, mediaId, id: clientId }, accessToken);
   if (!res.ok) return null;
   return res.json();
 }
 
 // История диалога из БД (для нового устройства / после очистки localStorage).
-export async function fetchHistory(peer: string, accessToken: string): Promise<HistoryMsg[]> {
+// ended — диалог завершён (Conversation.endedAt) кем-либо из участников.
+export async function fetchHistory(peer: string, accessToken: string): Promise<{ messages: HistoryMsg[]; ended: boolean }> {
   const res = await fetch(`${BASE}/messages?peer=${encodeURIComponent(peer)}`, {
     headers: { authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) return [];
-  const data = (await res.json()) as { messages?: HistoryMsg[] };
-  return data.messages ?? [];
+  if (!res.ok) return { messages: [], ended: false };
+  const data = (await res.json()) as { messages?: HistoryMsg[]; ended?: boolean };
+  return { messages: data.messages ?? [], ended: Boolean(data.ended) };
+}
+
+// Завершить диалог (persist Conversation.endedAt). Best-effort.
+export async function endConversation(peer: string, accessToken: string): Promise<void> {
+  await post("/messages/end", { peer }, accessToken).catch(() => {});
 }
 
 // Отметить сообщения собеседника прочитанными.

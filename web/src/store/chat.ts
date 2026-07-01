@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { fetchHistory, markRead, persistMessage } from "@/lib/api";
+import { endConversation, fetchHistory, type HistoryMsg, markRead, persistMessage } from "@/lib/api";
 import { chatChannelName, joinChat, type ChatHandle, type WirePayload } from "@/lib/realtime";
 import { resolveMediaUrl, uploadMedia } from "@/lib/storage";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
@@ -53,18 +53,76 @@ type ChatState = {
   sendVoice: (peer: string, url: string, durationSec: number) => void;
   deleteMsg: (peer: string, id: string) => void;
   markViewed: (peer: string, id: string) => void;
-  endChat: () => void;
+  endChat: (peer: string) => void;
   clearEnded: () => void;
   setTyping: (typing: boolean) => void;
   setRecording: (recording: boolean) => void;
   seed: (peer: string) => void;
 };
 
-let seq = 0;
-const id = () => `m${++seq}`;
+// Стабильный глобально-уникальный id: тот же id идёт в broadcast, local и БД (persist),
+// поэтому merge истории на connect не даёт дублей (см. fetchHistory-мерж ниже).
+const id = () => crypto.randomUUID();
 
 // Активный канал диалога (вне zustand-состояния — не сериализуется).
 let active: ChatHandle | null = null;
+
+const STATUS_RANK: Record<string, number> = { sent: 0, delivered: 1, read: 2 };
+const rankToStatus = (r: number): MsgStatus => (r >= 2 ? "read" : r >= 1 ? "delivered" : "sent");
+const bumpStatus = (a: MsgStatus | undefined, b: string): MsgStatus =>
+  rankToStatus(Math.max(STATUS_RANK[a ?? "sent"] ?? 0, STATUS_RANK[b] ?? 0));
+
+// Слияние локальной ленты с историей из БД (источник истины). По id — точное совпадение
+// (клиентский UUID = БД id). Легаси-сообщения (старый `m1`-id) сопоставляем нечётко
+// (mine+kind+text+близкое время), чтобы не задвоить. Отсутствующие в local (пришли пока
+// был офлайн / с другого устройства) — добавляем. Медиа-url резолвится отдельно по mediaPath.
+function mergeHistory(local: Msg[], hist: HistoryMsg[]): Msg[] {
+  const byId = new Map<string, Msg>(local.map((m) => [m.id, m]));
+  const usedLocal = new Set<string>();
+
+  for (const h of hist) {
+    const exact = byId.get(h.id);
+    if (exact) {
+      usedLocal.add(h.id);
+      byId.set(h.id, {
+        ...exact,
+        text: exact.text ?? h.text,
+        mediaPath: exact.mediaPath ?? h.mediaPath,
+        status: exact.mine ? bumpStatus(exact.status, h.status) : exact.status,
+      });
+      continue;
+    }
+    const fuzzy = local.find(
+      (m) =>
+        !usedLocal.has(m.id) &&
+        m.mine === h.mine &&
+        m.kind === h.kind &&
+        (m.text ?? "") === (h.text ?? "") &&
+        Math.abs(m.at - h.at) < 15000,
+    );
+    if (fuzzy) {
+      usedLocal.add(fuzzy.id);
+      byId.delete(fuzzy.id);
+      byId.set(h.id, {
+        ...fuzzy,
+        id: h.id,
+        mediaPath: fuzzy.mediaPath ?? h.mediaPath,
+        status: fuzzy.mine ? bumpStatus(fuzzy.status, h.status) : fuzzy.status,
+      });
+      continue;
+    }
+    byId.set(h.id, {
+      id: h.id,
+      mine: h.mine,
+      kind: h.kind,
+      text: h.text,
+      mediaPath: h.mediaPath,
+      status: h.mine ? rankToStatus(STATUS_RANK[h.status] ?? 0) : undefined,
+      at: h.at,
+    });
+  }
+  return [...byId.values()].sort((a, b) => a.at - b.at);
+}
 
 // Access-token из Supabase-сессии (для backend-persist). null → работаем только realtime+local.
 async function token(): Promise<string | null> {
@@ -83,10 +141,10 @@ async function tokenReady(tries = 4): Promise<string | null> {
   return null;
 }
 
-// Persist текстового сообщения в БД (best-effort).
-async function persistRemote(peer: string, kind: MsgKind, text?: string): Promise<void> {
-  const t = await token();
-  if (t) await persistMessage(peer, kind, text, t).catch(() => {});
+// Persist текстового сообщения в БД (best-effort). clientId → БД пишет тот же id.
+async function persistRemote(peer: string, kind: MsgKind, text: string | undefined, clientId: string): Promise<void> {
+  const t = await tokenReady();
+  if (t) await persistMessage(peer, kind, text, t, undefined, clientId).catch(() => {});
 }
 
 // Отметить сообщения собеседника прочитанными в БД (best-effort).
@@ -153,7 +211,7 @@ export const useChat = create<ChatState>()(
           // Готовый signed URL сразу в broadcast — получатель показывает без доп. запроса.
           const url = await resolveMediaUrl(up.path, t);
           tx({ id: mid, kind, url: url ?? undefined, mediaPath: up.path, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
-          await persistMessage(peer, kind, undefined, t, up.mediaId).catch(() => {});
+          await persistMessage(peer, kind, undefined, t, up.mediaId, mid).catch(() => {});
         })();
       };
 
@@ -252,28 +310,16 @@ export const useChat = create<ChatState>()(
           active = handle;
 
           void (async () => {
-            const cur = get().byPeer[peer];
-            const t = await token();
+            const t = await tokenReady();
             if (!t) return;
-            if (!cur || cur.length === 0) {
-              const hist = await fetchHistory(peer, t).catch(() => []);
-              if (hist.length > 0) {
-                set((s) => ({
-                  byPeer: {
-                    ...s.byPeer,
-                    [peer]: hist.map((h) => ({
-                      id: h.id,
-                      mine: h.mine,
-                      kind: h.kind,
-                      text: h.text,
-                      mediaPath: h.mediaPath,
-                      status: h.mine ? (h.status === "read" ? "read" : "sent") : undefined,
-                      at: h.at,
-                    })),
-                  },
-                }));
-              }
+            // Всегда тянем историю и мержим (БД — источник истины): ловим сообщения,
+            // пришедшие пока был офлайн (broadcast эфемерный) и с других устройств.
+            const { messages: hist, ended: convEnded } = await fetchHistory(peer, t).catch(() => ({ messages: [], ended: false }));
+            if (hist.length > 0) {
+              set((s) => ({ byPeer: { ...s.byPeer, [peer]: mergeHistory(s.byPeer[peer] ?? [], hist) } }));
             }
+            // Завершение из БД (переживает reload, доходит до офлайн-собеседника).
+            if (convEnded && get().ended === null) set({ ended: "peer" });
             // Резолв медиа (история + локально сохранённые stale) + read-квитанции.
             await resolveMediaFor(peer);
             await markRead(peer, t).catch(() => {});
@@ -303,7 +349,7 @@ export const useChat = create<ChatState>()(
           };
           pushLocal(peer, msg);
           tx({ id: msg.id, kind: "text", text, replyToId: reply?.id, replyText: reply?.text, at: msg.at });
-          void persistRemote(peer, "text", text);
+          void persistRemote(peer, "text", text, msg.id);
         },
 
         deleteMsg: (peer, mid) => {
@@ -326,9 +372,14 @@ export const useChat = create<ChatState>()(
           sendUpload(peer, "voice", url, { durationSec });
         },
 
-        endChat: () => {
+        endChat: (peer) => {
           active?.sendEnd();
           set({ ended: "me" });
+          // Персист endedAt (best-effort) — переживает reload, дойдёт до офлайн-собеседника.
+          void (async () => {
+            const t = await token();
+            if (t) await endConversation(peer, t);
+          })();
         },
         clearEnded: () => set({ ended: null }),
 
