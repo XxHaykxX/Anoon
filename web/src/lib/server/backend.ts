@@ -121,6 +121,41 @@ export const REASON_MAP: Record<string, string> = {
   other: "other",
 };
 
+// Массовая рассылка push всем / по полу (админская). gender: all | male | female.
+export async function broadcastPush(
+  admin: SupabaseClient,
+  gender: "all" | "male" | "female",
+  payload: object,
+): Promise<{ sent: number; total: number }> {
+  if (!PUSH_READY) return { sent: 0, total: 0 };
+
+  let profileIds: string[] | null = null;
+  if (gender !== "all") {
+    const { data } = await admin.from("Profile").select("id").eq("realGender", gender);
+    profileIds = ((data ?? []) as Array<{ id: string }>).map((p) => p.id);
+    if (profileIds.length === 0) return { sent: 0, total: 0 };
+  }
+
+  let q = admin.from("PushSubscription").select("id,endpoint,p256dh,auth");
+  if (profileIds) q = q.in("profileId", profileIds);
+  const { data: subs } = await q;
+  const list = (subs ?? []) as Array<{ id: string; endpoint: string; p256dh: string; auth: string }>;
+  const body = JSON.stringify(payload);
+  let sent = 0;
+  await Promise.all(
+    list.map(async (s) => {
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body);
+        sent++;
+      } catch (err) {
+        const code = (err as { statusCode?: number })?.statusCode;
+        if (code === 404 || code === 410) await admin.from("PushSubscription").delete().eq("id", s.id);
+      }
+    }),
+  );
+  return { sent, total: list.length };
+}
+
 export async function pushToProfile(admin: SupabaseClient, profileId: string, payload: object): Promise<void> {
   if (!PUSH_READY) return;
   const { data: subs } = await admin.from("PushSubscription").select("id,endpoint,p256dh,auth").eq("profileId", profileId);

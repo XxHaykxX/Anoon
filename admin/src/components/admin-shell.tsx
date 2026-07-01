@@ -2,7 +2,7 @@
 
 import { useGetIdentity, useLogout } from "@refinedev/core";
 import { AnimatePresence, motion } from "framer-motion";
-import { Ban, Flag, FolderOpen, Images, LayoutDashboard, LogOut, Menu, MessageSquare, ScrollText, Search, Users, Wifi, X } from "lucide-react";
+import { Ban, Flag, FolderOpen, Images, LayoutDashboard, LogOut, Menu, MessageSquare, ScrollText, Search, Send, Users, Wifi, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -20,6 +20,7 @@ const NAV = [
   { href: "/bans", label: "Баны", icon: Ban },
   { href: "/media", label: "Файлы", icon: FolderOpen },
   { href: "/gallery", label: "Галерея", icon: Images },
+  { href: "/broadcast", label: "Рассылка", icon: Send },
   { href: "/audit", label: "Журнал", icon: ScrollText },
 ];
 
