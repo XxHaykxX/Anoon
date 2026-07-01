@@ -70,7 +70,7 @@ export function FindPeer() {
         style={{ background: "radial-gradient(circle, #fdbf2d 0%, transparent 70%)" }}
       />
 
-      <header className="relative flex items-center justify-between px-5 py-4">
+      <header className="relative flex items-center justify-between pb-4 pl-[calc(env(safe-area-inset-left)+1.25rem)] pr-[calc(env(safe-area-inset-right)+1.25rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
         <span className="text-lg font-bold">anoon</span>
         <div className="flex items-center gap-2">
           <Link

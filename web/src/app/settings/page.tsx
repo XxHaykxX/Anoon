@@ -51,7 +51,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto flex min-h-dvh flex-col">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <header className="flex items-center gap-3 border-b border-border px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <Link href="/" className="flex h-11 w-11 items-center justify-center rounded-full text-fg-secondary hover:bg-surface-2" aria-label="Назад">
           <ArrowLeft size={20} />
         </Link>
