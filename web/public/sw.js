@@ -1,7 +1,7 @@
 // anoon web — service worker: Web Push + офлайн-кэш (без сборочной интеграции).
 // TODO(prod): для точного precache хешированных ассетов — Serwist с build-манифестом.
 
-const CACHE = "anoon-v3";
+const CACHE = "anoon-v4";
 const PRECACHE = ["/", "/offline", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -78,8 +78,8 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  // Иконка PWA (крупная, цветная). badge не задаём — Android берёт иконку приложения
-  // как монохромный статус-значок (иначе цветной badge превращается в мусорный квадрат).
+  // icon — крупная цветная PWA-иконка. badge — монохромный силуэт с прозрачным фоном
+  // (Android/Samsung в свёрнутой шторке показывает badge; непрозрачная иконка = белый квадрат).
   // url нормализуем к пути от корня, чтобы клик не давал 404.
   let path = typeof data.url === "string" && data.url ? data.url : "/";
   if (!path.startsWith("/")) path = "/" + path;
@@ -87,6 +87,7 @@ self.addEventListener("push", (event) => {
   const options = {
     body: data.body,
     icon: "/icon-512.png",
+    badge: "/badge-96.png",
     tag: data.tag || "anoon-push",
     data: { url: path },
   };
