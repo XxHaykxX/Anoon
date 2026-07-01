@@ -95,7 +95,7 @@ export function MediaGallery({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
         {media.map((m, i) => {
           const deleted = m.deletedAt != null;
           const escalated = m.escalated || escalatedIds.has(m.id);

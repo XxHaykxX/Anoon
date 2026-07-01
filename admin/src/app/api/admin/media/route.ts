@@ -11,20 +11,43 @@ const BUCKET = "media";
 // GET /api/admin/media?profileId=... — файлы профиля со signed URL (галерея).
 // GET /api/admin/media?all=1 — общая галерея: все медиа всех юзеров + #ID на тайлах (без папок).
 // Защищено proxy (default-deny) при NEXT_PUBLIC_DATA_MODE=api.
+// Границы диапазона дат из query (?from=YYYY-MM-DD&to=YYYY-MM-DD). `to` — включительно (до конца дня).
+function dateRange(sp: URLSearchParams): { fromISO?: string; toISO?: string } {
+  const from = sp.get("from");
+  const to = sp.get("to");
+  const out: { fromISO?: string; toISO?: string } = {};
+  if (from) out.fromISO = new Date(`${from}T00:00:00.000Z`).toISOString();
+  if (to) {
+    const d = new Date(`${to}T00:00:00.000Z`);
+    d.setUTCDate(d.getUTCDate() + 1); // включительно: < следующего дня
+    out.toISO = d.toISOString();
+  }
+  return out;
+}
+
 export async function GET(req: Request) {
   const admin = supabaseAdmin();
   const url = new URL(req.url);
-  const profileId = url.searchParams.get("profileId");
-  const all = url.searchParams.get("all");
+  const sp = url.searchParams;
+  const profileId = sp.get("profileId");
+  const all = sp.get("all");
+  const { fromISO, toISO } = dateRange(sp);
+  const page = Math.max(1, Number(sp.get("page")) || 1);
+  const pageSize = Math.min(120, Math.max(1, Number(sp.get("pageSize")) || 60));
+  const kind = sp.get("kind"); // image | video | (пусто = все)
 
   try {
     if (all) {
-      // Все медиа (свежие сверху). #ID владельца — на каждый тайл.
-      const { data: rows } = await admin
+      // Все медиа (свежие сверху) + серверная пагинация/фильтр даты/типа. #ID владельца на тайле.
+      let q = admin
         .from("MediaAsset")
-        .select("id,ownerProfileId,r2Key,mime,kind,durationMs,ephemeral,expiresAt,deletedAt,createdAt")
-        .order("createdAt", { ascending: false })
-        .limit(500);
+        .select("id,ownerProfileId,r2Key,mime,kind,durationMs,ephemeral,expiresAt,deletedAt,createdAt", { count: "exact" })
+        .order("createdAt", { ascending: false });
+      if (fromISO) q = q.gte("createdAt", fromISO);
+      if (toISO) q = q.lt("createdAt", toISO);
+      if (kind === "image" || kind === "video") q = q.eq("kind", kind);
+      q = q.range((page - 1) * pageSize, page * pageSize - 1);
+      const { data: rows, count } = await q;
       const list = (rows ?? []) as Array<any>;
       const ownerIds = [...new Set(list.map((m) => m.ownerProfileId))];
       const { data: profs } = ownerIds.length
@@ -55,7 +78,7 @@ export async function GET(req: Request) {
         escalated: false,
         createdAt: m.createdAt,
       }));
-      return NextResponse.json({ files });
+      return NextResponse.json({ files, total: count ?? files.length, page, pageSize });
     }
 
     if (!profileId) {
@@ -86,12 +109,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ folders });
     }
 
-    // Файлы профиля.
-    const { data: rows } = await admin
+    // Файлы профиля (+ фильтр даты/типа + пагинация).
+    let fq = admin
       .from("MediaAsset")
-      .select("id,r2Key,mime,kind,durationMs,ephemeral,expiresAt,deletedAt,createdAt")
+      .select("id,r2Key,mime,kind,durationMs,ephemeral,expiresAt,deletedAt,createdAt", { count: "exact" })
       .eq("ownerProfileId", profileId)
       .order("createdAt", { ascending: false });
+    if (fromISO) fq = fq.gte("createdAt", fromISO);
+    if (toISO) fq = fq.lt("createdAt", toISO);
+    if (kind === "image" || kind === "video") fq = fq.eq("kind", kind);
+    fq = fq.range((page - 1) * pageSize, page * pageSize - 1);
+    const { data: rows, count } = await fq;
     const list = (rows ?? []) as Array<any>;
 
     // Signed URL для не-удалённых.
@@ -117,7 +145,7 @@ export async function GET(req: Request) {
       escalated: false,
       createdAt: m.createdAt,
     }));
-    return NextResponse.json({ files });
+    return NextResponse.json({ files, total: count ?? files.length, page, pageSize });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
   }

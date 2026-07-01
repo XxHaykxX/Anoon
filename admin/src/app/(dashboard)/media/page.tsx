@@ -4,6 +4,7 @@ import { Copy, Folder, ImageIcon, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { MediaGallery } from "@/components/media-gallery";
+import { Pager } from "@/components/pager";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
 import type { MediaAssetRow } from "@/data/fixtures";
@@ -17,7 +18,20 @@ export default function MediaPage() {
   const [folders, setFolders] = useState<FolderRow[] | null>(null);
   const [sel, setSel] = useState<FolderRow | null>(null);
   const [filesState, setFilesState] = useState<{ profileId: string; items: MediaAssetRow[] } | null>(null);
+  const [total, setTotal] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 60;
+
+  // Сброс на первую страницу при смене папки/дат.
+  const [prevKey, setPrevKey] = useState("");
+  const key = `${sel?.profileId ?? ""}|${from}|${to}`;
+  if (key !== prevKey) {
+    setPrevKey(key);
+    if (page !== 1) setPage(1);
+  }
 
   useEffect(() => {
     fetch("/api/admin/media")
@@ -29,11 +43,17 @@ export default function MediaPage() {
   useEffect(() => {
     if (!sel) return;
     const pid = sel.profileId;
-    fetch(`/api/admin/media?profileId=${encodeURIComponent(pid)}`)
+    const p = new URLSearchParams({ profileId: pid, page: String(page), pageSize: String(PAGE_SIZE) });
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    fetch(`/api/admin/media?${p.toString()}`)
       .then((r) => r.json())
-      .then((d) => setFilesState({ profileId: pid, items: d.files ?? [] }))
+      .then((d) => {
+        setFilesState({ profileId: pid, items: d.files ?? [] });
+        setTotal(d.total ?? 0);
+      })
       .catch(() => setFilesState({ profileId: pid, items: [] }));
-  }, [sel]);
+  }, [sel, from, to, page]);
 
   // Файлы показываем только для текущей папки (иначе — состояние загрузки).
   const files = sel && filesState?.profileId === sel.profileId ? filesState.items : null;
@@ -109,16 +129,54 @@ export default function MediaPage() {
           <div className="rounded-xl border border-border bg-surface-1 p-5">
             {!sel ? (
               <div className="py-16 text-center text-fg-muted">Выбери папку слева</div>
-            ) : files === null ? (
-              <div className="text-sm text-fg-muted">Загрузка галереи…</div>
-            ) : files.length === 0 ? (
-              <div className="py-16 text-center text-fg-muted">У пользователя нет медиа</div>
             ) : (
               <>
-                <h2 className="mb-3 text-sm font-medium text-fg-secondary">
-                  {sel.nickname} #{sel.publicId} · {files.length}
-                </h2>
-                <MediaGallery media={files} ownerLabel={`${sel.nickname} #${sel.publicId}`} ownerBadge={`#${sel.publicId}`} noBlur />
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                  <h2 className="text-sm font-medium text-fg-secondary">
+                    {sel.nickname} #{sel.publicId} · {total}
+                  </h2>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="flex flex-col text-xs text-fg-muted">
+                      С даты
+                      <input
+                        type="date"
+                        value={from}
+                        onChange={(e) => setFrom(e.target.value)}
+                        className="mt-1 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent"
+                      />
+                    </label>
+                    <label className="flex flex-col text-xs text-fg-muted">
+                      По дату
+                      <input
+                        type="date"
+                        value={to}
+                        onChange={(e) => setTo(e.target.value)}
+                        className="mt-1 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent"
+                      />
+                    </label>
+                    {(from || to) && (
+                      <button
+                        onClick={() => {
+                          setFrom("");
+                          setTo("");
+                        }}
+                        className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm text-fg-secondary transition hover:text-fg"
+                      >
+                        Сброс
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {files === null ? (
+                  <div className="text-sm text-fg-muted">Загрузка галереи…</div>
+                ) : files.length === 0 ? (
+                  <div className="py-16 text-center text-fg-muted">Нет медиа за выбранный период</div>
+                ) : (
+                  <>
+                    <MediaGallery media={files} ownerLabel={`${sel.nickname} #${sel.publicId}`} ownerBadge={`#${sel.publicId}`} noBlur />
+                    <Pager page={page} pages={Math.max(1, Math.ceil(total / PAGE_SIZE))} onPage={setPage} />
+                  </>
+                )}
               </>
             )}
           </div>
