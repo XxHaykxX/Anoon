@@ -22,7 +22,7 @@ export default function ChatPage() {
   const params = useParams<{ id: string }>();
   const peer = params.id;
   const router = useRouter();
-  const { byPeer, seed, connect, deleteMsg, markViewed, peerOnline, peerTyping, peerRecording, ended, clearEnded } = useChat();
+  const { byPeer, seed, connect, deleteMsg, markViewed, peerOnline, peerTyping, peerRecording, ended, endedAtLoad, clearEnded } = useChat();
   const myPublicId = useSession((s) => s.publicId);
   const ensureProfile = useSession((s) => s.ensureProfile);
   const blocked = useModeration((s) => s.isBlocked(peer));
@@ -40,6 +40,11 @@ export default function ChatPage() {
   useEffect(() => {
     if (blocked) router.replace("/");
   }, [blocked, router]);
+
+  // Завершённый диалог (endedAt в БД) не открываем по ссылке — редирект на главную.
+  useEffect(() => {
+    if (endedAtLoad) router.replace("/");
+  }, [endedAtLoad, router]);
 
   useEffect(() => {
     seed(peer);
@@ -99,7 +104,7 @@ export default function ChatPage() {
     requestAnimationFrame(() => requestAnimationFrame(toBottom));
   }, [msgs.length, peerTyping, peerRecording]);
 
-  if (blocked) return null;
+  if (blocked || endedAtLoad) return null; // редирект в эффекте; не мелькаем завершённым чатом
 
   return (
     <div className="flex h-dvh flex-col">

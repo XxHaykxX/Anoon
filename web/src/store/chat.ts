@@ -46,7 +46,8 @@ type ChatState = {
   peerOnline: boolean;
   peerTyping: boolean;
   peerRecording: boolean;
-  ended: "me" | "peer" | null; // разговор завершён (кем)
+  ended: "me" | "peer" | null; // разговор завершён (кем) — live, показываем оценку
+  endedAtLoad: boolean; // диалог уже был завершён на момент открытия → не открывать (редирект)
   connect: (peer: string, myId: string) => () => void;
   send: (peer: string, text: string, reply?: ReplyRef) => void;
   sendMedia: (peer: string, media: OutgoingMedia) => void;
@@ -221,10 +222,11 @@ export const useChat = create<ChatState>()(
         peerTyping: false,
         peerRecording: false,
         ended: null,
+        endedAtLoad: false,
 
         connect: (peer, myId) => {
           active?.leave();
-          set({ peerOnline: false, peerTyping: false, peerRecording: false, ended: null });
+          set({ peerOnline: false, peerTyping: false, peerRecording: false, ended: null, endedAtLoad: false });
           if (!supabaseConfigured || !myId) {
             active = null;
             return () => {};
@@ -318,8 +320,9 @@ export const useChat = create<ChatState>()(
             if (hist.length > 0) {
               set((s) => ({ byPeer: { ...s.byPeer, [peer]: mergeHistory(s.byPeer[peer] ?? [], hist) } }));
             }
-            // Завершение из БД (переживает reload, доходит до офлайн-собеседника).
-            if (convEnded && get().ended === null) set({ ended: "peer" });
+            // Диалог уже завершён (в БД) → не открываем его повторно: редирект на главную
+            // (в отличие от live-завершения, которое показывает оценку). См. chat/[id]/page.tsx.
+            if (convEnded) set({ endedAtLoad: true });
             // Резолв медиа (история + локально сохранённые stale) + read-квитанции.
             await resolveMediaFor(peer);
             await markRead(peer, t).catch(() => {});
