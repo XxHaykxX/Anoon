@@ -14,7 +14,7 @@ export function MatchSetup({ onStart, searching }: { onStart: () => void; search
   return (
     <div className="mx-auto w-full max-w-sm space-y-6 px-1 pb-8">
       {/* Пол */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="space-y-5">
         <Field label="Ваш пол">
           <Segmented
             groupId="self-gender"
@@ -43,23 +43,21 @@ export function MatchSetup({ onStart, searching }: { onStart: () => void; search
         </Field>
       </div>
 
-      {/* Возраст */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Ваш возраст" hint="обязательно">
-          <div className="space-y-2">
-            {AGE_BANDS.map((b) => (
-              <AgeRow key={b.value} label={b.label} active={age === b.value} onClick={() => setAge(b.value)} />
-            ))}
-          </div>
-        </Field>
-        <Field label="Возраст собеседника" hint="можно несколько">
-          <div className="space-y-2">
-            {AGE_BANDS.map((b) => (
-              <AgeRow key={b.value} label={b.label} active={wantAges.includes(b.value)} multi onClick={() => toggleWantAge(b.value)} />
-            ))}
-          </div>
-        </Field>
-      </div>
+      {/* Возраст — компактная сетка бэндов (2 колонки, короткие подписи) */}
+      <Field label="Ваш возраст" hint="обязательно">
+        <div className="grid grid-cols-2 gap-2">
+          {AGE_BANDS.map((b) => (
+            <AgeRow key={b.value} label={b.label} active={age === b.value} onClick={() => setAge(b.value)} />
+          ))}
+        </div>
+      </Field>
+      <Field label="Возраст собеседника" hint="можно несколько">
+        <div className="grid grid-cols-2 gap-2">
+          {AGE_BANDS.map((b) => (
+            <AgeRow key={b.value} label={b.label} active={wantAges.includes(b.value)} multi onClick={() => toggleWantAge(b.value)} />
+          ))}
+        </div>
+      </Field>
 
       {/* Старт */}
       <motion.button
