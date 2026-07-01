@@ -1,11 +1,12 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Flag, MoreVertical, ShieldBan } from "lucide-react";
+import { Flag, LogOut, MoreVertical, ShieldBan } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { ReportDialog } from "@/components/report-dialog";
+import { useChat } from "@/store/chat";
 import { useModeration } from "@/store/moderation";
 
 // Меню чата (три точки в хедере): «Пожаловаться» (диалог с причиной) и
@@ -13,6 +14,7 @@ import { useModeration } from "@/store/moderation";
 export function ChatMenu({ peer }: { peer: string }) {
   const router = useRouter();
   const blockPeer = useModeration((s) => s.blockPeer);
+  const endChat = useChat((s) => s.endChat);
   const [open, setOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -63,6 +65,16 @@ export function ChatMenu({ peer }: { peer: string }) {
             transition={{ duration: 0.15, ease: "easeOut" }}
             className="absolute right-0 top-12 z-20 w-56 overflow-hidden rounded-xl border border-border bg-surface-1 py-1 shadow-2xl"
           >
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                endChat();
+              }}
+              className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left text-sm text-fg transition hover:bg-surface-2"
+            >
+              <LogOut size={16} /> Завершить разговор
+            </button>
             <button
               role="menuitem"
               onClick={() => {

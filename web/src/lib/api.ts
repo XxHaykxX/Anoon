@@ -41,6 +41,11 @@ export async function sendReport(peer: string, reason: string, comment: string |
   if (!res.ok) throw new Error(`report failed: ${res.status}`);
 }
 
+// Оценка собеседника после чата (1..5). Best-effort.
+export async function sendRating(peer: string, rating: number, accessToken: string): Promise<void> {
+  await post("/rate", { peer, rating }, accessToken).catch(() => {});
+}
+
 // --- Сообщения (persist + история + статусы) ---
 
 export type HistoryMsg = {

@@ -10,6 +10,9 @@ import { ChatComposer } from "@/components/chat-composer";
 import { ChatMenu } from "@/components/chat-menu";
 import { MediaLightbox, type LightboxItem } from "@/components/media-lightbox";
 import { MessageRow } from "@/components/message-row";
+import { RatingModal } from "@/components/rating-modal";
+import { sendRating } from "@/lib/api";
+import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useChat, type Msg, type ReplyRef } from "@/store/chat";
 import { useModeration } from "@/store/moderation";
 import { useSession } from "@/store/session";
@@ -19,7 +22,7 @@ export default function ChatPage() {
   const params = useParams<{ id: string }>();
   const peer = params.id;
   const router = useRouter();
-  const { byPeer, seed, connect, deleteMsg, peerOnline, peerTyping, peerRecording } = useChat();
+  const { byPeer, seed, connect, deleteMsg, peerOnline, peerTyping, peerRecording, ended, clearEnded } = useChat();
   const myPublicId = useSession((s) => s.publicId);
   const blocked = useModeration((s) => s.isBlocked(peer));
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -56,6 +59,17 @@ export default function ChatPage() {
   const openMedia = (item: LightboxItem) => {
     const i = mediaItems.findIndex((x) => x.url === item.url);
     setLightboxIndex(i >= 0 ? i : null);
+  };
+
+  // Оценить собеседника (опц.) и выйти на экран поиска.
+  const rateAndLeave = async (rating?: number) => {
+    if (rating != null && supabaseConfigured) {
+      const { data } = await supabase.auth.getSession();
+      const t = data.session?.access_token;
+      if (t) await sendRating(peer, rating, t);
+    }
+    clearEnded();
+    router.replace("/");
   };
 
   useEffect(() => {
@@ -120,6 +134,8 @@ export default function ChatPage() {
         onClose={() => setLightboxIndex(null)}
         onIndex={setLightboxIndex}
       />
+
+      {ended ? <RatingModal by={ended} onRate={(r) => rateAndLeave(r)} onSkip={() => rateAndLeave()} /> : null}
     </div>
   );
 }

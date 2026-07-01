@@ -36,9 +36,11 @@ function isBlocked(m: MediaAssetRow, escalatedIds: Set<string>) {
 export function MediaGallery({
   media,
   ownerLabel,
+  ownerBadge,
 }: {
   media: MediaAssetRow[];
   ownerLabel: string;
+  ownerBadge?: string; // #ID владельца — показываем на каждом тайле
 }) {
   // blur-by-default: показанные тайлы — по клику «Показать», индивидуально.
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -105,6 +107,13 @@ export function MediaGallery({
               transition={{ duration: 0.2, ease: "easeOut", delay: i * 0.03 }}
               className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-border bg-surface-2"
             >
+              {/* #ID владельца — всегда поверх тайла */}
+              {ownerBadge ? (
+                <span className="pointer-events-none absolute left-1.5 top-1.5 z-20 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                  {ownerBadge}
+                </span>
+              ) : null}
+
               {/* Плашка: медиа удалено/истекло */}
               {deleted ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 p-3 text-center text-fg-muted">

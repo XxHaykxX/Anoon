@@ -215,7 +215,7 @@ export function ChatComposer({
         />
 
         {recording ? (
-          <div className="flex flex-1 items-center gap-3 rounded-full border border-danger/40 bg-surface-1 px-4 py-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-full border border-danger/40 bg-surface-1 px-4 py-2.5">
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
             <span className="font-mono text-sm tabular-nums text-fg">
               {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, "0")}
@@ -243,7 +243,7 @@ export function ChatComposer({
               }}
               placeholder="Сообщение…"
               aria-label="Текст сообщения"
-              className="min-h-11 flex-1 rounded-full border border-border bg-surface-1 px-4 py-2.5 text-sm outline-none focus:border-accent"
+              className="min-h-11 min-w-0 flex-1 rounded-full border border-border bg-surface-1 px-4 py-2.5 text-sm outline-none focus:border-accent"
             />
           </>
         )}

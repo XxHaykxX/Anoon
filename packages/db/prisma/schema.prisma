@@ -100,6 +100,8 @@ model Profile {
   online      Boolean   @default(false)
   lastSeen    DateTime?
   reportCount Int       @default(0) // денормализация для сортировки/списка
+  ratingSum   Int       @default(0) // сумма оценок собеседников (пост-чат)
+  ratingCount Int       @default(0) // число оценок → avg = sum/count (trust-сигнал)
   createdAt   DateTime  @default(now())
 
   reportsMade     Report[]      @relation("Reporter")

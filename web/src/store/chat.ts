@@ -42,11 +42,14 @@ type ChatState = {
   peerOnline: boolean;
   peerTyping: boolean;
   peerRecording: boolean;
+  ended: "me" | "peer" | null; // разговор завершён (кем)
   connect: (peer: string, myId: string) => () => void;
   send: (peer: string, text: string, reply?: ReplyRef) => void;
   sendMedia: (peer: string, media: OutgoingMedia) => void;
   sendVoice: (peer: string, url: string, durationSec: number) => void;
   deleteMsg: (peer: string, id: string) => void;
+  endChat: () => void;
+  clearEnded: () => void;
   setTyping: (typing: boolean) => void;
   setRecording: (recording: boolean) => void;
   seed: (peer: string) => void;
@@ -152,10 +155,11 @@ export const useChat = create<ChatState>()(
         peerOnline: false,
         peerTyping: false,
         peerRecording: false,
+        ended: null,
 
         connect: (peer, myId) => {
           active?.leave();
-          set({ peerOnline: false, peerTyping: false, peerRecording: false });
+          set({ peerOnline: false, peerTyping: false, peerRecording: false, ended: null });
           if (!supabaseConfigured || !myId) {
             active = null;
             return () => {};
@@ -230,6 +234,7 @@ export const useChat = create<ChatState>()(
               set((s) => ({
                 byPeer: { ...s.byPeer, [peer]: (s.byPeer[peer] ?? []).filter((m) => m.id !== mid) },
               })),
+            onEnd: () => set({ ended: "peer" }),
           });
           active = handle;
 
@@ -300,6 +305,12 @@ export const useChat = create<ChatState>()(
         sendVoice: (peer, url, durationSec) => {
           sendUpload(peer, "voice", url, { durationSec });
         },
+
+        endChat: () => {
+          active?.sendEnd();
+          set({ ended: "me" });
+        },
+        clearEnded: () => set({ ended: null }),
 
         setTyping: (typing) => active?.sendTyping(typing),
         setRecording: (recording) => active?.sendRecording(recording),

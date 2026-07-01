@@ -2,7 +2,7 @@
 
 import { Refine } from "@refinedev/core";
 import routerProvider from "@refinedev/nextjs-router/app";
-import { LayoutDashboard, Flag, Users, Ban } from "lucide-react";
+import { LayoutDashboard, Flag, FolderOpen, Users, Ban } from "lucide-react";
 
 import { apiAuthProvider } from "./api-auth-provider";
 import { apiDataProvider } from "./api-data-provider";
@@ -24,6 +24,7 @@ export function RefineProviders({ children }: { children: React.ReactNode }) {
         { name: "reports", list: "/reports", meta: { label: "Жалобы", icon: <Flag size={18} /> } },
         { name: "users", list: "/users", meta: { label: "Пользователи", icon: <Users size={18} /> } },
         { name: "bans", list: "/bans", meta: { label: "Баны", icon: <Ban size={18} /> } },
+        { name: "media", list: "/media", meta: { label: "Файлы", icon: <FolderOpen size={18} /> } },
         { name: "overview", list: "/overview", meta: { label: "Обзор", icon: <LayoutDashboard size={18} /> } },
       ]}
       options={{ syncWithLocation: true, disableTelemetry: true, warnWhenUnsavedChanges: true }}
