@@ -15,7 +15,13 @@ export async function POST(req: Request) {
   const admin = supabaseAdmin();
   const profileId = await myProfileId(admin, uid);
   if (!profileId) return Response.json({ error: "profile not found" }, { status: 404 });
-  const { error } = await admin.from("PushSubscription").upsert({ profileId, endpoint, p256dh, auth }, { onConflict: "endpoint" });
+
+  // supabase-js insert требует явный id (Prisma cuid-дефолт не создаётся в БД, см. баг #38).
+  // upsert по endpoint писал null id → NOT NULL violation → подписка не сохранялась.
+  const { data: existing } = await admin.from("PushSubscription").select("id").eq("endpoint", endpoint).maybeSingle();
+  const { error } = existing
+    ? await admin.from("PushSubscription").update({ profileId, p256dh, auth }).eq("endpoint", endpoint)
+    : await admin.from("PushSubscription").insert({ id: crypto.randomUUID(), profileId, endpoint, p256dh, auth });
   if (error) return Response.json({ error: error.message }, { status: 400 });
   return Response.json({ ok: true });
 }
