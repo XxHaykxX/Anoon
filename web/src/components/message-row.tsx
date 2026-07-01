@@ -1,12 +1,27 @@
 "use client";
 
-import { CornerUpLeft, MoreHorizontal, Trash2 } from "lucide-react";
+import { Check, CheckCheck, CornerUpLeft, MoreHorizontal, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { LightboxItem } from "@/components/media-lightbox";
 import { MessageBubble } from "@/components/message-bubble";
-import { type Msg } from "@/store/chat";
+import { type Msg, type MsgStatus } from "@/store/chat";
 import { cn } from "@/lib/utils";
+
+// Тики статуса своего сообщения: ✓ отправлено · ✓✓ доставлено (серые) · ✓✓ просмотрено (синие).
+function StatusTicks({ status }: { status?: MsgStatus }) {
+  const read = status === "read";
+  const label = read ? "Просмотрено" : status === "delivered" ? "Доставлено" : "Отправлено";
+  return (
+    <span
+      className={cn("mt-0.5 flex items-center gap-0.5 self-end pr-1", read ? "text-sky-400" : "text-fg-muted")}
+      aria-label={label}
+      title={label}
+    >
+      {status === "sent" ? <Check size={14} /> : <CheckCheck size={14} />}
+    </span>
+  );
+}
 
 // Строка сообщения: цитата-ответ (если есть) + пузырь + меню действий (ответить/удалить).
 export function MessageRow({
@@ -48,6 +63,7 @@ export function MessageRow({
         <div className={cn("flex", m.mine ? "justify-end" : "justify-start")}>
           <MessageBubble m={m} onOpenMedia={onOpenMedia} />
         </div>
+        {m.mine ? <StatusTicks status={m.status} /> : null}
       </div>
 
       <div className="relative shrink-0">

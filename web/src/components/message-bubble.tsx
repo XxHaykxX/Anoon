@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CheckCheck, ImageOff, Loader2, Play } from "lucide-react";
+import { ImageOff, Loader2, Play } from "lucide-react";
 
 import type { LightboxItem } from "@/components/media-lightbox";
 import { VoiceBubble } from "@/components/voice-bubble";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 // Пузырь сообщения: текст / фото / видео / голос. Фото и видео открываются в лайтбоксе по тапу.
 export function MessageBubble({ m, onOpenMedia }: { m: Msg; onOpenMedia: (item: LightboxItem) => void }) {
   const base = cn(
-    "max-w-[78%] overflow-hidden text-sm",
+    "max-w-full overflow-hidden text-sm",
     m.mine ? "rounded-2xl rounded-br-md bg-accent text-accent-fg" : "rounded-2xl rounded-bl-md bg-surface-2 text-fg",
   );
 
@@ -61,22 +61,8 @@ export function MessageBubble({ m, onOpenMedia }: { m: Msg; onOpenMedia: (item: 
   }
 
   if (m.kind === "voice") {
-    return <VoiceBubble url={m.url} durationSec={m.durationSec} mine={m.mine} />;
+    return <VoiceBubble url={m.url} durationSec={m.durationSec} mine={m.mine} stale={m.stale} />;
   }
 
-  return (
-    <div className={cn(base, "px-3.5 py-2")}>
-      <span>{m.text}</span>
-      {m.mine ? <StatusTicks status={m.status} /> : null}
-    </div>
-  );
-}
-
-// Тики статуса для своих сообщений: ✓ отправлено, ✓✓ прочитано.
-function StatusTicks({ status }: { status?: Msg["status"] }) {
-  return (
-    <span className="ml-1.5 inline-flex translate-y-0.5 align-middle text-accent-fg/70" aria-label={status === "read" ? "Прочитано" : "Отправлено"}>
-      {status === "read" ? <CheckCheck size={13} /> : <Check size={13} />}
-    </span>
-  );
+  return <div className={cn(base, "px-3.5 py-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]")}>{m.text}</div>;
 }

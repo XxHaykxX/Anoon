@@ -9,7 +9,7 @@ import { resolveMediaUrl, uploadMedia } from "@/lib/storage";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 
 export type MsgKind = "text" | "image" | "video" | "voice";
-export type MsgStatus = "sent" | "read"; // тик статуса для своих сообщений
+export type MsgStatus = "sent" | "delivered" | "read"; // тики: ✓ / ✓✓ / ✓✓ синие
 export type Msg = {
   id: string;
   mine: boolean;
@@ -41,12 +41,14 @@ type ChatState = {
   byPeer: Record<string, Msg[]>;
   peerOnline: boolean;
   peerTyping: boolean;
+  peerRecording: boolean;
   connect: (peer: string, myId: string) => () => void;
   send: (peer: string, text: string, reply?: ReplyRef) => void;
   sendMedia: (peer: string, media: OutgoingMedia) => void;
   sendVoice: (peer: string, url: string, durationSec: number) => void;
   deleteMsg: (peer: string, id: string) => void;
   setTyping: (typing: boolean) => void;
+  setRecording: (recording: boolean) => void;
   seed: (peer: string) => void;
 };
 
@@ -61,6 +63,16 @@ async function token(): Promise<string | null> {
   if (!supabaseConfigured) return null;
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token ?? null;
+}
+
+// Токен с коротким ретраем — сессия на мобиле может быть не готова в момент отправки.
+async function tokenReady(tries = 4): Promise<string | null> {
+  for (let i = 0; i < tries; i++) {
+    const t = await token();
+    if (t) return t;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return null;
 }
 
 // Persist текстового сообщения в БД (best-effort).
@@ -103,25 +115,35 @@ export const useChat = create<ChatState>()(
         );
       };
 
-      // Отправка медиа (image/video/voice): мгновенно локально, затем аплоад в Storage.
+      // Отправка медиа (image/video/voice): мгновенно локально + placeholder собеседнику,
+      // затем аплоад → broadcast с готовым signed URL (без лишнего roundtrip у получателя).
       const sendUpload = (peer: string, kind: "image" | "video" | "voice", localUrl: string, extra: Partial<Msg>) => {
         const mid = id();
-        const msg: Msg = { id: mid, mine: true, kind, url: localUrl, status: "sent", at: Date.now(), ...extra };
+        const at = Date.now();
+        const msg: Msg = { id: mid, mine: true, kind, url: localUrl, status: "sent", at, ...extra };
         pushLocal(peer, msg);
+        // Мгновенный placeholder — собеседник сразу видит «загрузка», а не пустоту.
+        tx({ id: mid, kind, mediaPending: true, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
+
         void (async () => {
-          const t = await token();
+          const t = await tokenReady();
           const blob = await fetch(localUrl).then((r) => r.blob()).catch(() => null);
-          if (t && blob) {
-            const up = await uploadMedia(blob, kind, blob.type || "application/octet-stream", t);
-            if (up) {
-              patch(peer, mid, { mediaPath: up.path });
-              tx({ id: mid, kind, mediaPath: up.path, w: extra.w, h: extra.h, durationSec: extra.durationSec, at: msg.at });
-              await persistMessage(peer, kind, undefined, t, up.mediaId).catch(() => {});
-              return;
-            }
+          if (!t || !blob) {
+            tx({ id: mid, kind, mediaFailed: true, at });
+            patch(peer, mid, { stale: true });
+            return;
           }
-          // Фолбэк: без Storage — метаданные (собеседник увидит после reload только если БД).
-          tx({ id: mid, kind, w: extra.w, h: extra.h, durationSec: extra.durationSec, at: msg.at });
+          const up = await uploadMedia(blob, kind, blob.type || "application/octet-stream", t);
+          if (!up) {
+            tx({ id: mid, kind, mediaFailed: true, at });
+            patch(peer, mid, { stale: true });
+            return;
+          }
+          patch(peer, mid, { mediaPath: up.path });
+          // Готовый signed URL сразу в broadcast — получатель показывает без доп. запроса.
+          const url = await resolveMediaUrl(up.path, t);
+          tx({ id: mid, kind, url: url ?? undefined, mediaPath: up.path, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
+          await persistMessage(peer, kind, undefined, t, up.mediaId).catch(() => {});
         })();
       };
 
@@ -129,21 +151,55 @@ export const useChat = create<ChatState>()(
         byPeer: {},
         peerOnline: false,
         peerTyping: false,
+        peerRecording: false,
 
         connect: (peer, myId) => {
           active?.leave();
-          set({ peerOnline: false, peerTyping: false });
+          set({ peerOnline: false, peerTyping: false, peerRecording: false });
           if (!supabaseConfigured || !myId) {
             active = null;
             return () => {};
           }
           const handle = joinChat(chatChannelName(myId, peer), myId, {
             onMessage: (p) => {
-              set((s) => ({ byPeer: { ...s.byPeer, [peer]: [...(s.byPeer[peer] ?? []), { ...p, mine: false } as Msg] } }));
+              // Upsert по id: placeholder (mediaPending) → финальные данные (url), не дублируем.
+              set((s) => {
+                const arr = s.byPeer[peer] ?? [];
+                const incoming: Msg = {
+                  id: p.id,
+                  mine: false,
+                  kind: p.kind,
+                  text: p.text,
+                  url: p.url,
+                  mediaPath: p.mediaPath,
+                  w: p.w,
+                  h: p.h,
+                  durationSec: p.durationSec,
+                  replyToId: p.replyToId,
+                  replyText: p.replyText,
+                  stale: p.mediaFailed ? true : undefined,
+                  at: p.at,
+                };
+                const idx = arr.findIndex((m) => m.id === p.id);
+                if (idx >= 0) {
+                  const prev = arr[idx];
+                  const next = [...arr];
+                  next[idx] = {
+                    ...prev,
+                    ...incoming,
+                    url: incoming.url ?? prev.url,
+                    mediaPath: incoming.mediaPath ?? prev.mediaPath,
+                    stale: p.mediaFailed ? true : prev.stale,
+                  };
+                  return { byPeer: { ...s.byPeer, [peer]: next } };
+                }
+                return { byPeer: { ...s.byPeer, [peer]: [...arr, incoming] } };
+              });
+              active?.sendDelivered();
               active?.sendRead();
               void markReadRemote(peer);
-              // Входящее медиа → резолвим signed URL.
-              if (p.mediaPath) {
+              // Фолбэк-резолв, если прямой url не пришёл, но есть путь.
+              if (!p.url && p.mediaPath) {
                 void (async () => {
                   const t = await token();
                   if (!t) return;
@@ -154,6 +210,15 @@ export const useChat = create<ChatState>()(
             },
             onPresence: (online) => set({ peerOnline: online }),
             onTyping: (t) => set({ peerTyping: t }),
+            onRecording: (r) => set({ peerRecording: r }),
+            onDelivered: () =>
+              set((s) => ({
+                byPeer: {
+                  ...s.byPeer,
+                  // delivered не понижает уже прочитанные.
+                  [peer]: (s.byPeer[peer] ?? []).map((m) => (m.mine && m.status !== "read" ? { ...m, status: "delivered" } : m)),
+                },
+              })),
             onRead: () =>
               set((s) => ({
                 byPeer: {
@@ -237,6 +302,7 @@ export const useChat = create<ChatState>()(
         },
 
         setTyping: (typing) => active?.sendTyping(typing),
+        setRecording: (recording) => active?.sendRecording(recording),
       };
     },
     {

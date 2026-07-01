@@ -10,8 +10,10 @@ export type WirePayload = {
   id: string;
   kind: "text" | "image" | "video" | "voice";
   text?: string;
-  url?: string;
-  mediaPath?: string; // путь в Supabase Storage (собеседник резолвит в signed URL)
+  url?: string; // прямой signed download URL (отправитель шлёт готовый — без roundtrip у получателя)
+  mediaPath?: string; // путь в Supabase Storage (для ре-резолва после reload)
+  mediaPending?: boolean; // медиа грузится (placeholder — показать «загрузка»)
+  mediaFailed?: boolean; // аплоад не удался (показать «недоступно»)
   w?: number;
   h?: number;
   durationSec?: number;
@@ -28,6 +30,8 @@ export function chatChannelName(a: string, b: string): string {
 export type ChatHandle = {
   sendMessage: (p: WirePayload) => void;
   sendTyping: (typing: boolean) => void;
+  sendRecording: (recording: boolean) => void; // «записывает голос…»
+  sendDelivered: () => void; // квитанция «доставлено»
   sendRead: () => void; // квитанция «прочитано» отправителю
   sendDelete: (id: string) => void; // удалить сообщение у собеседника
   leave: () => void;
@@ -40,6 +44,8 @@ export function joinChat(
     onMessage: (p: WirePayload) => void;
     onPresence?: (online: boolean) => void;
     onTyping?: (t: boolean) => void;
+    onRecording?: (r: boolean) => void; // собеседник записывает голос
+    onDelivered?: () => void; // мои сообщения доставлены
     onRead?: () => void; // собеседник прочитал мои сообщения
     onDelete?: (id: string) => void; // собеседник удалил своё сообщение
   },
@@ -51,6 +57,8 @@ export function joinChat(
   channel
     .on("broadcast", { event: "msg" }, ({ payload }) => ev.onMessage(payload as WirePayload))
     .on("broadcast", { event: "typing" }, ({ payload }) => ev.onTyping?.(Boolean((payload as { typing?: boolean })?.typing)))
+    .on("broadcast", { event: "recording" }, ({ payload }) => ev.onRecording?.(Boolean((payload as { recording?: boolean })?.recording)))
+    .on("broadcast", { event: "delivered" }, () => ev.onDelivered?.())
     .on("broadcast", { event: "read" }, () => ev.onRead?.())
     .on("broadcast", { event: "delete" }, ({ payload }) => ev.onDelete?.(String((payload as { id?: string })?.id ?? "")))
     .on("presence", { event: "sync" }, () => {
@@ -65,6 +73,8 @@ export function joinChat(
   return {
     sendMessage: (p) => void channel.send({ type: "broadcast", event: "msg", payload: p }),
     sendTyping: (typing) => void channel.send({ type: "broadcast", event: "typing", payload: { typing } }),
+    sendRecording: (recording) => void channel.send({ type: "broadcast", event: "recording", payload: { recording } }),
+    sendDelivered: () => void channel.send({ type: "broadcast", event: "delivered", payload: {} }),
     sendRead: () => void channel.send({ type: "broadcast", event: "read", payload: {} }),
     sendDelete: (id) => void channel.send({ type: "broadcast", event: "delete", payload: { id } }),
     leave: () => void supabase.removeChannel(channel),

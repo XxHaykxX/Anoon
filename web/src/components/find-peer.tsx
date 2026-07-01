@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { InstallPwa } from "@/components/install-pwa";
 import { MatchSetup } from "@/components/match-setup";
 import { PushToggle } from "@/components/push-toggle";
+import { SearchingPulse } from "@/components/searching-pulse";
 import { findMatch } from "@/lib/realtime";
 import { supabaseConfigured } from "@/lib/supabase";
 import { useMounted } from "@/lib/use-mounted";
@@ -37,6 +38,12 @@ export function FindPeer() {
     } else {
       setTimeout(() => router.push(`/chat/p${Math.floor(Math.random() * 9000) + 1000}`), 900);
     }
+  };
+
+  const cancelSearch = () => {
+    matchRef.current?.cancel();
+    matchRef.current = null;
+    setSearching(false);
   };
 
   const profileCard = (
@@ -85,7 +92,7 @@ export function FindPeer() {
       </header>
 
       <div className="relative flex-1 overflow-y-auto px-5 pt-2">
-        <MatchSetup onStart={find} searching={searching} />
+        {searching ? <SearchingPulse onCancel={cancelSearch} /> : <MatchSetup onStart={find} searching={searching} />}
       </div>
     </div>
   );

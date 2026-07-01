@@ -38,7 +38,7 @@ export function ChatComposer({
   reply?: ReplyRef | null;
   onClearReply?: () => void;
 }) {
-  const { send, sendMedia, sendVoice, setTyping } = useChat();
+  const { send, sendMedia, sendVoice, setTyping, setRecording } = useChat();
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
@@ -113,10 +113,16 @@ export function ChatComposer({
 
   const startRec = async () => {
     await rec.start();
+    setRecording(true); // собеседник видит «записывает голос…»
   };
   const finishRec = async () => {
+    setRecording(false);
     const res = await rec.stop();
     if (res) sendVoice(peer, res.url, res.durationSec);
+  };
+  const cancelRec = () => {
+    setRecording(false);
+    rec.cancel();
   };
 
   const recording = rec.status === "recording";
@@ -255,7 +261,7 @@ export function ChatComposer({
         ) : recording ? (
           <>
             <button
-              onClick={rec.cancel}
+              onClick={cancelRec}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-secondary hover:bg-surface-2"
               aria-label="Отменить запись"
             >

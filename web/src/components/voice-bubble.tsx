@@ -1,6 +1,6 @@
 "use client";
 
-import { Pause, Play } from "lucide-react";
+import { Loader2, MicOff, Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -36,7 +36,7 @@ async function decodePeaks(url: string, buckets: number): Promise<number[] | nul
 }
 
 // Голосовое: реальное воспроизведение blob + waveform по реальному аудио + seek по клику.
-export function VoiceBubble({ url, durationSec, mine }: { url?: string; durationSec?: number; mine: boolean }) {
+export function VoiceBubble({ url, durationSec, mine, stale }: { url?: string; durationSec?: number; mine: boolean; stale?: boolean }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const barsRef = useRef<HTMLButtonElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -94,6 +94,30 @@ export function VoiceBubble({ url, durationSec, mine }: { url?: string; duration
 
   const dur = durationSec ?? 0;
   const activeBar = progress * BAR_COUNT;
+
+  // Нет url: грузится (спиннер) или не удалось (stale).
+  if (!url) {
+    return (
+      <div
+        className={cn(
+          "flex max-w-[78%] items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm text-fg-muted",
+          mine ? "rounded-br-md bg-accent/60 text-accent-fg/80" : "rounded-bl-md bg-surface-2",
+        )}
+      >
+        {stale ? (
+          <>
+            <MicOff size={16} />
+            <span className="text-xs">Голос недоступен</span>
+          </>
+        ) : (
+          <>
+            <Loader2 size={16} className="animate-spin" />
+            <span className="text-xs">Загрузка…</span>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

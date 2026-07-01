@@ -23,15 +23,20 @@ export async function POST(req: Request) {
   const uid = await getUid(req);
   if (!uid) return unauthorized();
   const body = (await req.json().catch(() => ({}))) as { kind?: unknown; mime?: unknown };
-  const kind = KIND_MAP[typeof body.kind === "string" ? body.kind : ""] ?? "";
-  const mime = typeof body.mime === "string" ? body.mime : "application/octet-stream";
+  const webKind = typeof body.kind === "string" ? body.kind : "";
+  const kind = KIND_MAP[webKind] ?? "";
+  // Чистим mime от codecs-параметров (iOS Safari: "audio/mp4;codecs=..." → "audio/mp4").
+  const rawMime = typeof body.mime === "string" ? body.mime : "application/octet-stream";
+  const mime = rawMime.split(";")[0].trim().toLowerCase();
   if (!kind) return Response.json({ error: "kind required" }, { status: 400 });
 
   const admin = supabaseAdmin();
   const profileId = await myProfileId(admin, uid);
   if (!profileId) return Response.json({ error: "profile not found" }, { status: 404 });
 
-  const ext = EXT[mime] ?? "bin";
+  // Ext по mime; фолбэк по типу медиа (голос iOS может дать неожиданный mime).
+  const KIND_EXT: Record<string, string> = { image: "jpg", video: "mp4", audio: "webm" };
+  const ext = EXT[mime] ?? KIND_EXT[kind] ?? "bin";
   const path = `${profileId}/${crypto.randomUUID()}.${ext}`;
 
   // MediaAsset (ephemeral, TTL 7 дней).

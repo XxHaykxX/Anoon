@@ -19,7 +19,7 @@ export default function ChatPage() {
   const params = useParams<{ id: string }>();
   const peer = params.id;
   const router = useRouter();
-  const { byPeer, seed, connect, deleteMsg, peerOnline, peerTyping } = useChat();
+  const { byPeer, seed, connect, deleteMsg, peerOnline, peerTyping, peerRecording } = useChat();
   const myPublicId = useSession((s) => s.publicId);
   const blocked = useModeration((s) => s.isBlocked(peer));
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -73,7 +73,13 @@ export default function ChatPage() {
         <div>
           <div className="text-sm font-semibold">Собеседник</div>
           <div className="font-mono text-xs text-fg-muted" aria-live="polite">
-            {peerTyping ? <span className="text-accent">печатает…</span> : `#${peer}`}
+            {peerRecording ? (
+              <span className="text-accent">записывает голос…</span>
+            ) : peerTyping ? (
+              <span className="text-accent">печатает…</span>
+            ) : (
+              `#${peer}`
+            )}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
