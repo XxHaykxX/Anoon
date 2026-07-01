@@ -1,17 +1,18 @@
 "use client";
 
 import { Glass } from "@samasante/liquid-glass";
-import { motion } from "framer-motion";
-import { Search, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { InstallPwa } from "@/components/install-pwa";
+import { MatchSetup } from "@/components/match-setup";
 import { PushToggle } from "@/components/push-toggle";
 import { findMatch } from "@/lib/realtime";
 import { supabaseConfigured } from "@/lib/supabase";
 import { useMounted } from "@/lib/use-mounted";
+import { useMatchPrefs } from "@/store/match-prefs";
 import { useSession } from "@/store/session";
 
 export function FindPeer() {
@@ -24,11 +25,15 @@ export function FindPeer() {
   const matchRef = useRef<{ cancel: () => void } | null>(null);
   useEffect(() => () => matchRef.current?.cancel(), []);
 
+  const prefs = useMatchPrefs();
+
   const find = () => {
+    if (!prefs.ready()) return;
     setSearching(true);
-    // Реальный матчинг через Supabase Realtime lobby-presence; фолбэк — мок.
+    const criteria = { gender: prefs.gender, age: prefs.age, wantGender: prefs.wantGender, wantAges: prefs.wantAges };
+    // Реальный матчинг через Supabase Realtime lobby-presence с фильтрами; фолбэк — мок.
     if (supabaseConfigured && publicId) {
-      matchRef.current = findMatch(publicId, (peer) => router.push(`/chat/${peer}`));
+      matchRef.current = findMatch(publicId, criteria, (peer) => router.push(`/chat/${peer}`));
     } else {
       setTimeout(() => router.push(`/chat/p${Math.floor(Math.random() * 9000) + 1000}`), 900);
     }
@@ -79,25 +84,8 @@ export function FindPeer() {
         </div>
       </header>
 
-      <div className="relative flex flex-1 flex-col items-center justify-center px-6 text-center">
-        <motion.button
-          onClick={find}
-          disabled={searching}
-          whileTap={{ scale: 0.96 }}
-          className="flex h-44 w-44 flex-col items-center justify-center gap-3 rounded-full bg-accent text-accent-fg shadow-2xl disabled:opacity-70"
-        >
-          {searching ? (
-            <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
-              <Search size={40} />
-            </motion.span>
-          ) : (
-            <Search size={40} />
-          )}
-          <span className="text-lg font-semibold">{searching ? "Ищем…" : "Найти"}</span>
-        </motion.button>
-        <p className="mt-6 max-w-xs text-sm text-fg-secondary">
-          Нажми — подберём случайного собеседника онлайн. Общение анонимное.
-        </p>
+      <div className="relative flex-1 overflow-y-auto px-5 pt-2">
+        <MatchSetup onStart={find} searching={searching} />
       </div>
     </div>
   );
