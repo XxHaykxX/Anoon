@@ -15,6 +15,7 @@ export function useVoiceRecorder() {
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const startedAtRef = useRef(0);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const resolveRef = useRef<((v: RecordedVoice | null) => void) | null>(null);
@@ -24,8 +25,40 @@ export function useVoiceRecorder() {
     tickRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    void audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
     recRef.current = null;
     chunksRef.current = [];
+  }, []);
+
+  // Нормализация громкости в реальном времени: компрессор (выравнивает динамику) + makeup-gain.
+  // Выход остаётся opus/webm (MediaRecorder на обработанном стриме) — без пост-транскода,
+  // размер маленький. Если Web Audio недоступен — возвращаем сырой стрим (fallback).
+  const normalizedStream = useCallback((raw: MediaStream): MediaStream => {
+    const Ctx = typeof window !== "undefined" ? (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) : undefined;
+    if (!Ctx || typeof (Ctx.prototype as AudioContext).createMediaStreamDestination !== "function") return raw;
+    try {
+      const ctx = new Ctx();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(raw);
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -24;
+      comp.knee.value = 30;
+      comp.ratio.value = 12;
+      comp.attack.value = 0.003;
+      comp.release.value = 0.25;
+      const makeup = ctx.createGain();
+      makeup.gain.value = 1.8; // компенсация после компрессии
+      const dest = ctx.createMediaStreamDestination();
+      source.connect(comp);
+      comp.connect(makeup);
+      makeup.connect(dest);
+      return dest.stream;
+    } catch {
+      void audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+      return raw;
+    }
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
@@ -36,10 +69,12 @@ export function useVoiceRecorder() {
       return false;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      streamRef.current = stream; // сырой стрим — для остановки треков в cleanup
       chunksRef.current = [];
-      const rec = new MediaRecorder(stream);
+      const rec = new MediaRecorder(normalizedStream(stream));
       rec.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
@@ -65,7 +100,7 @@ export function useVoiceRecorder() {
       cleanup();
       return false;
     }
-  }, [cleanup]);
+  }, [cleanup, normalizedStream]);
 
   // Стоп записи → Promise с результатом (или null если ничего не записано / отмена).
   const stop = useCallback((): Promise<RecordedVoice | null> => {
