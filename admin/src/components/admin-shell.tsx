@@ -2,7 +2,7 @@
 
 import { useGetIdentity, useLogout } from "@refinedev/core";
 import { motion } from "framer-motion";
-import { Ban, Flag, LayoutDashboard, LogOut, ScrollText, Search, Users } from "lucide-react";
+import { Ban, Flag, FolderOpen, LayoutDashboard, LogOut, ScrollText, Search, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -14,6 +14,7 @@ const NAV = [
   { href: "/reports", label: "Жалобы", icon: Flag },
   { href: "/users", label: "Пользователи", icon: Users },
   { href: "/bans", label: "Баны", icon: Ban },
+  { href: "/media", label: "Файлы", icon: FolderOpen },
   { href: "/audit", label: "Журнал", icon: ScrollText },
 ];
 
