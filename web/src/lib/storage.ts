@@ -78,6 +78,65 @@ export async function uploadMedia(
   return null;
 }
 
+// Крошечная превью (data URL ~1-2КБ) для мгновенного показа у собеседника (Telegram-стиль):
+// показываем размытой сразу, пока грузится полное фото.
+export async function makeThumbnail(blob: Blob): Promise<string | null> {
+  try {
+    if (typeof createImageBitmap === "undefined" || typeof document === "undefined") return null;
+    const bmp = await createImageBitmap(blob);
+    const scale = Math.min(1, 32 / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    return c.toDataURL("image/jpeg", 0.5);
+  } catch {
+    return null;
+  }
+}
+
+// Превью-кадр (poster) из видео — мгновенный размытый показ, пока видео стримится.
+export async function makeVideoThumbnail(blob: Blob): Promise<string | null> {
+  try {
+    if (typeof document === "undefined") return null;
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "metadata";
+    v.src = url;
+    await new Promise<void>((res, rej) => {
+      v.onloadeddata = () => res();
+      v.onerror = () => rej(new Error("video load"));
+    });
+    await new Promise<void>((res) => {
+      v.onseeked = () => res();
+      v.currentTime = Math.min(0.1, (v.duration || 1) / 2);
+      setTimeout(res, 500); // фолбэк, если onseeked не сработал
+    });
+    const vw = v.videoWidth || 32;
+    const vh = v.videoHeight || 32;
+    const scale = Math.min(1, 32 / Math.max(vw, vh));
+    const w = Math.max(1, Math.round(vw * scale));
+    const h = Math.max(1, Math.round(vh * scale));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    URL.revokeObjectURL(url);
+    if (!ctx) return null;
+    ctx.drawImage(v, 0, 0, w, h);
+    return c.toDataURL("image/jpeg", 0.5);
+  } catch {
+    return null;
+  }
+}
+
 // Получить временный signed URL для показа медиа по пути.
 export async function resolveMediaUrl(path: string, accessToken: string): Promise<string | null> {
   const res = await fetch(`${BASE}/media/download`, {

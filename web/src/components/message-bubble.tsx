@@ -47,8 +47,19 @@ export function MessageBubble({ m, onOpenMedia, onView }: { m: Msg; onOpenMedia:
     );
   }
 
-  // Медиа без готового url: stale → недоступно; иначе (есть mediaPath) → резолвим signed URL.
+  // Медиа без готового url: показываем мгновенную размытую превью (Telegram-стиль), пока грузится.
   if ((m.kind === "image" || m.kind === "video") && !m.url) {
+    if (!m.stale && m.thumb) {
+      return (
+        <div className={cn(base, "relative block")}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={m.thumb} alt="" className="block max-h-72 w-56 scale-110 object-cover blur-md" />
+          <span className="absolute inset-0 flex items-center justify-center bg-black/10">
+            <Loader2 size={22} className="animate-spin text-white/90" />
+          </span>
+        </div>
+      );
+    }
     return (
       <div className={cn(base, "flex items-center gap-2 px-3.5 py-3 text-fg-muted")}>
         {m.stale ? (
@@ -78,7 +89,7 @@ export function MessageBubble({ m, onOpenMedia, onView }: { m: Msg; onOpenMedia:
   if (m.kind === "video" && m.url) {
     return (
       <button onClick={() => onOpenMedia({ kind: "video", url: m.url! })} className={cn(base, "relative block")} aria-label="Открыть видео">
-        <video src={m.url} muted playsInline preload="metadata" className="block max-h-72 w-56 object-cover" />
+        <video src={m.url} poster={m.thumb} muted playsInline preload="metadata" className="block max-h-72 w-56 object-cover" />
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white">
             <Play size={24} fill="currentColor" />

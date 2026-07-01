@@ -5,7 +5,7 @@ import { persist } from "zustand/middleware";
 
 import { endConversation, fetchHistory, type HistoryMsg, markRead, persistMessage } from "@/lib/api";
 import { chatChannelName, joinChat, type ChatHandle, type WirePayload } from "@/lib/realtime";
-import { compressImage, resolveMediaUrl, uploadMedia } from "@/lib/storage";
+import { compressImage, makeThumbnail, makeVideoThumbnail, resolveMediaUrl, uploadMedia } from "@/lib/storage";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useSession } from "@/store/session";
 
@@ -27,6 +27,7 @@ export type Msg = {
   replyText?: string; // краткая цитата оригинала
   once?: boolean; // одноразовое медиа (view-once)
   viewed?: boolean; // одноразовое просмотрено
+  thumb?: string; // крошечная размытая превью для мгновенного показа (Telegram-стиль)
   at: number;
 };
 
@@ -202,6 +203,12 @@ export const useChat = create<ChatState>()(
             patch(peer, mid, { stale: true });
             return;
           }
+          // Мгновенная размытая превью собеседнику (пока грузится полное медиа) — Telegram-стиль.
+          const thumb = kind === "image" ? await makeThumbnail(raw) : kind === "video" ? await makeVideoThumbnail(raw) : null;
+          if (thumb) {
+            tx({ id: mid, kind, mediaPending: true, thumb, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
+            patch(peer, mid, { thumb });
+          }
           // Фото сжимаем/ресайзим перед загрузкой — быстрее вверх и вниз (собеседнику).
           const { blob, mime } = kind === "image" ? await compressImage(raw) : { blob: raw, mime: raw.type || "application/octet-stream" };
           const up = await uploadMedia(blob, kind, mime, t);
@@ -251,6 +258,7 @@ export const useChat = create<ChatState>()(
                   replyToId: p.replyToId,
                   replyText: p.replyText,
                   once: p.once,
+                  thumb: p.thumb,
                   stale: p.mediaFailed ? true : undefined,
                   at: p.at,
                 };
@@ -263,6 +271,7 @@ export const useChat = create<ChatState>()(
                     ...incoming,
                     url: incoming.url ?? prev.url,
                     mediaPath: incoming.mediaPath ?? prev.mediaPath,
+                    thumb: incoming.thumb ?? prev.thumb,
                     stale: p.mediaFailed ? true : prev.stale,
                   };
                   return { byPeer: { ...s.byPeer, [peer]: next } };

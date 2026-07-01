@@ -13,6 +13,7 @@ export type WirePayload = {
   url?: string; // прямой signed download URL (отправитель шлёт готовый — без roundtrip у получателя)
   mediaPath?: string; // путь в Supabase Storage (для ре-резолва после reload)
   mediaPending?: boolean; // медиа грузится (placeholder — показать «загрузка»)
+  thumb?: string; // крошечная превью (data URL) — мгновенный размытый показ у собеседника
   mediaFailed?: boolean; // аплоад не удался (показать «недоступно»)
   once?: boolean; // одноразовое медиа (view-once, Telegram-стиль)
   w?: number;
