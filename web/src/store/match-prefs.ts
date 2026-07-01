@@ -38,13 +38,14 @@ export const useMatchPrefs = create<MatchPrefsState>()(
       wantGender: "any",
       wantAges: [],
 
-      setGender: (g) => set({ gender: g }),
+      // Пол собеседника выбирается автоматически: мужчина ищет женщину и наоборот.
+      setGender: (g) => set({ gender: g, wantGender: g === "m" ? "f" : g === "f" ? "m" : "any" }),
       setAge: (a) => set({ age: a }),
       setWantGender: (g) => set({ wantGender: g }),
       toggleWantAge: (a) =>
         set((s) => ({ wantAges: s.wantAges.includes(a) ? s.wantAges.filter((x) => x !== a) : [...s.wantAges, a] })),
 
-      ready: () => get().age !== null,
+      ready: () => get().age !== null && get().gender !== "nobody", // нужен свой пол (для авто-подбора противоположного)
     }),
     {
       name: "anoon-match",

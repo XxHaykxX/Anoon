@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 // Экран фильтров подбора (пол+возраст свой/искомого). Дизайн anoon. Приложение 18+.
 export function MatchSetup({ onStart, searching }: { onStart: () => void; searching: boolean }) {
-  const { gender, age, wantGender, wantAges, setGender, setAge, setWantGender, toggleWantAge, ready } = useMatchPrefs();
+  const { gender, age, wantAges, setGender, setAge, toggleWantAge, ready } = useMatchPrefs();
 
   return (
     <div className="mx-auto w-full max-w-sm space-y-6 px-1 pb-8">
@@ -22,20 +22,6 @@ export function MatchSetup({ onStart, searching }: { onStart: () => void; search
             value={gender}
             onChange={setGender}
             options={[
-              { value: "nobody", label: "Некто" },
-              { value: "m", label: "М" },
-              { value: "f", label: "Ж" },
-            ]}
-          />
-        </Field>
-        <Field label="Пол собеседника">
-          <Segmented
-            groupId="peer-gender"
-            ariaLabel="Пол собеседника"
-            value={wantGender}
-            onChange={setWantGender}
-            options={[
-              { value: "any", label: "Не важно" },
               { value: "m", label: "М" },
               { value: "f", label: "Ж" },
             ]}
@@ -71,7 +57,7 @@ export function MatchSetup({ onStart, searching }: { onStart: () => void; search
       >
         {searching ? "Ищем собеседника…" : "Начать чат"}
       </motion.button>
-      {!ready() && <p className="text-center text-xs text-fg-muted">Выбери свой возраст, чтобы начать</p>}
+      {!ready() && <p className="text-center text-xs text-fg-muted">Выбери свой пол и возраст, чтобы начать</p>}
     </div>
   );
 }
