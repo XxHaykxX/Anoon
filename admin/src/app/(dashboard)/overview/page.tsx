@@ -4,7 +4,7 @@ import { useList } from "@refinedev/core";
 import { motion } from "framer-motion";
 import { Ban, Flag, TrendingUp, Users, Wifi } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import type { BanRow, ProfileRow, ReportRow } from "@/data/fixtures";
 import { useCanHover } from "@/lib/use-can-hover";
@@ -24,7 +24,7 @@ type StatDef = {
   label: string;
   value: number;
   icon: typeof Users;
-  sub?: string; // подпись под числом (напр. разбивка по полу)
+  sub?: ReactNode; // подпись под числом (напр. разбивка по полу)
   href?: string; // кликабельная карточка → переход
   tone?: "accent" | "success" | "danger";
 };
@@ -41,9 +41,10 @@ function StatCard({ stat, index, canHover }: { stat: StatDef; index: number; can
       </div>
       <p className="mt-2 text-2xl font-semibold tabular-nums">{stat.value.toLocaleString("ru-RU")}</p>
       {stat.sub && (
-        <p className="mt-1 flex items-center gap-1 text-xs text-fg-muted">
-          {stat.tone === "accent" && <TrendingUp size={12} className="text-success" />} {stat.sub}
-        </p>
+        <div className="mt-1.5 flex items-center gap-1 text-sm text-fg-muted">
+          {stat.tone === "accent" && <TrendingUp size={12} className="text-success" />}
+          {stat.sub}
+        </div>
       )}
     </>
   );
@@ -103,10 +104,22 @@ export default function OverviewPage() {
   const online = ov?.online ?? u.filter((x) => x.online).length;
   const reportsOpen = ov?.reportsOpen ?? r.filter((x) => x.status === "open").length;
   const bansActive = ov?.bansActive ?? b.filter((x) => x.state === "active").length;
-  const onlineSub = ov ? `👧 ${ov.onlineFemale} · 👦 ${ov.onlineMale}` : undefined;
+  // Разбивка онлайн по полу — крупнее, иконка + число (ж/м) прямо на карте «Онлайн сейчас».
+  const onlineSub = ov ? (
+    <span className="flex items-center gap-3">
+      <span className="flex items-center gap-1">
+        <span className="text-base leading-none">👧</span>
+        <b className="tabular-nums text-fg">{ov.onlineFemale}</b>
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="text-base leading-none">👦</span>
+        <b className="tabular-nums text-fg">{ov.onlineMale}</b>
+      </span>
+    </span>
+  ) : undefined;
 
   const stats: StatDef[] = [
-    { label: "Всего пользователей", value: total, icon: Users, tone: "accent" },
+    { label: "Всего пользователей", value: total, icon: Users, tone: "accent", href: "/users" },
     { label: "Онлайн сейчас", value: online, icon: Wifi, tone: "success", sub: onlineSub, href: "/online" },
     { label: "Жалоб открыто", value: reportsOpen, icon: Flag, tone: "danger", href: "/reports" },
     { label: "Активных банов", value: bansActive, icon: Ban, tone: "danger", href: "/bans" },
@@ -119,16 +132,6 @@ export default function OverviewPage() {
         {stats.map((s, i) => (
           <StatCard key={s.label} stat={s} index={i} canHover={canHover} />
         ))}
-      </div>
-
-      {/* Быстрые ссылки на онлайн по полу */}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Link href="/online?gender=female" className="rounded-lg border border-border bg-surface-1 px-4 py-2 text-sm transition hover:border-accent/40">
-          👧 Девочки онлайн{ov ? `: ${ov.onlineFemale}` : ""}
-        </Link>
-        <Link href="/online?gender=male" className="rounded-lg border border-border bg-surface-1 px-4 py-2 text-sm transition hover:border-accent/40">
-          👦 Мальчики онлайн{ov ? `: ${ov.onlineMale}` : ""}
-        </Link>
       </div>
     </div>
   );
