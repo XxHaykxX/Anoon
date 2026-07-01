@@ -65,6 +65,27 @@ export async function profileIdByPublic(admin: SupabaseClient, publicId: string)
   return (data as IdRow)?.id ?? null;
 }
 
+export type ActiveBan = { reason: string; expiresAt: string | null };
+
+// Активный бан профиля (или null). Ленивое истечение: просроченный временный бан
+// помечаем expired и считаем снятым (без крона).
+export async function activeBan(admin: SupabaseClient, profileId: string): Promise<ActiveBan | null> {
+  const { data } = await admin
+    .from("Ban")
+    .select("id,reason,expiresAt")
+    .eq("profileId", profileId)
+    .eq("state", "active")
+    .order("createdAt", { ascending: false })
+    .limit(1);
+  const ban = (data ?? [])[0] as { id: string; reason: string; expiresAt: string | null } | undefined;
+  if (!ban) return null;
+  if (ban.expiresAt && new Date(ban.expiresAt).getTime() <= Date.now()) {
+    await admin.from("Ban").update({ state: "expired" }).eq("id", ban.id);
+    return null;
+  }
+  return { reason: ban.reason, expiresAt: ban.expiresAt };
+}
+
 export async function findOrCreateConversation(admin: SupabaseClient, p1: string, p2: string): Promise<string | null> {
   const [a, b] = [p1, p2].sort();
   const { data: existing } = await admin.from("Conversation").select("id").eq("profileAId", a).eq("profileBId", b).maybeSingle();

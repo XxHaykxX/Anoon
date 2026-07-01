@@ -1,4 +1,5 @@
 import {
+  activeBan,
   findOrCreateConversation,
   getUid,
   KIND_MAP,
@@ -31,6 +32,10 @@ export async function POST(req: Request) {
   const admin = supabaseAdmin();
   const [senderId, peerId] = await Promise.all([myProfileId(admin, uid), profileIdByPublic(admin, peer)]);
   if (!senderId || !peerId) return Response.json({ error: "profile not found" }, { status: 404 });
+
+  // Забаненный не может отправлять сообщения.
+  const ban = await activeBan(admin, senderId);
+  if (ban) return Response.json({ error: "banned", reason: ban.reason, until: ban.expiresAt }, { status: 403 });
 
   const convId = await findOrCreateConversation(admin, senderId, peerId);
   if (!convId) return Response.json({ error: "conversation failed" }, { status: 400 });

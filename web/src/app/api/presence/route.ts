@@ -1,4 +1,4 @@
-import { getUid, myProfileId, supabaseAdmin, unauthorized } from "@/lib/server/backend";
+import { activeBan, getUid, myProfileId, supabaseAdmin, unauthorized } from "@/lib/server/backend";
 
 export const runtime = "nodejs";
 
@@ -23,5 +23,8 @@ export async function POST(req: Request) {
   if (realGender) patch.realGender = realGender;
   const { error } = await admin.from("Profile").update(patch).eq("id", profileId);
   if (error) return Response.json({ error: error.message }, { status: 400 });
-  return Response.json({ ok: true });
+
+  // Клиент узнаёт о бане через heartbeat → блокирует UI.
+  const ban = await activeBan(admin, profileId);
+  return Response.json({ ok: true, banned: Boolean(ban), reason: ban?.reason ?? null, until: ban?.expiresAt ?? null });
 }

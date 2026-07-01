@@ -64,19 +64,19 @@ export default function UserDetailPage() {
       <div className="mb-5 flex items-start gap-2 rounded-xl border border-border bg-surface-1 p-3 text-xs text-fg-muted">
         <Lock size={14} className="mt-0.5 shrink-0" />
         <span>
-          Личная переписка не отображается (приватность анонимного чата). Доступно только медиа
-          для ревью — по умолчанию скрыто размытием, противоправное — через эскалацию.
+          Личная переписка доступна в разделе «Чаты». Здесь — медиа пользователя для ревью.
         </span>
       </div>
 
       <h2 className="mb-3 text-sm font-semibold text-fg-secondary">Медиа пользователя</h2>
-      <MediaGallery media={media} ownerLabel={ownerLabel} />
+      <MediaGallery media={media} ownerLabel={ownerLabel} ownerBadge={`#${u.publicId}`} noBlur />
 
       <BanDialog
         target={banOpen}
         onClose={() => setBanOpen(null)}
         onConfirm={(res) => {
-          update({ resource: "users", id: u.id, values: { banned: true } });
+          const expiresAt = res.expiresDays ? new Date(Date.now() + res.expiresDays * 86400_000).toISOString() : null;
+          update({ resource: "users", id: u.id, values: { banned: true, reason: res.reason || undefined, expiresAt } });
           addAction({ type: "ban", target: ownerLabel, reason: `${res.reason} · ${res.durationLabel}` });
           toast(`Забанен: ${u.nickname}`, "danger");
           setBanOpen(null);

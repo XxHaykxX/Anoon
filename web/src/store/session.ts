@@ -16,8 +16,12 @@ type SessionState = {
   synced: boolean; // профиль подтверждён сервером (не мок)
   creating: boolean;
   error?: string;
+  banned: boolean; // забанен (сервер-авторитетно, из heartbeat) — не персистим
+  banReason?: string;
+  banUntil?: string | null;
   createProfile: (nickname: string) => Promise<void>;
   ensureProfile: () => Promise<void>; // до-синхронизировать профиль, если синк не прошёл
+  setBan: (banned: boolean, reason?: string | null, until?: string | null) => void;
   setNickname: (nickname: string) => void;
   reset: () => Promise<void>;
 };
@@ -36,6 +40,9 @@ export const useSession = create<SessionState>()(
       publicId: "",
       synced: false,
       creating: false,
+      banned: false,
+
+      setBan: (banned, reason, until) => set({ banned, banReason: reason ?? undefined, banUntil: until ?? null }),
 
       createProfile: async (nickname) => {
         const nick = nickname.trim();

@@ -99,17 +99,29 @@ export async function listMedia(p: ListParams): Promise<{ data: MediaAssetRow[];
   const admin = supabaseAdmin();
   let q = admin
     .from("MediaAsset")
-    .select("id,ownerProfileId,kind,mime,ephemeral,expiresAt,deletedAt,retainedForReport,createdAt", { count: "exact" });
+    .select("id,ownerProfileId,r2Key,kind,mime,ephemeral,expiresAt,deletedAt,retainedForReport,createdAt", { count: "exact" });
+  if (p.filters?.ownerProfileId) q = q.eq("ownerProfileId", p.filters.ownerProfileId);
   if (p.ids) q = q.in("id", p.ids);
   q = paginate(q, p);
   const { data, count } = await q;
   const rows = (data ?? []) as any[];
-  // url — реальный файл появится с R2 (Фаза E); пока пусто → UI покажет «медиа недоступно».
+
+  // Реальные signed URL из Supabase Storage (bucket media) для не-удалённых.
+  const urlByKey = new Map<string, string>();
+  await Promise.all(
+    rows
+      .filter((r) => !r.deletedAt && r.r2Key)
+      .map(async (r) => {
+        const { data: signed } = await admin.storage.from("media").createSignedUrl(r.r2Key, 3600);
+        if (signed?.signedUrl) urlByKey.set(r.r2Key, signed.signedUrl);
+      }),
+  );
+
   const mapped: MediaAssetRow[] = rows.map((r) => ({
     id: r.id,
     ownerProfileId: r.ownerProfileId,
     kind: r.kind === "video" ? "video" : "image",
-    url: "",
+    url: r.deletedAt ? "" : urlByKey.get(r.r2Key) ?? "",
     ephemeral: r.ephemeral,
     expiresAt: r.expiresAt ?? null,
     deletedAt: r.deletedAt ?? null,
@@ -162,6 +174,27 @@ export async function updateReport(id: string, values: { status?: string }, admi
 
 export async function updateResource(resource: string, id: string, values: Record<string, unknown>, adminId: string) {
   if (resource === "reports") return updateReport(id, values as { status?: string }, adminId);
+
+  // Бан/разбан юзера: в Profile НЕТ поля banned — состояние живёт в таблице Ban.
+  // Создаём/снимаем строку Ban(active) + аудит. `id` здесь = Profile.id.
+  if ((resource === "users" || resource === "profiles") && "banned" in values) {
+    const admin = supabaseAdmin();
+    const now = new Date().toISOString();
+    if (values.banned) {
+      const { data: existing } = await admin.from("Ban").select("id").eq("profileId", id).eq("state", "active").limit(1);
+      if (!((existing ?? []) as any[]).length) {
+        const reason = typeof values.reason === "string" && values.reason ? values.reason : "Заблокирован модератором";
+        const expiresAt = typeof values.expiresAt === "string" ? values.expiresAt : null;
+        await admin.from("Ban").insert({ id: crypto.randomUUID(), profileId: id, reason, expiresAt, state: "active", issuedById: adminId });
+        await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "ban", targetProfileId: id });
+      }
+    } else {
+      await admin.from("Ban").update({ state: "lifted", liftedById: adminId, liftedAt: now }).eq("profileId", id).eq("state", "active");
+      await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "unban", targetProfileId: id });
+    }
+    return getOne(resource, id);
+  }
+
   // Прочие ресурсы: прямое обновление (минимум). Таблица = PascalCase.
   const table = resource === "users" || resource === "profiles" ? "Profile" : resource === "bans" ? "Ban" : null;
   if (!table) throw new Error(`update not supported: ${resource}`);
