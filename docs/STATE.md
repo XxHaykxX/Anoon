@@ -42,12 +42,20 @@
 - Admin: auth реальный, dataProvider api, двухпанельные жалобы, баны, юзеры, **файл-менеджер «Файлы»** (папки по юзерам + галерея, #ID на тайлах, БЕЗ blur/эскалации, копир-#ID кнопка). Медиа при view-once/удалении у юзера НЕ удаляется из Storage/админки (удаление только клиентское).
 - CI (.github/workflows/ci.yml), e2e+axe (web/e2e/).
 
-## АКТИВНЫЕ ЗАДАЧИ (Task List #35–#39)
-- **#38 🔴 КРИТ:** медиа иногда «Медиа недоступно» — аплоад в Storage падает интермиттентно даже при synced. Диагностировать create-upload/uploadToSignedUrl/токен. Блокирует #35.
-- **#35:** one-view (одноразовое фото/видео, Telegram-стиль) — КОД ГОТОВ (composer тумблер «Одноразовое», once/viewed в chat.ts/realtime/message-bubble, markViewed, one-view лайтбокс). Не работает из-за #38 (аплоад падает).
-- **#39:** автоскролл — порядок сообщений ВЕРНЫЙ; жалоба «новые сверху» = не скроллит к низу на телефоне. Починить scrollIntoView (учесть клавиатуру).
-- **#36:** Admin overview — кликабельные карточки + онлайн-счётчики девочки/мальчики + список онлайн по полу. Требует: сохранять self-gender в Profile.realGender (сейчас пол только клиентский, realGender=any) + реальный online (Profile.online не сбрасывается; нужен heartbeat/lastSeen).
-- **#37:** Admin история чатов + **живые идущие чаты** (Conversation/Message из БД, near-live авто-обновление). Требует synced-профили (иначе Message не пишется).
+## ЗАДАЧИ
+ГОТОВО (задеплоено + проверено playwright на проде):
+- **#38 ✅ КРИТ РЕШЁН:** «Медиа недоступно». КОРЕНЬ — null id при supabase-js `.insert()`: Prisma `@default(cuid())` генерит id в клиенте Prisma, а `db push` НЕ создаёт БД-дефолт для cuid → `null value in column "id"` (400) → профиль/медиа не создавались → synced=false навсегда. Фикс: `id: crypto.randomUUID()` во ВСЕХ 10 вставках (web: User/Profile/Conversation/Message/MediaAsset/Report; admin: Ban/ModeratorAction×3). Проверено 3× медиа-тестом (web/e2e/media-upload.spec.ts). Плюс defense-in-depth: ensureProfile до аплоада, ретрай аплоада 3×, серверный ретрай профиля.
+- **#35 ✅:** one-view (одноразовое) — разблокировано фиксом #38, код готов.
+- **#39 ✅:** автоскролл — scrollRef контейнера в низ через двойной rAF (msgs/typing/recording).
+- **#40 ✅:** admin общая галерея `/gallery` (все медиа + #ID, фильтр, API ?all=1).
+- **#41 ✅:** admin мобильная навигация (бургер + drawer).
+- **#42 ✅:** admin PWA (manifest/sw.js/install; proxy matcher пропускает PWA-файлы).
+- **#43 ✅:** playwright мобильный тест админки (web/e2e/admin-mobile.spec.ts, iPhone13 webkit, 7 разделов overflow=0).
+- **#44 ✅:** admin респонсив (bulk-bar, badge, bans/audit, users-таблица).
+
+ОСТАЛОСЬ:
+- **#36:** Admin overview — кликабельные карточки + онлайн-счётчики девочки/мальчики + список онлайн по полу. Требует: self-gender в Profile.realGender (сейчас пол только клиентский, realGender=any) + реальный online (Profile.online не сбрасывается; нужен heartbeat/lastSeen).
+- **#37:** Admin история чатов + **живые идущие чаты** (Conversation/Message из БД, near-live). Теперь Message пишется (профили синкаются).
 
 ## Известные хрупкости
 - Профиль не синкается при быстрой навигации/сети → медиа/persist падают. `ensureProfile()` добавлен (чат-маунт), но #38 всё ещё воспроизводится в тесте.

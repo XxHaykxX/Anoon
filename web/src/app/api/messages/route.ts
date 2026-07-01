@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   if (!convId) return Response.json({ error: "conversation failed" }, { status: 400 });
 
   const { data: msg, error } = await admin
-    .from("Message").insert({ conversationId: convId, senderId, kind, text, mediaId, status: "sent" }).select("id,createdAt").single();
+    .from("Message").insert({ id: crypto.randomUUID(), conversationId: convId, senderId, kind, text, mediaId, status: "sent" }).select("id,createdAt").single();
   if (error) return Response.json({ error: error.message }, { status: 400 });
   await admin.from("Conversation").update({ lastMessageAt: new Date().toISOString() }).eq("id", convId);
 

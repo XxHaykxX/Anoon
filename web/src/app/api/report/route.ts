@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   const admin = supabaseAdmin();
   const [reporterId, targetProfileId] = await Promise.all([myProfileId(admin, uid), profileIdByPublic(admin, peer)]);
   if (!reporterId || !targetProfileId) return Response.json({ error: "profile not found" }, { status: 404 });
-  const { error } = await admin.from("Report").insert({ reporterId, targetProfileId, reason, note, status: "open" });
+  const { error } = await admin.from("Report").insert({ id: crypto.randomUUID(), reporterId, targetProfileId, reason, note, status: "open" });
   if (error) return Response.json({ error: error.message }, { status: 400 });
   const { data: prof } = await admin.from("Profile").select("reportCount").eq("id", targetProfileId).single();
   await admin.from("Profile").update({ reportCount: ((prof as { reportCount?: number } | null)?.reportCount ?? 0) + 1 }).eq("id", targetProfileId);

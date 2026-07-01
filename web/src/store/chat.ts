@@ -7,6 +7,7 @@ import { fetchHistory, markRead, persistMessage } from "@/lib/api";
 import { chatChannelName, joinChat, type ChatHandle, type WirePayload } from "@/lib/realtime";
 import { resolveMediaUrl, uploadMedia } from "@/lib/storage";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { useSession } from "@/store/session";
 
 export type MsgKind = "text" | "image" | "video" | "voice";
 export type MsgStatus = "sent" | "delivered" | "read"; // тики: ✓ / ✓✓ / ✓✓ синие
@@ -133,6 +134,8 @@ export const useChat = create<ChatState>()(
         tx({ id: mid, kind, mediaPending: true, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
 
         void (async () => {
+          // Гарантируем профиль в БД до аплоада — иначе create-upload вернёт 404 (гонка синка).
+          await useSession.getState().ensureProfile();
           const t = await tokenReady();
           const blob = await fetch(localUrl).then((r) => r.blob()).catch(() => null);
           if (!t || !blob) {

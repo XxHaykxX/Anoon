@@ -24,6 +24,7 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Пропускаем статику/ассеты Next; проверяем всё остальное.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/).*)"],
+  // Пропускаем статику/ассеты Next + PWA-файлы (sw.js, manifest, иконки) — иначе default-deny
+  // редиректит их на /login и PWA не работает. Проверяем всё остальное.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icon).*)"],
 };

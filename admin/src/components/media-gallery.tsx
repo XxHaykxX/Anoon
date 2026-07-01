@@ -109,10 +109,10 @@ export function MediaGallery({
               transition={{ duration: 0.2, ease: "easeOut", delay: i * 0.03 }}
               className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-border bg-surface-2"
             >
-              {/* #ID владельца — всегда поверх тайла */}
-              {ownerBadge ? (
+              {/* #ID владельца — всегда поверх тайла (per-item для общей галереи, иначе общий) */}
+              {(m.ownerBadge ?? ownerBadge) ? (
                 <span className="pointer-events-none absolute left-1.5 top-1.5 z-20 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[10px] text-white">
-                  {ownerBadge}
+                  {m.ownerBadge ?? ownerBadge}
                 </span>
               ) : null}
 

@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   // Аудит входа + lastLoginAt.
   await admin.from("AdminUser").update({ lastLoginAt: new Date().toISOString() }).eq("id", user.id);
-  await admin.from("ModeratorAction").insert({ adminId: user.id, type: "login", ip });
+  await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId: user.id, type: "login", ip });
 
   const token = await signSession({ sub: user.id, email: user.email, role: user.role });
   const res = NextResponse.json({ id: user.id, name: user.email, role: user.role });

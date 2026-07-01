@@ -64,12 +64,14 @@ export default function BansPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, ease: "easeOut", delay: i * 0.03 }}
-              className="flex items-center gap-4 rounded-xl border border-border bg-surface-1 p-4"
+              className="flex items-center gap-2 rounded-xl border border-border bg-surface-1 p-4 sm:gap-4"
             >
               <div className="min-w-0 flex-1">
-                <span className="font-medium">{b.nickname}</span>{" "}
-                <span className="font-mono text-xs text-fg-muted">#{b.publicId}</span>
-                <p className="text-sm text-fg-secondary">{b.reason}</p>
+                <div className="truncate">
+                  <span className="font-medium">{b.nickname}</span>{" "}
+                  <span className="font-mono text-xs text-fg-muted">#{b.publicId}</span>
+                </div>
+                <p className="truncate text-sm text-fg-secondary">{b.reason}</p>
               </div>
               {b.state === "lifted" ? (
                 <Badge tone="neutral">Снят</Badge>
@@ -85,7 +87,7 @@ export default function BansPage() {
                     addAction({ type: "unban", target: `${b.nickname} #${b.publicId}`, reason: "Бан снят" });
                     toast(`Бан снят: ${b.nickname}`);
                   }}
-                  className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-fg-secondary transition hover:text-fg"
+                  className="shrink-0 rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-fg-secondary transition hover:text-fg"
                 >
                   Снять
                 </button>

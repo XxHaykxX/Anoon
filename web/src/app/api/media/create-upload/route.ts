@@ -31,7 +31,12 @@ export async function POST(req: Request) {
   if (!kind) return Response.json({ error: "kind required" }, { status: 400 });
 
   const admin = supabaseAdmin();
-  const profileId = await myProfileId(admin, uid);
+  // Ретрай — профиль мог только что создаться (ensureProfile на клиенте) и ещё не быть виден.
+  let profileId = await myProfileId(admin, uid);
+  for (let i = 0; !profileId && i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    profileId = await myProfileId(admin, uid);
+  }
   if (!profileId) return Response.json({ error: "profile not found" }, { status: 404 });
 
   // Ext по mime; фолбэк по типу медиа (голос iOS может дать неожиданный mime).
@@ -42,7 +47,7 @@ export async function POST(req: Request) {
   // MediaAsset (ephemeral, TTL 7 дней).
   const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
   const { data: asset, error: aerr } = await admin
-    .from("MediaAsset").insert({ ownerProfileId: profileId, r2Key: path, mime, kind, ephemeral: true, expiresAt })
+    .from("MediaAsset").insert({ id: crypto.randomUUID(), ownerProfileId: profileId, r2Key: path, mime, kind, ephemeral: true, expiresAt })
     .select("id").single();
   if (aerr) return Response.json({ error: aerr.message }, { status: 400 });
 

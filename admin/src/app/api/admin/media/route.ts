@@ -9,12 +9,55 @@ const BUCKET = "media";
 
 // GET /api/admin/media — папки (профили с медиа) + счётчики.
 // GET /api/admin/media?profileId=... — файлы профиля со signed URL (галерея).
+// GET /api/admin/media?all=1 — общая галерея: все медиа всех юзеров + #ID на тайлах (без папок).
 // Защищено proxy (default-deny) при NEXT_PUBLIC_DATA_MODE=api.
 export async function GET(req: Request) {
   const admin = supabaseAdmin();
-  const profileId = new URL(req.url).searchParams.get("profileId");
+  const url = new URL(req.url);
+  const profileId = url.searchParams.get("profileId");
+  const all = url.searchParams.get("all");
 
   try {
+    if (all) {
+      // Все медиа (свежие сверху). #ID владельца — на каждый тайл.
+      const { data: rows } = await admin
+        .from("MediaAsset")
+        .select("id,ownerProfileId,r2Key,mime,kind,durationMs,ephemeral,expiresAt,deletedAt,createdAt")
+        .order("createdAt", { ascending: false })
+        .limit(500);
+      const list = (rows ?? []) as Array<any>;
+      const ownerIds = [...new Set(list.map((m) => m.ownerProfileId))];
+      const { data: profs } = ownerIds.length
+        ? await admin.from("Profile").select("id,publicId").in("id", ownerIds)
+        : { data: [] };
+      const pubById = new Map((profs ?? []).map((p: any) => [p.id, p.publicId]));
+
+      const live = list.filter((m) => !m.deletedAt).map((m) => m.r2Key);
+      const urlByKey = new Map<string, string>();
+      await Promise.all(
+        live.map(async (key) => {
+          const { data } = await admin.storage.from(BUCKET).createSignedUrl(key, 3600);
+          if (data?.signedUrl) urlByKey.set(key, data.signedUrl);
+        }),
+      );
+
+      const files = list.map((m) => ({
+        id: m.id,
+        ownerProfileId: m.ownerProfileId,
+        ownerBadge: `#${pubById.get(m.ownerProfileId) ?? "?????"}`,
+        kind: m.kind === "video" ? "video" : "image",
+        url: m.deletedAt ? "" : urlByKey.get(m.r2Key) ?? "",
+        mime: m.mime,
+        durationMs: m.durationMs ?? undefined,
+        ephemeral: m.ephemeral,
+        expiresAt: m.expiresAt ?? null,
+        deletedAt: m.deletedAt ?? null,
+        escalated: false,
+        createdAt: m.createdAt,
+      }));
+      return NextResponse.json({ files });
+    }
+
     if (!profileId) {
       // Папки: группируем MediaAsset по владельцу.
       const { data: assets } = await admin.from("MediaAsset").select("ownerProfileId,kind");

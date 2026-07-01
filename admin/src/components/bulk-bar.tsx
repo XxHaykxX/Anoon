@@ -29,12 +29,12 @@ export function BulkBar({
           transition={{ duration: 0.2, ease: "easeOut" }}
           role="region"
           aria-label="Массовые действия"
-          className="pointer-events-auto fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-surface-1/95 px-4 py-3 shadow-2xl backdrop-blur"
+          className="pointer-events-auto fixed bottom-5 left-1/2 z-30 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-border bg-surface-1/95 px-4 py-3 shadow-2xl backdrop-blur sm:flex-nowrap sm:gap-3"
         >
           <span className="text-sm font-medium tabular-nums">
             Выбрано: <span className="text-accent">{count}</span>
           </span>
-          <span className="h-5 w-px bg-border" />
+          <span className="hidden h-5 w-px bg-border sm:block" />
           {actions.map((a) => (
             <button
               key={a.label}

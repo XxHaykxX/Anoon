@@ -69,7 +69,7 @@ export async function findOrCreateConversation(admin: SupabaseClient, p1: string
   const [a, b] = [p1, p2].sort();
   const { data: existing } = await admin.from("Conversation").select("id").eq("profileAId", a).eq("profileBId", b).maybeSingle();
   if ((existing as IdRow)?.id) return (existing as IdRow)!.id;
-  const { data: created, error } = await admin.from("Conversation").insert({ profileAId: a, profileBId: b }).select("id").single();
+  const { data: created, error } = await admin.from("Conversation").insert({ id: crypto.randomUUID(), profileAId: a, profileBId: b }).select("id").single();
   if (error) return null;
   return (created as IdRow)!.id;
 }

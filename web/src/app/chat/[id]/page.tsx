@@ -30,6 +30,7 @@ export default function ChatPage() {
   const [onceItem, setOnceItem] = useState<LightboxItem | null>(null);
   const [reply, setReply] = useState<ReplyRef | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Краткая цитата сообщения для ответа.
   const quote = (m: Msg): string =>
@@ -86,9 +87,17 @@ export default function ChatPage() {
     router.replace("/");
   };
 
+  // Автоскролл к самому низу (новые сообщения снизу). На мобиле smooth-scrollIntoView
+  // прерывается клавиатурой/сменой высоты медиа → скроллим контейнер напрямую через rAF.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs.length]);
+    const el = scrollRef.current;
+    if (!el) return;
+    const toBottom = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    // Двойной rAF — дождаться раскладки после вставки сообщения/картинки.
+    requestAnimationFrame(() => requestAnimationFrame(toBottom));
+  }, [msgs.length, peerTyping, peerRecording]);
 
   if (blocked) return null;
 
@@ -119,7 +128,7 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
         <AnimatePresence initial={false}>
           {msgs.map((m) => (
             <motion.div

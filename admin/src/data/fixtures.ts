@@ -76,6 +76,7 @@ export type MediaAssetRow = {
   deletedAt: string | null; // != null → «медиа удалено/истекло»
   escalated: boolean; // помечено на CSAM-эскалацию → элемент блокируется
   reportReason?: ReportReason; // связь с жалобой (для content-warning)
+  ownerBadge?: string; // #ID владельца — для общей галереи (разные владельцы на тайлах)
   createdAt: string;
 };
 

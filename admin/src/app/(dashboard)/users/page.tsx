@@ -100,7 +100,7 @@ export default function UsersPage() {
         <div className="text-sm text-fg-muted">Загрузка…</div>
       ) : (
         <div ref={scrollRef} className={cn("overflow-auto rounded-xl border border-border", virtual && "max-h-[70vh]")}>
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[560px] whitespace-nowrap text-sm">
             <thead className="sticky top-0 z-10 bg-surface-1 text-left text-fg-muted">
               <tr>
                 <th className="w-10 px-4 py-3">

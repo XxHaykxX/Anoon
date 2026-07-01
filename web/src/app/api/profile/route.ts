@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   const { data: existingUser } = await admin.from("User").select("id").eq("provider", "anonymous").eq("providerId", uid).maybeSingle();
   let userId = (existingUser as IdRow)?.id;
   if (!userId) {
-    const { data: newUser, error } = await admin.from("User").insert({ provider: "anonymous", providerId: uid }).select("id").single();
+    const { data: newUser, error } = await admin.from("User").insert({ id: crypto.randomUUID(), provider: "anonymous", providerId: uid }).select("id").single();
     if (error) return Response.json({ error: error.message }, { status: 400 });
     userId = (newUser as IdRow)!.id;
   }
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
   const publicId = await nextPublicId(admin);
   const { data: created, error: perr } = await admin
-    .from("Profile").insert({ userId, publicId, nickname, online: true }).select("id,publicId,nickname").single();
+    .from("Profile").insert({ id: crypto.randomUUID(), userId, publicId, nickname, online: true }).select("id,publicId,nickname").single();
   if (perr) return Response.json({ error: perr.message }, { status: 400 });
   return Response.json(created);
 }

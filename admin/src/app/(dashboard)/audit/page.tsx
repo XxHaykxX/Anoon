@@ -30,13 +30,13 @@ export default function AuditPage() {
       ) : (
         <div className="space-y-2">
           {actions.map((a) => (
-            <div key={a.id} className="flex items-center gap-4 rounded-xl border border-border bg-surface-1 p-4">
+            <div key={a.id} className="flex items-center gap-2 rounded-xl border border-border bg-surface-1 p-4 sm:gap-4">
               <Badge tone={typeTone(a.type)}>{typeLabel[a.type]}</Badge>
               <div className="min-w-0 flex-1">
-                <span className="font-medium">{a.target}</span>
+                <span className="block truncate font-medium">{a.target}</span>
                 <p className="truncate text-sm text-fg-secondary">{a.reason}</p>
               </div>
-              <span className="shrink-0 font-mono text-xs text-fg-muted">{new Date(a.at).toLocaleString("ru-RU")}</span>
+              <span className="shrink-0 font-mono text-[11px] text-fg-muted sm:text-xs">{new Date(a.at).toLocaleString("ru-RU")}</span>
             </div>
           ))}
         </div>

@@ -151,11 +151,11 @@ export async function updateReport(id: string, values: { status?: string }, admi
     const { data: rep } = await admin.from("Report").select("targetProfileId").eq("id", id).single();
     const targetProfileId = (rep as { targetProfileId?: string } | null)?.targetProfileId;
     if (targetProfileId) {
-      await admin.from("Ban").insert({ profileId: targetProfileId, reason: "По жалобе", state: "active", issuedById: adminId });
-      await admin.from("ModeratorAction").insert({ adminId, type: "ban", targetProfileId, targetReportId: id });
+      await admin.from("Ban").insert({ id: crypto.randomUUID(), profileId: targetProfileId, reason: "По жалобе", state: "active", issuedById: adminId });
+      await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "ban", targetProfileId, targetReportId: id });
     }
   } else if (status === "resolved_dismissed") {
-    await admin.from("ModeratorAction").insert({ adminId, type: "dismiss_report", targetReportId: id });
+    await admin.from("ModeratorAction").insert({ id: crypto.randomUUID(), adminId, type: "dismiss_report", targetReportId: id });
   }
   return getOne("reports", id);
 }
