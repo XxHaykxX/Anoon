@@ -2,7 +2,7 @@
 
 import { useGetIdentity, useLogout } from "@refinedev/core";
 import { AnimatePresence, motion } from "framer-motion";
-import { Ban, Flag, FolderOpen, Images, LayoutDashboard, LogOut, Menu, ScrollText, Search, Users, X } from "lucide-react";
+import { Ban, Flag, FolderOpen, Images, LayoutDashboard, LogOut, Menu, MessageSquare, ScrollText, Search, Users, Wifi, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/overview", label: "Обзор", icon: LayoutDashboard },
+  { href: "/online", label: "Онлайн", icon: Wifi },
+  { href: "/chats", label: "Чаты", icon: MessageSquare },
   { href: "/reports", label: "Жалобы", icon: Flag },
   { href: "/users", label: "Пользователи", icon: Users },
   { href: "/bans", label: "Баны", icon: Ban },

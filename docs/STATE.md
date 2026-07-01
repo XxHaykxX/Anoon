@@ -53,9 +53,10 @@
 - **#43 ✅:** playwright мобильный тест админки (web/e2e/admin-mobile.spec.ts, iPhone13 webkit, 7 разделов overflow=0).
 - **#44 ✅:** admin респонсив (bulk-bar, badge, bans/audit, users-таблица).
 
-ОСТАЛОСЬ:
-- **#36:** Admin overview — кликабельные карточки + онлайн-счётчики девочки/мальчики + список онлайн по полу. Требует: self-gender в Profile.realGender (сейчас пол только клиентский, realGender=any) + реальный online (Profile.online не сбрасывается; нужен heartbeat/lastSeen).
-- **#37:** Admin история чатов + **живые идущие чаты** (Conversation/Message из БД, near-live). Теперь Message пишется (профили синкаются).
+- **#36 ✅:** Admin online по полу. web `/api/presence` heartbeat (online+lastSeen+realGender), пинг 30с в app-providers (realGender из useMatchPrefs). admin `/api/admin/overview` (online=lastSeen<90с) + страница `/online` (табы ж/м, live). Overview-карточки кликабельны. Проверено (web/e2e/admin-live.spec.ts).
+- **#37 ✅:** Admin история + живые чаты. `/api/admin/chats` (диалоги + live-флаг lastMessageAt<5мин; ?id → сообщения+signed URL) + `/chats` (двухпанель, live-автообновление, мобильный back). Проверено.
+
+ВСЁ ГОТОВО (#34–#44). Осталось только действие ЮЗЕРА: отозвать Vercel-токен + ротировать SUPABASE_SECRET_KEY/DB-пароль (светились в чате).
 
 ## Известные хрупкости
 - Профиль не синкается при быстрой навигации/сети → медиа/persist падают. `ensureProfile()` добавлен (чат-маунт), но #38 всё ещё воспроизводится в тесте.

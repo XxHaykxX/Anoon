@@ -3,39 +3,69 @@
 import { useList } from "@refinedev/core";
 import { motion } from "framer-motion";
 import { Ban, Flag, TrendingUp, Users, Wifi } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import type { BanRow, ProfileRow, ReportRow } from "@/data/fixtures";
 import { useCanHover } from "@/lib/use-can-hover";
+import { cn } from "@/lib/utils";
+
+type Overview = {
+  total: number;
+  online: number;
+  onlineFemale: number;
+  onlineMale: number;
+  onlineOther: number;
+  reportsOpen: number;
+  bansActive: number;
+};
 
 type StatDef = {
   label: string;
   value: number;
   icon: typeof Users;
-  trend?: string; // мок мини-тренд (в проде — из агрегатов)
+  sub?: string; // подпись под числом (напр. разбивка по полу)
+  href?: string; // кликабельная карточка → переход
   tone?: "accent" | "success" | "danger";
 };
 
 function StatCard({ stat, index, canHover }: { stat: StatDef; index: number; canHover: boolean }) {
   const toneText = stat.tone === "danger" ? "text-danger" : stat.tone === "success" ? "text-success" : "text-accent";
+  const inner = (
+    <>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-fg-muted">{stat.label}</p>
+        <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg bg-surface-2", toneText)}>
+          <stat.icon size={16} />
+        </span>
+      </div>
+      <p className="mt-2 text-2xl font-semibold tabular-nums">{stat.value.toLocaleString("ru-RU")}</p>
+      {stat.sub && (
+        <p className="mt-1 flex items-center gap-1 text-xs text-fg-muted">
+          {stat.tone === "accent" && <TrendingUp size={12} className="text-success" />} {stat.sub}
+        </p>
+      )}
+    </>
+  );
+
+  const cls = cn(
+    "block rounded-xl border border-border bg-surface-1 p-5 transition-colors hover:border-accent/40",
+    stat.href && "cursor-pointer",
+  );
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: "easeOut", delay: index * 0.05 }}
       whileHover={canHover ? { scale: 1.02 } : undefined}
-      className="rounded-xl border border-border bg-surface-1 p-5 transition-colors hover:border-accent/40"
     >
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-fg-muted">{stat.label}</p>
-        <span className={`flex h-8 w-8 items-center justify-center rounded-lg bg-surface-2 ${toneText}`}>
-          <stat.icon size={16} />
-        </span>
-      </div>
-      <p className="mt-2 text-2xl font-semibold tabular-nums">{stat.value.toLocaleString("ru-RU")}</p>
-      {stat.trend && (
-        <p className="mt-1 flex items-center gap-1 text-xs text-fg-muted">
-          <TrendingUp size={12} className="text-success" /> {stat.trend}
-        </p>
+      {stat.href ? (
+        <Link href={stat.href} className={cls}>
+          {inner}
+        </Link>
+      ) : (
+        <div className={cls}>{inner}</div>
       )}
     </motion.div>
   );
@@ -43,19 +73,43 @@ function StatCard({ stat, index, canHover }: { stat: StatDef; index: number; can
 
 export default function OverviewPage() {
   const canHover = useCanHover();
+  const [ov, setOv] = useState<Overview | null>(null);
+
+  // Реальная сводка (api-режим). Обновляем каждые 20с (near-live онлайн).
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/admin/overview")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => alive && d && !d.error && setOv(d))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 20_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  // Фолбэк на refine-данные (mock-режим или пока грузится api).
   const users = useList<ProfileRow>({ resource: "users", pagination: { mode: "off" } });
   const reports = useList<ReportRow>({ resource: "reports", pagination: { mode: "off" } });
   const bans = useList<BanRow>({ resource: "bans", pagination: { mode: "off" } });
-
   const u = users.result?.data ?? [];
   const r = reports.result?.data ?? [];
   const b = bans.result?.data ?? [];
 
+  const total = ov?.total ?? u.length;
+  const online = ov?.online ?? u.filter((x) => x.online).length;
+  const reportsOpen = ov?.reportsOpen ?? r.filter((x) => x.status === "open").length;
+  const bansActive = ov?.bansActive ?? b.filter((x) => x.state === "active").length;
+  const onlineSub = ov ? `👧 ${ov.onlineFemale} · 👦 ${ov.onlineMale}` : undefined;
+
   const stats: StatDef[] = [
-    { label: "Всего пользователей", value: u.length, icon: Users, trend: "+12 за 24ч", tone: "accent" },
-    { label: "Онлайн сейчас", value: u.filter((x) => x.online).length, icon: Wifi, tone: "success" },
-    { label: "Жалоб открыто", value: r.filter((x) => x.status === "open").length, icon: Flag, trend: "+3 за 24ч", tone: "danger" },
-    { label: "Активных банов", value: b.filter((x) => x.state === "active").length, icon: Ban, tone: "danger" },
+    { label: "Всего пользователей", value: total, icon: Users, tone: "accent" },
+    { label: "Онлайн сейчас", value: online, icon: Wifi, tone: "success", sub: onlineSub, href: "/online" },
+    { label: "Жалоб открыто", value: reportsOpen, icon: Flag, tone: "danger", href: "/reports" },
+    { label: "Активных банов", value: bansActive, icon: Ban, tone: "danger", href: "/bans" },
   ];
 
   return (
@@ -65,6 +119,16 @@ export default function OverviewPage() {
         {stats.map((s, i) => (
           <StatCard key={s.label} stat={s} index={i} canHover={canHover} />
         ))}
+      </div>
+
+      {/* Быстрые ссылки на онлайн по полу */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link href="/online?gender=female" className="rounded-lg border border-border bg-surface-1 px-4 py-2 text-sm transition hover:border-accent/40">
+          👧 Девочки онлайн{ov ? `: ${ov.onlineFemale}` : ""}
+        </Link>
+        <Link href="/online?gender=male" className="rounded-lg border border-border bg-surface-1 px-4 py-2 text-sm transition hover:border-accent/40">
+          👦 Мальчики онлайн{ov ? `: ${ov.onlineMale}` : ""}
+        </Link>
       </div>
     </div>
   );
