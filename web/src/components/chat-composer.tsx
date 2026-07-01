@@ -160,7 +160,7 @@ export function ChatComposer({
   }
 
   return (
-    <div className="border-t border-border pb-[env(safe-area-inset-bottom)]">
+    <div className="border-t border-border">
       {/* Превью выбранных медиа перед отправкой (несколько сразу) */}
       <AnimatePresence>
         {pending.length > 0 && (

@@ -41,6 +41,8 @@ body {
   color-scheme: dark;
   font-family: var(--font-sans);
   overscroll-behavior: none;
+  overflow-x: hidden; /* никакого горизонтального скролла на всём приложении */
+  max-width: 100%;
 }
 
 :where(a, button, input, textarea, [tabindex]):focus-visible {
