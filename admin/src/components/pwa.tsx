@@ -4,6 +4,7 @@ import { Download, Share, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { useMounted } from "@/lib/use-mounted";
 
 // PWA админки: регистрация service worker + кнопка «Установить».
 // Android/Chrome — перехват beforeinstallprompt → нативный prompt. iOS — подсказка «Поделиться».
@@ -27,12 +28,10 @@ function isIos(): boolean {
 }
 
 export function AdminPwa({ className }: { className?: string }) {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [showIosHint, setShowIosHint] = useState(false);
-
-  useEffect(() => setMounted(true), []);
 
   // Регистрация SW.
   useEffect(() => {

@@ -55,12 +55,17 @@ export default function ChatsPage() {
     };
   }, []);
 
+  // Сброс сообщений при смене выбора (в рендере, без setState-в-effect).
+  const [prevSelId, setPrevSelId] = useState<string | null>(null);
+  const selId = sel?.id ?? null;
+  if (selId !== prevSelId) {
+    setPrevSelId(selId);
+    setMsgs(null);
+  }
+
   // Сообщения выбранного диалога (live 5с).
   useEffect(() => {
-    if (!sel) {
-      setMsgs(null);
-      return;
-    }
+    if (!sel) return;
     let alive = true;
     const id = sel.id;
     const load = () =>

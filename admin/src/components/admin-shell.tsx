@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Ban, Flag, FolderOpen, Images, LayoutDashboard, LogOut, Menu, MessageSquare, ScrollText, Search, Users, Wifi, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { AdminPwa } from "@/components/pwa";
 import { Toaster } from "@/components/ui/toaster";
@@ -63,11 +63,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const { mutate: logout } = useLogout();
   const { data: identity } = useGetIdentity<{ name?: string }>();
   const [drawer, setDrawer] = useState(false);
+  const [prevPath, setPrevPath] = useState(pathname);
 
-  // Закрывать drawer при смене маршрута.
-  useEffect(() => {
+  // Закрывать drawer при смене маршрута (сброс state в рендере, без setState-в-effect).
+  if (pathname !== prevPath) {
+    setPrevPath(pathname);
     setDrawer(false);
-  }, [pathname]);
+  }
 
   return (
     <div className="flex min-h-dvh bg-bg text-fg">
