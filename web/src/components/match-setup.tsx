@@ -22,8 +22,8 @@ export function MatchSetup({ onStart, searching }: { onStart: () => void; search
             value={gender}
             onChange={setGender}
             options={[
-              { value: "m", label: "М" },
-              { value: "f", label: "Ж" },
+              { value: "m", label: "Мужчина" },
+              { value: "f", label: "Женщина" },
             ]}
           />
         </Field>
