@@ -51,7 +51,7 @@ export function MessageRow({
 
   return (
     <div ref={rootRef} className={cn("group flex items-end gap-1", m.mine ? "flex-row-reverse" : "flex-row")}>
-      <div className="flex max-w-[82%] flex-col">
+      <div className="flex max-w-[76%] flex-col">
         {m.replyText ? (
           <div
             className={cn(

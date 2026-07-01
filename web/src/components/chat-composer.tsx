@@ -114,17 +114,30 @@ export function ChatComposer({
     });
   };
 
+  const vibrate = (pattern: number | number[]) => {
+    try {
+      navigator.vibrate?.(pattern);
+    } catch {
+      // не поддерживается — не критично
+    }
+  };
+
   const startRec = async () => {
-    await rec.start();
-    setRecording(true); // собеседник видит «записывает голос…»
+    const ok = await rec.start();
+    if (ok) {
+      vibrate(20); // тактильный отклик «пошла запись»
+      setRecording(true); // собеседник видит «записывает голос…»
+    }
   };
   const finishRec = async () => {
     setRecording(false);
+    vibrate(15); // «запись отправлена»
     const res = await rec.stop();
     if (res) sendVoice(peer, res.url, res.durationSec);
   };
   const cancelRec = () => {
     setRecording(false);
+    vibrate([10, 30, 10]); // «отмена»
     rec.cancel();
   };
 
@@ -248,12 +261,28 @@ export function ChatComposer({
         />
 
         {recording ? (
-          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-full border border-danger/40 bg-surface-1 px-4 py-2.5">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
+          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-full border border-danger/40 bg-danger/5 px-4 py-2.5">
+            {/* Пульсирующая красная точка */}
+            <span className="relative flex h-3 w-3 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-75" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-danger" />
+            </span>
+            {/* Живой эквалайзер */}
+            <div className="flex h-4 items-center gap-[3px]" aria-hidden>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <motion.span
+                  key={i}
+                  className="w-[3px] rounded-full bg-danger"
+                  style={{ height: "30%" }}
+                  animate={{ height: ["30%", "100%", "30%"] }}
+                  transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.12, ease: "easeInOut" }}
+                />
+              ))}
+            </div>
             <span className="font-mono text-sm tabular-nums text-fg">
               {Math.floor(rec.elapsed / 60)}:{String(rec.elapsed % 60).padStart(2, "0")}
             </span>
-            <span className="text-xs text-fg-muted">запись…</span>
+            <span className="ml-auto text-xs font-medium text-danger">Идёт запись</span>
           </div>
         ) : (
           <>

@@ -107,7 +107,7 @@ export default function ChatPage() {
   if (blocked || endedAtLoad) return null; // редирект в эффекте; не мелькаем завершённым чатом
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-dvh flex-col overflow-hidden">
       <header className="flex items-center gap-3 border-b border-border pb-3 pl-[calc(env(safe-area-inset-left)+1rem)] pr-[calc(env(safe-area-inset-right)+1rem)] pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-full text-fg-secondary hover:bg-surface-2" aria-label="Назад">
           <ArrowLeft size={20} />
@@ -133,7 +133,7 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-4 py-4">
         <AnimatePresence initial={false}>
           {msgs.map((m) => (
             <motion.div
