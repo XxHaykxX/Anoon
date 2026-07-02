@@ -195,6 +195,8 @@ export type HistoryMsg = {
   status: "sent" | "delivered" | "read";
   at: number;
   reactions?: Record<string, string>; // T10: publicId → emoji (только личка)
+  once?: boolean; // ONCE-SERVER (#24): одноразовое медиа — источник истины теперь сервер
+  viewed?: boolean; // true = уже просмотрено (сервер); у consumed once — mediaPath отсутствует
 };
 
 // Тип диалога (личка vs рулетка). Отдельно от message-kind (text/image/…), поэтому в теле
@@ -202,6 +204,8 @@ export type HistoryMsg = {
 export type ConvKind = "roulette" | "friend";
 
 // Persist отправленного сообщения в БД. Best-effort (не блокирует realtime-транспорт).
+// once — одноразовое медиа (ONCE-SERVER #24): сервер хранит флаг, чтобы «просмотрено» пережило
+// новое устройство/очистку localStorage (см. store/chat.ts::mergeHistory).
 export async function persistMessage(
   peer: string,
   kind: string,
@@ -211,10 +215,17 @@ export async function persistMessage(
   clientId?: string, // тот же id, что в broadcast/local — БД пишет его же → merge без дублей
   convKind: ConvKind = "roulette",
   conversationId?: string, // эфемерная рулетка: конкретная Conversation текущего матча
+  once = false,
 ): Promise<{ id: string; at: string } | null> {
-  const res = await post("/messages", { peer, kind, text, mediaId, id: clientId, convKind, conversationId }, accessToken);
+  const res = await post("/messages", { peer, kind, text, mediaId, id: clientId, convKind, conversationId, once }, accessToken);
   if (!res.ok) return null;
   return res.json();
+}
+
+// Пометить одноразовое сообщение просмотренным (ONCE-SERVER #24). ТОЛЬКО получатель может
+// пометить (сервер проверяет и перепроверяет) — идемпотентно, повторный вызов не ошибка.
+export async function viewMessage(messageId: string, accessToken: string): Promise<void> {
+  await post("/messages/view", { id: messageId }, accessToken).catch(() => {});
 }
 
 // История диалога из БД (для нового устройства / после очистки localStorage).

@@ -17,6 +17,10 @@ export function MessageBubble({ m, onOpenMedia, onView }: { m: Msg; onOpenMedia:
   const noun = m.kind === "video" ? "Видео" : "Фото";
 
   // Одноразовое медиа (view-once): закрытый бабл → просмотр → «просмотрено».
+  // ONCE-SERVER (#24, крит приватности): m.viewed после гидрации — ИСТИНА С СЕРВЕРА (store/chat.ts
+  // ::mergeHistory), не localStorage — «просмотрено» на одном устройстве переживает открытие с
+  // другого/очистку браузера. Гейт ниже проверяется ДО url — медиа не покажется, даже если
+  // локальный кэш почему-то ещё хранит mediaPath/url.
   if (isMedia && m.once) {
     if (m.viewed) {
       return (

@@ -15,6 +15,7 @@ import {
   persistMessage,
   reactMessage,
   respondFriend,
+  viewMessage,
 } from "@/lib/api";
 import { chatChannelName, dmChannelName, joinChat, type ChatHandle, type WirePayload } from "@/lib/realtime";
 import { compressImage, makeThumbnail, makeVideoThumbnail, resolveMediaUrl, uploadMedia } from "@/lib/storage";
@@ -112,6 +113,10 @@ const bumpStatus = (a: MsgStatus | undefined, b: string): MsgStatus =>
 // (клиентский UUID = БД id). Легаси-сообщения (старый `m1`-id) сопоставляем нечётко
 // (mine+kind+text+близкое время), чтобы не задвоить. Отсутствующие в local (пришли пока
 // был офлайн / с другого устройства) — добавляем. Медиа-url резолвится отдельно по mediaPath.
+// ONCE-SERVER (#24, крит приватности): once/viewed — сервер источник истины, не localStorage.
+// h.viewed «включает» просмотренность (никогда не гасит уже true) — переживает новое устройство/
+// очистку браузера. У consumed (once&&viewed) сервер НЕ шлёт mediaPath — сюда же на всякий случай
+// гасим mediaPath/url явно, если сервер подтвердил viewed (defense in depth).
 function mergeHistory(local: Msg[], hist: HistoryMsg[]): Msg[] {
   const byId = new Map<string, Msg>(local.map((m) => [m.id, m]));
   const usedLocal = new Set<string>();
@@ -120,10 +125,14 @@ function mergeHistory(local: Msg[], hist: HistoryMsg[]): Msg[] {
     const exact = byId.get(h.id);
     if (exact) {
       usedLocal.add(h.id);
+      const viewed = Boolean(h.viewed) || Boolean(exact.viewed);
       byId.set(h.id, {
         ...exact,
         text: exact.text ?? h.text,
-        mediaPath: exact.mediaPath ?? h.mediaPath,
+        mediaPath: viewed ? undefined : (exact.mediaPath ?? h.mediaPath),
+        url: viewed ? undefined : exact.url,
+        once: h.once ?? exact.once,
+        viewed,
         status: exact.mine ? bumpStatus(exact.status, h.status) : exact.status,
         reactions: h.reactions ?? exact.reactions, // БД — источник истины (гидрация на connect)
       });
@@ -140,10 +149,14 @@ function mergeHistory(local: Msg[], hist: HistoryMsg[]): Msg[] {
     if (fuzzy) {
       usedLocal.add(fuzzy.id);
       byId.delete(fuzzy.id);
+      const viewed = Boolean(h.viewed) || Boolean(fuzzy.viewed);
       byId.set(h.id, {
         ...fuzzy,
         id: h.id,
-        mediaPath: fuzzy.mediaPath ?? h.mediaPath,
+        mediaPath: viewed ? undefined : (fuzzy.mediaPath ?? h.mediaPath),
+        url: viewed ? undefined : fuzzy.url,
+        once: h.once ?? fuzzy.once,
+        viewed,
         status: fuzzy.mine ? bumpStatus(fuzzy.status, h.status) : fuzzy.status,
         reactions: h.reactions ?? fuzzy.reactions,
       });
@@ -154,7 +167,9 @@ function mergeHistory(local: Msg[], hist: HistoryMsg[]): Msg[] {
       mine: h.mine,
       kind: h.kind,
       text: h.text,
-      mediaPath: h.mediaPath,
+      mediaPath: h.viewed ? undefined : h.mediaPath,
+      once: h.once,
+      viewed: h.viewed,
       status: h.mine ? rankToStatus(STATUS_RANK[h.status] ?? 0) : undefined,
       reactions: h.reactions,
       at: h.at,
@@ -274,7 +289,8 @@ export const useChat = create<ChatState>()(
           // Готовый signed URL сразу в broadcast — получатель показывает без доп. запроса.
           const url = await resolveMediaUrl(up.path, t);
           tx({ id: mid, kind, url: url ?? undefined, mediaPath: up.path, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
-          await persistMessage(peer, kind, undefined, t, up.mediaId, mid, activeKind, activeConvId).catch(() => {});
+          // once → сервер (ONCE-SERVER #24): «просмотрено» переживёт новое устройство (не только localStorage).
+          await persistMessage(peer, kind, undefined, t, up.mediaId, mid, activeKind, activeConvId, extra.once).catch(() => {});
         })();
       };
 
@@ -484,11 +500,17 @@ export const useChat = create<ChatState>()(
           active?.sendDelete(mid);
         },
 
-        // Одноразовое просмотрено получателем: гасим у себя (url/путь убираем) + шлём отправителю.
+        // Одноразовое просмотрено получателем: гасим у себя (url/путь убираем) + шлём отправителю
+        // живьём + персистим на сервере (ONCE-SERVER #24, двойной путь как везде в файле) — «просмотрено»
+        // теперь переживает новое устройство/очистку localStorage (сервер источник истины при гидрации).
         // Файл в Storage/админке остаётся — удаляем только из чата.
         markViewed: (peer, mid) => {
           set((s) => ({ byPeer: { ...s.byPeer, [bucketKey(peer)]: (s.byPeer[bucketKey(peer)] ?? []).map((m) => (m.id === mid ? { ...m, viewed: true, url: undefined, mediaPath: undefined } : m)) } }));
           active?.sendViewed(mid);
+          void (async () => {
+            const t = await tokenReady();
+            if (t) await viewMessage(mid, t);
+          })();
         },
 
         sendMedia: (peer, media) => {

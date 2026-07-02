@@ -64,12 +64,14 @@ export async function POST(req: Request) {
     id?: unknown;
     convKind?: unknown;
     conversationId?: unknown;
+    once?: unknown;
   };
   const peer = typeof body.peer === "string" ? body.peer : "";
   const kind = KIND_MAP[typeof body.kind === "string" ? body.kind : "text"] ?? "text";
   // convKind = тип диалога (личка/рулетка), отдельно от message-kind. Дефолт roulette → совместимо.
   const convKind = body.convKind === "friend" ? "friend" : "roulette";
   const conversationId = typeof body.conversationId === "string" ? body.conversationId : null;
+  const once = body.once === true; // одноразовое (view-once) медиа
   const text = typeof body.text === "string" ? body.text.slice(0, 4000) : null;
   const mediaId = typeof body.mediaId === "string" ? body.mediaId : null;
   // Клиентский id (UUID) → БД пишет его же, чтобы broadcast/local/история имели общий id.
@@ -109,7 +111,7 @@ export async function POST(req: Request) {
   // upsert по id: повторный persist того же клиентского id (ретрай/двойная отправка) не дублирует.
   const { data: msg, error } = await admin
     .from("Message")
-    .upsert({ id: msgId, conversationId: convId, senderId, kind, text, mediaId, status: "sent" }, { onConflict: "id", ignoreDuplicates: true })
+    .upsert({ id: msgId, conversationId: convId, senderId, kind, text, mediaId, once, status: "sent" }, { onConflict: "id", ignoreDuplicates: true })
     .select("id,createdAt")
     .maybeSingle();
   if (error) return Response.json({ error: error.message }, { status: 400 });
@@ -182,7 +184,7 @@ export async function GET(req: Request) {
   }
   const ended = Boolean(convRow?.endedAt);
   const { data: rows } = await admin
-    .from("Message").select("id,senderId,kind,text,mediaId,status,createdAt,reactions")
+    .from("Message").select("id,senderId,kind,text,mediaId,status,createdAt,reactions,once,viewedAt")
     .eq("conversationId", convId).order("createdAt", { ascending: true }).limit(200);
   const list = (rows ?? []) as Array<{
     id: string;
@@ -193,10 +195,16 @@ export async function GET(req: Request) {
     status: string;
     createdAt: string;
     reactions: Record<string, string> | null;
+    once: boolean;
+    viewedAt: string | null;
   }>;
 
-  // Пути медиа — вторым запросом (без PostgREST embed).
-  const mediaIds = list.map((m) => m.mediaId).filter((x): x is string => Boolean(x));
+  // Одноразовое уже просмотрено → медиа «израсходовано»: НЕ отдаём путь (история на новом
+  // устройстве не покажет фото/видео повторно; приватность-истина на сервере, не в localStorage).
+  const isConsumed = (m: { once: boolean; viewedAt: string | null }) => m.once && m.viewedAt != null;
+
+  // Пути медиа — вторым запросом (без PostgREST embed). Израсходованные one-view исключаем.
+  const mediaIds = list.filter((m) => m.mediaId && !isConsumed(m)).map((m) => m.mediaId as string);
   const pathById = new Map<string, string>();
   if (mediaIds.length) {
     const { data: assets } = await admin.from("MediaAsset").select("id,r2Key").in("id", mediaIds);
@@ -208,10 +216,12 @@ export async function GET(req: Request) {
     mine: m.senderId === senderId,
     kind: KIND_MAP_OUT[m.kind] ?? m.kind,
     text: m.text ?? undefined,
-    mediaPath: m.mediaId ? pathById.get(m.mediaId) : undefined,
+    mediaPath: m.mediaId && !isConsumed(m) ? pathById.get(m.mediaId) : undefined,
     status: m.status,
     at: new Date(m.createdAt).getTime(),
     reactions: m.reactions ?? undefined,
+    once: m.once,
+    viewed: m.viewedAt != null,
   }));
 
   // Гидрация раскрытия/дружбы (T3): reload/оффлайн-пир сразу видит верный статус (урок офлайна).

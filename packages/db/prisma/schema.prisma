@@ -192,6 +192,8 @@ model Message {
   status         MessageStatus @default(sent)
   createdAt      DateTime      @default(now())
   reactions      Json?         // T10, только личка (kind=friend): publicId→emoji, напр. {"00042":"❤️"}
+  once           Boolean       @default(false) // одноразовое (view-once) медиа
+  viewedAt       DateTime?     // когда получатель просмотрел одноразовое (сервер-истина приватности)
 
   @@index([conversationId, createdAt])
 }

@@ -14,7 +14,19 @@ export async function POST(req: Request) {
   const path = typeof body.path === "string" ? body.path : "";
   if (!path) return Response.json({ error: "path required" }, { status: 400 });
 
-  const { data, error } = await supabaseAdmin().storage.from(BUCKET).createSignedUrl(path, TTL);
+  const admin = supabaseAdmin();
+
+  // Defense in depth: если это медиа одноразового сообщения, которое уже просмотрено —
+  // не выдаём signed URL даже по прямому fetch (истина — Message.once && viewedAt на сервере).
+  const { data: asset } = await admin.from("MediaAsset").select("id").eq("r2Key", path).maybeSingle();
+  const assetId = (asset as { id: string } | null)?.id;
+  if (assetId) {
+    const { data: m } = await admin.from("Message").select("once,viewedAt").eq("mediaId", assetId).maybeSingle();
+    const row = m as { once: boolean; viewedAt: string | null } | null;
+    if (row?.once && row.viewedAt != null) return Response.json({ error: "consumed" }, { status: 403 });
+  }
+
+  const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL);
   if (error) return Response.json({ error: error.message }, { status: 400 });
   return Response.json({ url: data.signedUrl });
 }
