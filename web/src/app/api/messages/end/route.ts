@@ -9,8 +9,10 @@ export async function POST(req: Request) {
   const uid = await getUid(req);
   if (!uid) return unauthorized();
 
-  const body = (await req.json().catch(() => ({}))) as { peer?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { peer?: unknown; convKind?: unknown };
   const peer = typeof body.peer === "string" ? body.peer : "";
+  // Личку не завершают (нет endedAt) — end актуален только для рулетки. Дефолт roulette.
+  const convKind = body.convKind === "friend" ? "friend" : "roulette";
   if (!peer) return Response.json({ error: "peer required" }, { status: 400 });
 
   const admin = supabaseAdmin();
@@ -18,8 +20,10 @@ export async function POST(req: Request) {
   if (!myId || !peerId) return Response.json({ error: "profile not found" }, { status: 404 });
 
   const [a, b] = [myId, peerId].sort();
-  const { data: conv } = await admin.from("Conversation").select("id,endedAt").eq("profileAId", a).eq("profileBId", b).maybeSingle();
-  const row = conv as { id: string; endedAt: string | null } | null;
+  const { data: convRows } = await admin
+    .from("Conversation").select("id,endedAt").eq("profileAId", a).eq("profileBId", b).eq("kind", convKind)
+    .order("createdAt", { ascending: false }).limit(1);
+  const row = ((convRows ?? []) as Array<{ id: string; endedAt: string | null }>)[0] ?? null;
   if (!row) return Response.json({ ok: true }); // диалога ещё нет — нечего завершать
 
   if (!row.endedAt) {

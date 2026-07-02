@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeft, Bell, BellOff, Check, LogOut, ShieldOff } from "lucide-react";
+import { ArrowLeft, Bell, BellOff, Check, ChevronRight, LogOut, ShieldOff, User, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { accountsEnabled } from "@/lib/supabase";
 import { useMounted } from "@/lib/use-mounted";
 import { useModeration } from "@/store/moderation";
 import { usePush } from "@/store/push";
@@ -85,6 +86,27 @@ export default function SettingsPage() {
               {saved ? "Готово" : "Сохранить"}
             </button>
           </div>
+
+          {accountsEnabled ? (
+            <>
+              <Link
+                href="/profile"
+                className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-1 px-4 py-3 text-sm transition hover:bg-surface-2"
+              >
+                <User size={18} className="text-fg-secondary" />
+                <span className="flex-1">Профиль аккаунта</span>
+                <ChevronRight size={16} className="text-fg-muted" />
+              </Link>
+              <Link
+                href="/friends"
+                className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-1 px-4 py-3 text-sm transition hover:bg-surface-2"
+              >
+                <Users size={18} className="text-fg-secondary" />
+                <span className="flex-1">Друзья</span>
+                <ChevronRight size={16} className="text-fg-muted" />
+              </Link>
+            </>
+          ) : null}
         </section>
 
         {/* Уведомления */}

@@ -2,29 +2,45 @@
 
 import { motion } from "framer-motion";
 import { Check } from "lucide-react";
+import { useEffect } from "react";
 
 import { Segmented } from "@/components/segmented";
+import { accountsEnabled } from "@/lib/supabase";
 import { AGE_BANDS, useMatchPrefs } from "@/store/match-prefs";
+import { useSession } from "@/store/session";
 import { cn } from "@/lib/utils";
 
-// Экран фильтров подбора (свой пол + возраст свой/собеседника бэндами). Приложение 18+.
+// Экран фильтров подбора. За NEXT_PUBLIC_ACCOUNTS_ENABLED пол приходит из аккаунта (залочен
+// на регистрации) — свой пол здесь не спрашиваем, только возраст. В старом анон-флоу (флаг
+// выключен) пол по-прежнему выбирается тут же. Приложение 18+.
 export function MatchSetup({ onStart, searching }: { onStart: () => void; searching: boolean }) {
   const { gender, age, wantAges, setGender, setAge, toggleWantAge, ready } = useMatchPrefs();
+  const accountGender = useSession((s) => s.gender); // "male" | "female" | undefined
+
+  // Синк пола из аккаунта в фильтры подбора (та же побочка, что и у ручного выбора —
+  // setGender сам выставляет wantGender=противоположный, иначе матчинг сломается).
+  useEffect(() => {
+    if (!accountsEnabled || !accountGender) return;
+    const g = accountGender === "male" ? "m" : "f";
+    if (useMatchPrefs.getState().gender !== g) setGender(g);
+  }, [accountGender, setGender]);
 
   return (
     <div className="mx-auto w-full max-w-sm space-y-6 px-1 pb-8">
-      <Field label="Ваш пол">
-        <Segmented
-          groupId="self-gender"
-          ariaLabel="Ваш пол"
-          value={gender}
-          onChange={setGender}
-          options={[
-            { value: "m", label: "Мужчина" },
-            { value: "f", label: "Женщина" },
-          ]}
-        />
-      </Field>
+      {!accountsEnabled && (
+        <Field label="Ваш пол">
+          <Segmented
+            groupId="self-gender"
+            ariaLabel="Ваш пол"
+            value={gender}
+            onChange={setGender}
+            options={[
+              { value: "m", label: "Мужчина" },
+              { value: "f", label: "Женщина" },
+            ]}
+          />
+        </Field>
+      )}
 
       {/* Возраст — компактная сетка бэндов (2 колонки) */}
       <Field label="Ваш возраст" hint="обязательно">
@@ -54,7 +70,11 @@ export function MatchSetup({ onStart, searching }: { onStart: () => void; search
       >
         {searching ? "Ищем собеседника…" : "Начать чат"}
       </motion.button>
-      {!ready() && <p className="text-center text-xs text-fg-muted">Выбери свой пол и возраст, чтобы начать</p>}
+      {!ready() && (
+        <p className="text-center text-xs text-fg-muted">
+          {accountsEnabled ? "Выбери возраст, чтобы начать" : "Выбери свой пол и возраст, чтобы начать"}
+        </p>
+      )}
     </div>
   );
 }

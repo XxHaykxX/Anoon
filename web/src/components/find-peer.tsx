@@ -14,6 +14,7 @@ import { SearchingPulse } from "@/components/searching-pulse";
 import { findMatch } from "@/lib/realtime";
 import { supabaseConfigured } from "@/lib/supabase";
 import { useMounted } from "@/lib/use-mounted";
+import { useChat } from "@/store/chat";
 import { useMatchPrefs } from "@/store/match-prefs";
 import { useSession } from "@/store/session";
 
@@ -35,7 +36,12 @@ export function FindPeer() {
     const criteria = { gender: prefs.gender, age: prefs.age, wantGender: prefs.wantGender, wantAges: prefs.wantAges };
     // Реальный матчинг через Supabase Realtime lobby-presence с фильтрами; фолбэк — мок.
     if (supabaseConfigured && publicId) {
-      matchRef.current = findMatch(publicId, criteria, (peer) => router.push(`/chat/${peer}`));
+      matchRef.current = findMatch(publicId, criteria, (peer, conversationId) => {
+        // Эфемерная рулетка: фиксируем conversationId сессии ДО навигации (обе стороны сходятся
+        // на одном id). connect в /chat прочитает его и скоупит историю/запись в эту Conversation.
+        useChat.getState().setRouletteConv(peer, conversationId);
+        router.push(`/chat/${peer}`);
+      });
     } else {
       setTimeout(() => router.push(`/chat/p${Math.floor(Math.random() * 9000) + 1000}`), 900);
     }
