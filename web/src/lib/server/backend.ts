@@ -28,6 +28,34 @@ export async function getUid(req: Request): Promise<string | null> {
   return data.user.id;
 }
 
+// Провайдер-агностичная идентичность вызывающего (Google / email / anonymous).
+// getUid оставлен как тонкий частный случай (только uid); getAuthUser нужен там,
+// где важен провайдер/email/метаданные (создание аккаунта, префилл профиля).
+export type AuthUser = {
+  id: string;
+  provider: string; // 'google' | 'apple' | 'email' | 'anonymous'
+  email: string | null;
+  meta: Record<string, unknown>; // supabase user_metadata (full_name/avatar_url для OAuth)
+};
+
+export async function getAuthUser(req: Request): Promise<AuthUser | null> {
+  const auth = req.headers.get("authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+  const { data, error } = await supabaseAdmin().auth.getUser(token);
+  if (error || !data.user) return null;
+  const u = data.user;
+  // Supabase: app_metadata.provider = 'google'|'apple'|'email'; аноним → is_anonymous.
+  const raw = (u.app_metadata?.provider as string | undefined) ?? "";
+  const provider = u.is_anonymous ? "anonymous" : raw || "email";
+  return {
+    id: u.id,
+    provider,
+    email: u.email ?? null,
+    meta: (u.user_metadata ?? {}) as Record<string, unknown>,
+  };
+}
+
 // --- Web Push (VAPID) ---
 const PUSH_READY = Boolean(
   process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT,
@@ -52,7 +80,23 @@ export function rateLimit(key: string, max: number, windowMs: number): boolean {
 
 type IdRow = { id: string } | null;
 
+// Профиль вызывающего по Supabase uid — БЕЗ привязки к провайдеру (резолв по supabaseUserId,
+// бэкфилленному из providerId миграцией accounts). Работает для google/email/anonymous.
+export async function profileIdByUid(admin: SupabaseClient, uid: string): Promise<string | null> {
+  const { data: user } = await admin.from("User").select("id").eq("supabaseUserId", uid).maybeSingle();
+  const userId = (user as IdRow)?.id;
+  if (!userId) return null;
+  const { data: profile } = await admin.from("Profile").select("id").eq("userId", userId).maybeSingle();
+  return (profile as IdRow)?.id ?? null;
+}
+
+// Тонкая обёртка над profileIdByUid — сохранена как имя, которым пользуется горячий путь
+// (messages/media/report/rate/block). Для anon поведение идентично старому: если по
+// supabaseUserId не нашли (бэкфилл пропущен / переходный период) — падаем на legacy-резолв
+// по (provider='anonymous', providerId=uid), точь-в-точь как раньше (risk #3).
 export async function myProfileId(admin: SupabaseClient, uid: string): Promise<string | null> {
+  const byUid = await profileIdByUid(admin, uid);
+  if (byUid) return byUid;
   const { data: user } = await admin.from("User").select("id").eq("provider", "anonymous").eq("providerId", uid).maybeSingle();
   const userId = (user as IdRow)?.id;
   if (!userId) return null;
@@ -63,6 +107,42 @@ export async function myProfileId(admin: SupabaseClient, uid: string): Promise<s
 export async function profileIdByPublic(admin: SupabaseClient, publicId: string): Promise<string | null> {
   const { data } = await admin.from("Profile").select("id").eq("publicId", publicId).maybeSingle();
   return (data as IdRow)?.id ?? null;
+}
+
+// --- Друзья / раскрытие (T3) ---
+// ВАЖНО: id-пространства не путать. Profile.id (cuid) — внутренний PK и loId/hiId Friendship.
+// publicId ("00001") — человекочитаемый #ID, по нему канонический порядок пары (строковое
+// сравнение == числовое, т.к. zero-padded). Клиент оперирует ТОЛЬКО publicId.
+export type ProfileCore = { id: string; publicId: string };
+
+export async function profileCoreByPublic(admin: SupabaseClient, publicId: string): Promise<ProfileCore | null> {
+  const { data } = await admin.from("Profile").select("id,publicId").eq("publicId", publicId).maybeSingle();
+  return (data as ProfileCore | null) ?? null;
+}
+
+export async function myProfileCore(admin: SupabaseClient, uid: string): Promise<ProfileCore | null> {
+  const id = await myProfileId(admin, uid);
+  if (!id) return null;
+  const { data } = await admin.from("Profile").select("id,publicId").eq("id", id).maybeSingle();
+  return (data as ProfileCore | null) ?? null;
+}
+
+// Канонический порядок пары: lo = меньший publicId. Одна строка Friendship на пару в любом
+// направлении (защищено @@unique([loId,hiId]) + partial unique лички).
+export function canonicalPair(a: ProfileCore, b: ProfileCore): { loId: string; hiId: string } {
+  return a.publicId < b.publicId ? { loId: a.id, hiId: b.id } : { loId: b.id, hiId: a.id };
+}
+
+export type FriendStatus = "none" | "pending_me" | "pending_peer" | "accepted";
+
+// Статус связи с точки зрения `me` (для кнопки в чате/поиске/гидрации).
+export async function friendStatusBetween(admin: SupabaseClient, me: ProfileCore, peer: ProfileCore): Promise<FriendStatus> {
+  const { loId, hiId } = canonicalPair(me, peer);
+  const { data } = await admin.from("Friendship").select("status,requestedById").eq("loId", loId).eq("hiId", hiId).maybeSingle();
+  const row = data as { status: string; requestedById: string } | null;
+  if (!row) return "none";
+  if (row.status === "accepted") return "accepted";
+  return row.requestedById === me.id ? "pending_me" : "pending_peer";
 }
 
 export type ActiveBan = { reason: string; expiresAt: string | null };
@@ -101,13 +181,51 @@ export async function activeMute(admin: SupabaseClient, profileId: string): Prom
   return { reason: row.muteReason, until: row.mutedUntil };
 }
 
-export async function findOrCreateConversation(admin: SupabaseClient, p1: string, p2: string): Promise<string | null> {
+export type ConversationKind = "roulette" | "friend";
+
+// Найти-или-создать диалог заданного kind по каноническому порядку пары (a=min,b=max).
+// kind учитывается и в поиске, и во вставке → рулетка и личка одной пары не смешиваются;
+// у лички это совпадает с partial unique index (kind='friend'). ВНИМАНИЕ (deploy-safety):
+// это по-прежнему find-or-create ДЛЯ ОБОИХ kind. Полностью эфемерная рулетка (новая
+// Conversation на матч, risk #8) активируется в T6 ВМЕСТЕ с правкой messages route
+// (клиент шлёт conversationId матча) через createRouletteConversation ниже. Сейчас messages
+// зовёт per-message — insert-always здесь создал бы дубликаты и сломал GET-историю (maybeSingle).
+export async function findOrCreateConversation(
+  admin: SupabaseClient,
+  p1: string,
+  p2: string,
+  kind: ConversationKind = "roulette",
+): Promise<string | null> {
   const [a, b] = [p1, p2].sort();
-  const { data: existing } = await admin.from("Conversation").select("id").eq("profileAId", a).eq("profileBId", b).maybeSingle();
+  const { data: existing } = await admin
+    .from("Conversation")
+    .select("id")
+    .eq("profileAId", a)
+    .eq("profileBId", b)
+    .eq("kind", kind)
+    .maybeSingle();
   if ((existing as IdRow)?.id) return (existing as IdRow)!.id;
-  const { data: created, error } = await admin.from("Conversation").insert({ id: crypto.randomUUID(), profileAId: a, profileBId: b }).select("id").single();
+  const { data: created, error } = await admin
+    .from("Conversation")
+    .insert({ id: crypto.randomUUID(), profileAId: a, profileBId: b, kind })
+    .select("id")
+    .single();
   if (error) return null;
   return (created as IdRow)!.id;
+}
+
+// T6: рулетка эфемерна — новая Conversation на КАЖДЫЙ матч (пару НЕ переиспользуем, иначе
+// старая переписка всплывёт и деанонимизирует). Вызывать на СТАРТЕ матча; messages route
+// затем пишет по conversationId этого матча. НЕ использовать в per-message пути.
+export async function createRouletteConversation(admin: SupabaseClient, p1: string, p2: string): Promise<string | null> {
+  const [a, b] = [p1, p2].sort();
+  const { data, error } = await admin
+    .from("Conversation")
+    .insert({ id: crypto.randomUUID(), profileAId: a, profileBId: b, kind: "roulette" })
+    .select("id")
+    .single();
+  if (error) return null;
+  return (data as IdRow)!.id;
 }
 
 export const KIND_MAP: Record<string, string> = { text: "text", image: "image", video: "video", voice: "audio" };

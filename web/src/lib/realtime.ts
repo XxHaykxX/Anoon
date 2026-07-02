@@ -29,6 +29,13 @@ export function chatChannelName(a: string, b: string): string {
   return `anoon:chat:${[a, b].sort().join("_")}`;
 }
 
+// Канал ЛИЧКИ друзей — отдельный префикс, чтобы не коллизить с эфемерной рулеткой
+// (`anoon:chat:`). Личка постоянная (одна на пару), рулетка — на матч. Разные каналы →
+// сообщения лички и рулетки одной и той же пары не смешиваются в realtime.
+export function dmChannelName(a: string, b: string): string {
+  return `anoon:dm:${[a, b].sort().join("_")}`;
+}
+
 export type ChatHandle = {
   sendMessage: (p: WirePayload) => void;
   sendTyping: (typing: boolean) => void;
@@ -38,6 +45,10 @@ export type ChatHandle = {
   sendDelete: (id: string) => void; // удалить сообщение у собеседника
   sendViewed: (id: string) => void; // одноразовое медиа просмотрено
   sendEnd: () => void; // завершить разговор
+  sendFriendRequest: () => void; // запрос на раскрытие профилей
+  sendFriendAccept: () => void; // раскрытие принято
+  sendFriendDecline: () => void; // раскрытие отклонено
+  sendReaction: (messageId: string, emoji: string | null) => void; // реакция на сообщение (личка)
   leave: () => void;
 };
 
@@ -54,6 +65,12 @@ export function joinChat(
     onDelete?: (id: string) => void; // собеседник удалил своё сообщение
     onViewed?: (id: string) => void; // одноразовое медиа просмотрено собеседником
     onEnd?: () => void; // собеседник завершил разговор
+    onFriendRequest?: () => void; // собеседник запросил раскрытие профилей
+    onFriendAccept?: () => void; // собеседник принял раскрытие (ТОЛЬКО хинт — личность брать из GET /api/profile/[peer])
+    onFriendDecline?: () => void; // собеседник отклонил раскрытие
+    // Реакция собеседника на сообщение (T10, только личка). Как onViewed — доверенный live-хинт
+    // между уже раскрытыми друзьями (не приватность-чувствительно); БД — источник истины при reload.
+    onReaction?: (messageId: string, emoji: string | null) => void;
   },
 ): ChatHandle {
   const channel = supabase.channel(name, {
@@ -69,6 +86,13 @@ export function joinChat(
     .on("broadcast", { event: "delete" }, ({ payload }) => ev.onDelete?.(String((payload as { id?: string })?.id ?? "")))
     .on("broadcast", { event: "viewed" }, ({ payload }) => ev.onViewed?.(String((payload as { id?: string })?.id ?? "")))
     .on("broadcast", { event: "end" }, () => ev.onEnd?.())
+    .on("broadcast", { event: "friend_request" }, () => ev.onFriendRequest?.())
+    .on("broadcast", { event: "friend_accept" }, () => ev.onFriendAccept?.())
+    .on("broadcast", { event: "friend_decline" }, () => ev.onFriendDecline?.())
+    .on("broadcast", { event: "reaction" }, ({ payload }) => {
+      const p = payload as { id?: string; emoji?: string | null };
+      ev.onReaction?.(String(p?.id ?? ""), p?.emoji ?? null);
+    })
     .on("presence", { event: "sync" }, () => {
       const state = channel.presenceState();
       const others = Object.keys(state).filter((k) => k !== myId);
@@ -87,6 +111,10 @@ export function joinChat(
     sendDelete: (id) => void channel.send({ type: "broadcast", event: "delete", payload: { id } }),
     sendViewed: (id) => void channel.send({ type: "broadcast", event: "viewed", payload: { id } }),
     sendEnd: () => void channel.send({ type: "broadcast", event: "end", payload: {} }),
+    sendFriendRequest: () => void channel.send({ type: "broadcast", event: "friend_request", payload: {} }),
+    sendFriendAccept: () => void channel.send({ type: "broadcast", event: "friend_accept", payload: {} }),
+    sendFriendDecline: () => void channel.send({ type: "broadcast", event: "friend_decline", payload: {} }),
+    sendReaction: (messageId, emoji) => void channel.send({ type: "broadcast", event: "reaction", payload: { id: messageId, emoji } }),
     leave: () => void supabase.removeChannel(channel),
   };
 }
@@ -108,17 +136,24 @@ const ageSat = (wantAges: string[], age: string | null) => !wantAges?.length || 
 
 // Матчинг «Найти собеседника» через lobby-presence с взаимным фильтром.
 // Строго (пол+возраст взаимно); через FALLBACK_MS — только пол.
-export function findMatch(myId: string, me: MatchCriteria, onMatched: (peerId: string) => void): { cancel: () => void } {
+// conversationId (эфемерная рулетка, risk #8): ГЕНЕРИТ ИНИЦИАТОР (меньший #ID) и шлёт в
+// match-payload → обе стороны сходятся на ОДНОМ id новой Conversation (не переиспользуют пару,
+// иначе старая переписка всплыла бы = деанонимизация). onMatched получает этот id.
+export function findMatch(
+  myId: string,
+  me: MatchCriteria,
+  onMatched: (peerId: string, conversationId: string) => void,
+): { cancel: () => void } {
   const lobby = supabase.channel("anoon:lobby", { config: { presence: { key: myId } } });
   let done = false;
   const startedAt = Date.now();
   let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const finish = (peer: string) => {
+  const finish = (peer: string, conversationId: string) => {
     if (done) return;
     done = true;
     if (fallbackTimer) clearTimeout(fallbackTimer);
-    onMatched(peer);
+    onMatched(peer, conversationId);
     void supabase.removeChannel(lobby);
   };
 
@@ -142,10 +177,11 @@ export function findMatch(myId: string, me: MatchCriteria, onMatched: (peerId: s
       .sort();
     if (candidates.length === 0) return;
     const peer = candidates[0];
-    // Меньший #ID — инициатор: шлёт match, оба уходят в чат.
+    // Меньший #ID — инициатор: генерит conversationId новой сессии, шлёт match, оба уходят в чат.
     if (myId < peer) {
-      void lobby.send({ type: "broadcast", event: "match", payload: { a: myId, b: peer } });
-      finish(peer);
+      const conversationId = crypto.randomUUID();
+      void lobby.send({ type: "broadcast", event: "match", payload: { a: myId, b: peer, c: conversationId } });
+      finish(peer, conversationId);
     }
   };
 
@@ -153,8 +189,9 @@ export function findMatch(myId: string, me: MatchCriteria, onMatched: (peerId: s
     .on("presence", { event: "sync" }, tryMatch)
     .on("presence", { event: "join" }, tryMatch)
     .on("broadcast", { event: "match" }, ({ payload }) => {
-      const p = payload as { a: string; b: string };
-      if (p?.b === myId) finish(p.a);
+      const p = payload as { a: string; b: string; c?: string };
+      // c отсутствует только у старого клиента без эфемерной рулетки → фолбэк «» (find-or-create).
+      if (p?.b === myId) finish(p.a, p.c ?? "");
     })
     .subscribe((status) => {
       if (status === "SUBSCRIBED") {

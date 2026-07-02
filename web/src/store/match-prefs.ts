@@ -3,6 +3,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { accountsEnabled } from "@/lib/supabase";
+
 // Фильтры подбора собеседника. Приложение 18+.
 export type SelfGender = "nobody" | "m" | "f"; // Некто / М / Ж
 export type PeerGender = "any" | "m" | "f"; // Не важно / М / Ж
@@ -54,7 +56,9 @@ export const useMatchPrefs = create<MatchPrefsState>()(
       toggleWantAge: (a) =>
         set((s) => ({ wantAges: s.wantAges.includes(a) ? s.wantAges.filter((x) => x !== a) : [...s.wantAges, a] })),
 
-      ready: () => get().gender !== "nobody" && get().age !== null,
+      // За NEXT_PUBLIC_ACCOUNTS_ENABLED пол приходит из аккаунта (залочен на /register/confirm) —
+      // здесь достаточно возраста. В старом анон-флоу (флаг выключен) требуем и пол тоже.
+      ready: () => (accountsEnabled ? get().age !== null : get().gender !== "nobody" && get().age !== null),
     }),
     {
       name: "anoon-match",

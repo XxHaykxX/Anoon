@@ -17,6 +17,17 @@ enum AuthProvider {
   google
   apple
   anonymous
+  email
+}
+
+enum ConversationKind {
+  roulette
+  friend
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
 }
 
 enum Gender {
@@ -78,12 +89,13 @@ enum ModeratorActionType {
 
 /// Аккаунт авторизации. Хранит непрозрачный provider-id и хеш email.
 model User {
-  id         String       @id @default(cuid())
-  provider   AuthProvider
-  providerId String
-  emailHash  String?
-  createdAt  DateTime     @default(now())
-  profile    Profile?
+  id             String       @id @default(cuid())
+  provider       AuthProvider
+  providerId     String
+  supabaseUserId String?      @unique // провайдер-агностичная связь с Supabase uid
+  emailHash      String?
+  createdAt      DateTime     @default(now())
+  profile        Profile?
 
   @@unique([provider, providerId])
 }
@@ -96,7 +108,12 @@ model Profile {
   publicId    String    @unique // человекочитаемый #ID (напр. 00001)
   nickname    String
   emoji       String    @default("🤫")
-  realGender  Gender    @default(any)
+  realGender  Gender    @default(any) // переиспользуем как заблокированный пол; legacy = any
+  firstName    String?  // реальное имя (из OAuth или ввод)
+  lastName     String?  // реальная фамилия
+  avatarUrl    String?  // http… = внешний CDN (Google); иначе путь в Storage bucket "media"
+  ageBand      String?  // возрастной бэнд (раньше только клиентский)
+  genderLocked Boolean  @default(false) // true после выбора пола при регистрации
   online      Boolean   @default(false)
   lastSeen    DateTime?
   mutedUntil  DateTime? // мут (мягче бана): не может ОТПРАВЛЯТЬ до этого времени, читать/сидеть может
@@ -118,6 +135,9 @@ model Profile {
   blocksReceived  Block[]        @relation("Blocked")
   pushSubs        PushSubscription[]
 
+  friendshipsLo   Friendship[]   @relation("FriendLo") // связи, где этот профиль = loId
+  friendshipsHi   Friendship[]   @relation("FriendHi") // связи, где этот профиль = hiId
+
   @@index([reportCount])
 }
 
@@ -128,6 +148,7 @@ model Conversation {
   profileA     Profile   @relation("ConvA", fields: [profileAId], references: [id], onDelete: Cascade)
   profileBId   String
   profileB     Profile   @relation("ConvB", fields: [profileBId], references: [id], onDelete: Cascade)
+  kind         ConversationKind @default(roulette) // roulette эфемерна (строка на матч); friend = личка (одна на пару)
   createdAt    DateTime  @default(now())
   endedAt      DateTime? // разрыв диалога
   lastMessageAt DateTime?
@@ -135,6 +156,25 @@ model Conversation {
 
   @@index([profileAId, lastMessageAt])
   @@index([profileBId, lastMessageAt])
+}
+
+/// Раскрытие=дружба — единый handshake. pending = запрос на раскрытие; accepted = раскрыты + друзья + личка.
+/// Канонический порядок пары: loId=min(publicId), hiId=max → одна строка на пару в любом направлении.
+/// decline УДАЛЯЕТ строку (не оставляет pending, иначе повторный запрос заблокирован).
+model Friendship {
+  id            String           @id @default(cuid())
+  loId          String
+  lo            Profile          @relation("FriendLo", fields: [loId], references: [id], onDelete: Cascade)
+  hiId          String
+  hi            Profile          @relation("FriendHi", fields: [hiId], references: [id], onDelete: Cascade)
+  requestedById String           // кто отправил заявку (для UI «входящая/исходящая»)
+  status        FriendshipStatus @default(pending)
+  createdAt     DateTime         @default(now())
+  acceptedAt    DateTime?
+
+  @@unique([loId, hiId])
+  @@index([hiId, status])
+  @@index([loId, status])
 }
 
 /// Сообщение чата. Медиа — по ссылке на MediaAsset (r2). status для доставки/прочтения.
@@ -150,6 +190,7 @@ model Message {
   media          MediaAsset?   @relation(fields: [mediaId], references: [id], onDelete: SetNull)
   status         MessageStatus @default(sent)
   createdAt      DateTime      @default(now())
+  reactions      Json?         // T10, только личка (kind=friend): publicId→emoji, напр. {"00042":"❤️"}
 
   @@index([conversationId, createdAt])
 }

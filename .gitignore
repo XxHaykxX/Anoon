@@ -19,3 +19,5 @@ playwright-report/
 # OS/IDE
 .DS_Store
 Thumbs.db
+.gstack/
+.claude/

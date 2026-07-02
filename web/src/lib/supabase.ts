@@ -14,5 +14,13 @@ export const supabase = createClient(url ?? "http://localhost", key ?? "anon", {
     persistSession: true,
     autoRefreshToken: true,
     storageKey: "anoon-auth",
+    // PKCE + авто-обмен code→session из URL: нужно для OAuth-редиректа (/auth/callback)
+    // и ссылки сброса пароля (/recover/reset). storageKey/persistSession НЕ трогаем.
+    flowType: "pkce",
+    detectSessionInUrl: true,
   },
 });
+
+// Фиче-флаги аккаунтов (client-safe, NEXT_PUBLIC_*).
+export const accountsEnabled = process.env.NEXT_PUBLIC_ACCOUNTS_ENABLED === "true";
+export const appleEnabled = process.env.NEXT_PUBLIC_APPLE_ENABLED === "true";
