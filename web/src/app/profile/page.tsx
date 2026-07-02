@@ -98,7 +98,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh flex-col">
+    <div className="mx-auto">
       <header className="flex items-center gap-3 border-b border-border px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <Link href="/settings" className="flex h-11 w-11 items-center justify-center rounded-full text-fg-secondary hover:bg-surface-2" aria-label="Назад">
           <ArrowLeft size={20} />
@@ -107,13 +107,13 @@ export default function ProfilePage() {
       </header>
 
       {showSkeleton ? (
-        <div className="flex-1 space-y-4 p-5">
+        <div className="space-y-4 p-5">
           <div className="mx-auto h-[88px] w-[88px] animate-pulse rounded-full bg-surface-2" />
           <div className="h-11 animate-pulse rounded-xl bg-surface-2" />
           <div className="h-11 animate-pulse rounded-xl bg-surface-2" />
         </div>
       ) : (
-        <div className="flex-1 space-y-6 p-5">
+        <div className="space-y-6 p-5">
           {error ? (
             <p role="alert" className="text-sm text-danger">
               {error}

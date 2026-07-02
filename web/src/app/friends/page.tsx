@@ -114,7 +114,7 @@ export default function FriendsPage() {
   if (gate !== "ready") return null;
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-lg flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
+    <div className="mx-auto max-w-lg px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
       <header className="mb-4 flex items-center gap-3">
         <button
           onClick={() => router.push("/")}
@@ -236,7 +236,7 @@ export default function FriendsPage() {
       ) : null}
 
       {/* Список друзей */}
-      <section className="flex-1">
+      <section>
         <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Мои друзья</h2>
         {!loaded ? (
           <div className="space-y-2">

@@ -42,7 +42,7 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-lg flex-col px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
+    <div className="mx-auto max-w-lg px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
       <header className="mb-4 flex items-center gap-3">
         <h1 className="flex-1 text-xl font-bold">Уведомления</h1>
         {unreadCount > 0 ? (
@@ -56,7 +56,7 @@ export default function NotificationsPage() {
       </header>
 
       {notifs.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+        <div className="flex min-h-[60dvh] flex-col items-center justify-center gap-3 text-center">
           <Bell size={32} className="text-fg-muted" />
           <p className="text-sm text-fg-secondary">Пока нет уведомлений</p>
         </div>
