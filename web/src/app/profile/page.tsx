@@ -113,7 +113,7 @@ export default function ProfilePage() {
           <div className="h-11 animate-pulse rounded-xl bg-surface-2" />
         </div>
       ) : (
-        <div className="flex-1 space-y-6 overflow-y-auto p-5">
+        <div className="flex-1 space-y-6 p-5">
           {error ? (
             <p role="alert" className="text-sm text-danger">
               {error}
