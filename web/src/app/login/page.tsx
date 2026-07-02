@@ -67,11 +67,10 @@ export default function LoginPage() {
       <h1 className="text-center text-2xl font-bold">Вход</h1>
 
       <form onSubmit={submit} className="mx-auto mt-8 w-full max-w-sm space-y-4">
-        {error ? (
-          <p role="alert" className="text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
+        {/* Слот под ошибку зарезервирован (min-h) — показ/скрытие не двигает вёрстку. */}
+        <p role="alert" className="min-h-5 text-sm text-danger">
+          {error}
+        </p>
 
         <div>
           <label htmlFor="email" className="mb-2 block text-xs font-medium text-fg-secondary">

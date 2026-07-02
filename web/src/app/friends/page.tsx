@@ -9,8 +9,6 @@ import { Avatar } from "@/components/avatar";
 import {
   addFriend,
   fetchFriends,
-  type FriendDTO,
-  type PendingDTO,
   removeFriend,
   respondFriend,
   searchUsers,
@@ -21,6 +19,7 @@ import { isOnline, presenceLabel } from "@/lib/last-seen";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useRequireAccount } from "@/lib/use-require-account";
 import { cn } from "@/lib/utils";
+import { useFriendsCache } from "@/store/friends";
 
 async function token(): Promise<string | null> {
   if (!supabaseConfigured) return null;
@@ -35,9 +34,13 @@ export default function FriendsPage() {
   const gate = useRequireAccount();
   const router = useRouter();
 
-  const [friends, setFriends] = useState<FriendDTO[]>([]);
-  const [incoming, setIncoming] = useState<PendingDTO[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Кэш друзей/заявок — мгновенный рендер из localStorage + фоновый refresh (без блокировки).
+  const friends = useFriendsCache((s) => s.friends);
+  const incoming = useFriendsCache((s) => s.incoming);
+  const loaded = useFriendsCache((s) => s.loaded);
+  const setAll = useFriendsCache((s) => s.setAll);
+  const removeFriendLocal = useFriendsCache((s) => s.removeFriendLocal);
+  const removeIncomingLocal = useFriendsCache((s) => s.removeIncomingLocal);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[] | null>(null);
@@ -45,21 +48,15 @@ export default function FriendsPage() {
 
   const load = useCallback(async () => {
     const t = await token();
-    if (!t) {
-      setLoading(false);
-      return;
-    }
+    if (!t) return;
     const data = await fetchFriends(t);
-    setFriends(data.friends);
-    setIncoming(data.incoming);
-    setLoading(false);
-  }, []);
+    setAll(data);
+  }, [setAll]);
 
   useEffect(() => {
     if (gate !== "ready") return;
-    void (async () => {
-      await load();
-    })();
+    // Фоновый refresh — НЕ блокирует рендер (кэш уже на экране). Скелет только при первой загрузке.
+    void load();
   }, [gate, load]);
 
   const runSearch = async () => {
@@ -95,16 +92,16 @@ export default function FriendsPage() {
   const onDecline = async (publicId: string) => {
     const t = await token();
     if (!t) return;
+    removeIncomingLocal(publicId); // оптимистично (снапшот-кэш)
     await respondFriend(publicId, "decline", t).catch(() => {});
-    setIncoming((list) => list.filter((p) => p.publicId !== publicId));
   };
 
   const onRemove = async (publicId: string) => {
     if (!window.confirm("Убрать из друзей? Личка пропадёт. Профиль вы уже видели — анонимность не вернётся.")) return;
     const t = await token();
     if (!t) return;
+    removeFriendLocal(publicId); // оптимистично
     await removeFriend(publicId, t);
-    setFriends((list) => list.filter((p) => p.publicId !== publicId));
   };
 
   const onBlock = async (publicId: string) => {
@@ -241,7 +238,7 @@ export default function FriendsPage() {
       {/* Список друзей */}
       <section className="flex-1">
         <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Мои друзья</h2>
-        {loading ? (
+        {!loaded ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
               <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface-2" />

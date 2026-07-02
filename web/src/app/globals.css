@@ -45,6 +45,14 @@ body {
   max-width: 100%;
 }
 
+/* Резервируем место под вертикальный скроллбар всегда: иначе его мгновенное появление
+   (редирект OAuth / переход между экранами) съедает ширину вьюпорта и дёргает центрированную
+   вёрстку по горизонтали — визуально «мигает скроллбар и сдвигается страница». На мобильных
+   (overlay-скроллбар) gutter = 0, стоимости нет. */
+html {
+  scrollbar-gutter: stable;
+}
+
 :where(a, button, input, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

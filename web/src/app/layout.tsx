@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { AppProviders } from "@/components/app-providers";
+import { BottomNav, BottomNavSpacer } from "@/components/bottom-nav";
 
 import "./globals.css";
 
@@ -23,6 +24,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru">
       <body className="mx-auto min-h-dvh max-w-md bg-bg text-fg antialiased">
         <AppProviders>{children}</AppProviders>
+        <BottomNavSpacer />
+        <BottomNav />
       </body>
     </html>
   );

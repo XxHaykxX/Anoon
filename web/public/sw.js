@@ -1,7 +1,7 @@
 // anoon web — service worker: Web Push + офлайн-кэш (без сборочной интеграции).
 // TODO(prod): для точного precache хешированных ассетов — Serwist с build-манифестом.
 
-const CACHE = "anoon-v4";
+const CACHE = "anoon-v5"; // bump: push-обработчик теперь пишет в IndexedDB (BELL-DATA)
 const PRECACHE = ["/", "/offline", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -65,8 +65,50 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+// --- Колокольчик уведомлений (BELL-DATA) ---
+// Накапливаем каждый push в IndexedDB, чтобы приложение показало историю (не только системный
+// тост, который легко пропустить/смахнуть). Читает эту же БД store/notifications.ts (client)
+// при старте — сливает накопленное, пока вкладка была закрыта. Открытым вкладкам — live через
+// postMessage (app-providers.tsx слушает 'message' на navigator.serviceWorker).
+const NOTIF_DB = "anoon-notifs";
+const NOTIF_STORE = "notifs";
+
+function openNotifDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(NOTIF_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(NOTIF_STORE)) {
+        req.result.createObjectStore(NOTIF_STORE, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveNotif(notif) {
+  try {
+    const db = await openNotifDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(NOTIF_STORE, "readwrite");
+      tx.objectStore(NOTIF_STORE).put(notif);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // IndexedDB недоступен (приватный режим и т.п.) — системный тост всё равно покажется.
+  }
+}
+
+async function notifyClients(notif) {
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  for (const client of clients) client.postMessage({ type: "notif", payload: notif });
+}
+
 // --- Web Push ---
-// Бэкенда рассылки нет — реальные push никто не шлёт (см. src/lib/push.ts, store/push.ts).
+// Реальные push шлёт backend: pushToProfile/broadcastPush (web-push VAPID).
+// Payload формы { title, body, url }; id/ts/read синтезирует SW ниже.
 self.addEventListener("push", (event) => {
   let data = { title: "anoon", body: "У вас новое сообщение" };
   if (event.data) {
@@ -92,7 +134,16 @@ self.addEventListener("push", (event) => {
     data: { url: path },
   };
 
-  event.waitUntil(self.registration.showNotification(data.title, options));
+  const notif = {
+    id: self.crypto && self.crypto.randomUUID ? self.crypto.randomUUID() : `n${Date.now()}${Math.random().toString(36).slice(2, 8)}`,
+    title: data.title,
+    body: data.body,
+    url: path,
+    ts: Date.now(),
+    read: false,
+  };
+
+  event.waitUntil(Promise.all([self.registration.showNotification(data.title, options), saveNotif(notif), notifyClients(notif)]));
 });
 
 self.addEventListener("notificationclick", (event) => {

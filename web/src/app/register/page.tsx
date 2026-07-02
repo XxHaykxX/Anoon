@@ -51,11 +51,10 @@ export default function RegisterPage() {
       <p className="mt-2 text-center text-sm text-fg-secondary">anoon — раскрывайся, только когда захочешь</p>
 
       <div className="mx-auto mt-8 w-full max-w-sm space-y-3">
-        {error ? (
-          <p role="alert" className="text-center text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
+        {/* Слот под ошибку зарезервирован (min-h) — показ/скрытие не двигает вёрстку. */}
+        <p role="alert" className="min-h-5 text-center text-sm text-danger">
+          {error}
+        </p>
 
         <button
           onClick={() => void oauth("google")}

@@ -7,6 +7,7 @@ import { registerServiceWorker } from "@/lib/push";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { usePwaBackGuard } from "@/lib/use-pwa-back-guard";
 import { useMatchPrefs } from "@/store/match-prefs";
+import { type Notif, useNotifications } from "@/store/notifications";
 import { useSession } from "@/store/session";
 
 // Heartbeat присутствия: online + lastSeen + realGender. Каждые 30с пока активна вкладка.
@@ -82,10 +83,27 @@ async function checkVersion() {
   }
 }
 
+// BELL-DATA: подхватить накопленные в IndexedDB push (SW писал их, пока вкладка была закрыта)
+// + слушать live push, пока вкладка открыта (SW postMessage({type:"notif"}), см. public/sw.js).
+// Отдельный хук — не трогает остальной AppProviders (координация с ui-dev/навбаром).
+function useBellData() {
+  useEffect(() => {
+    void useNotifications.getState().load();
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      const msg = event.data as { type?: string; payload?: unknown } | undefined;
+      if (msg?.type === "notif" && msg.payload) useNotifications.getState().addNotif(msg.payload as Notif);
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, []);
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   // Досев history в standalone PWA — «назад» не должен закрывать приложение вместо навигации
   // (см. lib/use-pwa-back-guard.ts). Висит здесь (маунтится раз на всё приложение), не на страницах.
   usePwaBackGuard();
+  useBellData();
 
   useEffect(() => {
     void registerServiceWorker();

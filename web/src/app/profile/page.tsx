@@ -25,36 +25,40 @@ export default function ProfilePage() {
   const completeAccountProfile = useSession((s) => s.completeAccountProfile);
   const reset = useSession((s) => s.reset);
 
-  const [loading, setLoading] = useState(true);
+  // Инициализируем из persisted session → форма рисуется МГНОВЕННО (без ожидания сети).
   const [nickname, setNickname] = useState(session.nickname);
   const [firstName, setFirstName] = useState(session.firstName ?? "");
   const [lastName, setLastName] = useState(session.lastName ?? "");
   const [avatarPath, setAvatarPath] = useState<string | undefined>(session.avatarUrl);
-  const [ageBand, setAgeBand] = useState<AgeBand | null>(null);
+  const [ageBand, setAgeBand] = useState<AgeBand | null>(null); // единственное поле не из сессии
   const [gender, setGender] = useState<string | undefined>(session.gender);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Пользователь начал редактировать → фоновый refresh НЕ перезатирает его ввод.
+  const dirtyRef = useRef(false);
+  const markDirty = () => {
+    dirtyRef.current = true;
+  };
+
+  // Скелет — ТОЛЬКО если сессии реально нечего показать (нет #ID). Обычно #ID есть → форма сразу.
+  const showSkeleton = !session.publicId;
 
   useEffect(() => {
     if (!accountsEnabled) return;
+    // Фоновое освежение (в основном ageBand — его нет в сессии). Не блокирует рендер, не клобберит ввод.
     void (async () => {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+      if (!token) return;
       const profile = await fetchMyProfile(token);
-      if (profile) {
-        setNickname(profile.nickname);
-        setFirstName(profile.firstName ?? "");
-        setLastName(profile.lastName ?? "");
-        setAvatarPath(profile.avatarUrl ?? undefined);
-        setAgeBand((profile.ageBand as AgeBand | null) ?? null);
-        setGender(profile.gender ?? undefined);
-      }
-      setLoading(false);
+      if (!profile || dirtyRef.current) return;
+      setNickname(profile.nickname);
+      setFirstName(profile.firstName ?? "");
+      setLastName(profile.lastName ?? "");
+      setAvatarPath(profile.avatarUrl ?? undefined);
+      setAgeBand((profile.ageBand as AgeBand | null) ?? null);
+      setGender(profile.gender ?? undefined);
     })();
   }, []);
 
@@ -102,7 +106,7 @@ export default function ProfilePage() {
         <h1 className="text-base font-semibold">Профиль</h1>
       </header>
 
-      {loading ? (
+      {showSkeleton ? (
         <div className="flex-1 space-y-4 p-5">
           <div className="mx-auto h-[88px] w-[88px] animate-pulse rounded-full bg-surface-2" />
           <div className="h-11 animate-pulse rounded-xl bg-surface-2" />
@@ -119,7 +123,15 @@ export default function ProfilePage() {
             {saved ? "Сохранено" : ""}
           </p>
 
-          <AvatarPicker avatarUrl={avatarPath} name={firstName || nickname} publicId={session.publicId} onChange={setAvatarPath} />
+          <AvatarPicker
+            avatarUrl={avatarPath}
+            name={firstName || nickname}
+            publicId={session.publicId}
+            onChange={(v) => {
+              markDirty();
+              setAvatarPath(v);
+            }}
+          />
 
           <section className="space-y-3">
             <div className="text-xs text-fg-muted">
@@ -132,7 +144,10 @@ export default function ProfilePage() {
             <input
               id="nickname"
               value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
+              onChange={(e) => {
+                markDirty();
+                setNickname(e.target.value);
+              }}
               maxLength={24}
               className="w-full rounded-xl border border-border bg-surface-1 px-4 py-2.5 text-base outline-none focus:border-accent"
             />
@@ -143,7 +158,10 @@ export default function ProfilePage() {
             <input
               id="firstName"
               value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
+              onChange={(e) => {
+                markDirty();
+                setFirstName(e.target.value);
+              }}
               maxLength={40}
               className="w-full rounded-xl border border-border bg-surface-1 px-4 py-2.5 text-base outline-none focus:border-accent"
             />
@@ -154,7 +172,10 @@ export default function ProfilePage() {
             <input
               id="lastName"
               value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
+              onChange={(e) => {
+                markDirty();
+                setLastName(e.target.value);
+              }}
               maxLength={40}
               className="w-full rounded-xl border border-border bg-surface-1 px-4 py-2.5 text-base outline-none focus:border-accent"
             />
@@ -174,7 +195,10 @@ export default function ProfilePage() {
                   type="button"
                   role="radio"
                   aria-checked={ageBand === b.value}
-                  onClick={() => setAgeBand(ageBand === b.value ? null : b.value)}
+                  onClick={() => {
+                    markDirty();
+                    setAgeBand(ageBand === b.value ? null : b.value);
+                  }}
                   className={`flex min-h-11 items-center justify-between rounded-xl border px-4 py-3 text-sm transition-colors ${
                     ageBand === b.value ? "border-accent bg-accent/15 text-fg" : "border-white/10 bg-white/5 text-fg-secondary hover:text-fg"
                   }`}
