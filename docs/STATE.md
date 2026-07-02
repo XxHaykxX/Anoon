@@ -140,3 +140,27 @@ Push — почему не приходит (диагностика):
 
 Детали плана: `C:\Users\Admin\.claude\plans\synchronous-jumping-diffie.md`.
 
+
+---
+
+## Сессия 2026-07-02 (ночь) — полировка + фичи: нижняя навигация, колокольчик, TG-голосовые, perf/flash
+
+Волна из 5 задач (#19–#23) командой Agent Teams. tsc+eslint+прод-build зелёные. Коммит `5897341`. **ЗАДЕПЛОЕНО НА ПРОД** (`vercel --prod`, dpl_5dWEtqP…, alias anoon-web.vercel.app, READY).
+
+**Что построено:**
+- **Нижняя навигация** (`components/bottom-nav.tsx`, mount в `app/layout.tsx`): 4 таба Главная/Друзья/Уведомления/Профиль. Fixed+blur, активный=accent, whileTap, safe-area spacer. Скрыта на `/chat /dm /register /login /recover /auth`. Условие показа `useShowBottomNav()` = accountsEnabled && genderLocked && !hiddenRoute (одно место истины).
+- **Колокольчик уведомлений**: SW (`public/sw.js` v5) ловит `push` → пишет в IndexedDB `anoon-notifs` (store `notifs`, keyPath id) + `postMessage` живым клиентам. `store/notifications.ts` (`useNotifications()`→{unreadCount, notifs≤200, markAllRead}). Накопление даже при закрытой вкладке. Бейдж на табе (9+), страница `/notifications` (markAllRead на открытии, deep-link по n.url). Загрузку/слушатель повесил `app-providers.tsx` (useBellData). Контракт SW↔store сверен db-lead — цел, push реальны (web-push VAPID).
+- **TG-голосовые** (`components/voice-bubble.tsx`): круглая play/pause 44px, амбер-waveform с прогрессом, tap+drag seek, tabular-таймер (0:00→полная), точка «не прослушано», скорость 1x/1.5x/2x. Инверсия цвета на своём/чужом пузыре. Запись/транспорт не трогали.
+- **PERF** (`friends/page.tsx`, `profile/page.tsx`, новый `store/friends.ts`): страницы рендерят мгновенно из persist-кэша, фоновый refresh, dirty-guard против клоббера ввода. Убран блокирующий loader при возврате back.
+- **Google-flash фикс** (`globals.css`, `register/page.tsx`, `login/page.tsx`): `scrollbar-gutter:stable` (корень — toggling скроллбара при OAuth-редиректе рефлоуил центрированную вёрстку) + зарезервированные min-h слоты под инлайн-ошибки.
+
+**QA (безаккаунтное, browse на проде) — чисто:** home 200@0.7s, /register/login/notifications 200, sw.js v5 с anoon-notifs развёрнут. **Google-flash подтверждён исправленным**: scrollWidth−clientWidth=−15 (нет оверфлоу), scrollbar-gutter:stable в прод-CSS, 0 console-ошибок, все 3 кнопки (Google/Facebook/email).
+
+**НЕ проверено (нужен логин/девайс) — для юзера:**
+- Аккаунт-гейтед surface (навбар, бейдж колокольчика, /notifications с данными, /friends, /profile perf) — требует подтверждённого аккаунта; email-confirm ВКЛ + сейчас email-rate-limit; service_role-ключ (sensitive в Vercel) headless не достать.
+- Friend-flow (поиск→раскрытие→личка) — нужны 2 аккаунта.
+- Медиа (фото/видео) и голосовые SEND — headless без микрофона/камеры не воспроизвести; проверить вручную на телефоне.
+- **⚠ Гипотеза приватности (chat-dev recon, предсуществующая, не в scope волны):** one-view «просмотрено» хранится только в localStorage, на сервер не уходит (persistMessage/GET messages не знают once/viewed). На новом устройстве / после очистки localStorage уже-просмотренное одноразовое медиа может показаться снова. Требует серверного хранения факта просмотра. QA-кейс: устройство A шлёт one-view → B смотрит → C (или очистка B) не должно показать медиа снова.
+- **QA-кейсы регресса:** войти в чат и СРАЗУ слать медиа на медленной сети (баг #38 — профиль не синкнут); отправить видео необычного формата (не должно виснуть в «загрузка»).
+
+Ротация секретов (напоминание): Vercel CLI-токен, SUPABASE_SECRET_KEY, DB-пароль, admin-пароль, Google client_secret.
