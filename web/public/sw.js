@@ -1,7 +1,7 @@
 // anoon web — service worker: Web Push + офлайн-кэш (без сборочной интеграции).
 // TODO(prod): для точного precache хешированных ассетов — Serwist с build-манифестом.
 
-const CACHE = "anoon-v5"; // bump: push-обработчик теперь пишет в IndexedDB (BELL-DATA)
+const CACHE = "anoon-v6"; // bump: навигации → stale-while-revalidate (мгновенный запуск PWA)
 const PRECACHE = ["/", "/offline", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -20,7 +20,12 @@ self.addEventListener("activate", (event) => {
 });
 
 // Стратегии кэша (только GET):
-// — навигации: network-first → кэш → офлайн-оболочка "/".
+// — навигации (запуск PWA / hard-reload): stale-while-revalidate — отдаём кэш оболочки
+//   МГНОВЕННО, свежую версию тянем в фоне и кладём в кэш (следующий запуск уже новый).
+//   Раньше был network-first → каждый запуск ждал сеть (на холодном serverless ~3с / слабой
+//   сети — «страница долго открывается»). Свежесть после деплоя гарантирует version-poll в
+//   app-providers (reload при смене /api/version), поэтому одна «на кадр устаревшая» отдача
+//   безопасна. Клиентские переходы (RSC ?_rsc) сюда НЕ попадают (mode!=navigate) — идут в сеть.
 // — статика (/_next/static, иконки): cache-first + фоновое обновление.
 self.addEventListener("fetch", (event) => {
   const { request } = event;
@@ -31,15 +36,22 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
-        try {
-          const fresh = await fetch(request);
+        const cached = await caches.match(request);
+        const fetchAndUpdate = fetch(request).then(async (fresh) => {
           const cache = await caches.open(CACHE);
           cache.put(request, fresh.clone());
           return fresh;
+        });
+        if (cached) {
+          // Отдаём кэш сразу, сеть обновляет кэш в фоне (не блокирует показ).
+          event.waitUntil(fetchAndUpdate.catch(() => {}));
+          return cached;
+        }
+        try {
+          return await fetchAndUpdate;
         } catch {
-          // Офлайн: отдать кэш этой страницы, иначе красивую офлайн-заглушку.
-          const cached = await caches.match(request);
-          return cached || (await caches.match("/offline")) || (await caches.match("/")) || Response.error();
+          // Первый заход без кэша и офлайн — красивая офлайн-заглушка.
+          return (await caches.match("/offline")) || (await caches.match("/")) || Response.error();
         }
       })(),
     );
