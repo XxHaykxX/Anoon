@@ -46,8 +46,11 @@ export async function POST(req: Request) {
     gender?: unknown;
     ageBand?: unknown;
   };
-  const nickname = typeof body.nickname === "string" ? body.nickname.trim() : "";
-  if (nickname.length < 2) return Response.json({ error: "nickname required (>=2)" }, { status: 400 });
+  // nickname = анонимный хендл в рулетке (виден собеседнику ДО раскрытия). При регистрации
+  // аккаунта форма его не собирает → генерим нейтральный. НЕ дефолтить в firstName (утечёт
+  // реальное имя в анонимной рулетке). Пустой/короткий из анонимного онбординга тоже подстрахуем.
+  let nickname = typeof body.nickname === "string" ? body.nickname.trim() : "";
+  if (nickname.length < 2) nickname = `Гость${Math.floor(1000 + Math.random() * 9000)}`;
 
   const firstName = typeof body.firstName === "string" ? body.firstName.trim().slice(0, 60) || null : null;
   const lastName = typeof body.lastName === "string" ? body.lastName.trim().slice(0, 60) || null : null;
