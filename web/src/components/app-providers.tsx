@@ -5,6 +5,7 @@ import { useEffect } from "react";
 
 import { registerServiceWorker } from "@/lib/push";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
+import { usePwaBackGuard } from "@/lib/use-pwa-back-guard";
 import { useMatchPrefs } from "@/store/match-prefs";
 import { useSession } from "@/store/session";
 
@@ -82,6 +83,10 @@ async function checkVersion() {
 }
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
+  // Досев history в standalone PWA — «назад» не должен закрывать приложение вместо навигации
+  // (см. lib/use-pwa-back-guard.ts). Висит здесь (маунтится раз на всё приложение), не на страницах.
+  usePwaBackGuard();
+
   useEffect(() => {
     void registerServiceWorker();
   }, []);

@@ -13,7 +13,7 @@ type ProfileRow = {
   genderLocked: boolean;
 } | null;
 
-const AUTH_PROVIDERS = new Set(["google", "apple", "anonymous", "email"]);
+const AUTH_PROVIDERS = new Set(["google", "apple", "anonymous", "email", "facebook"]);
 // Supabase provider-строка → AuthProvider enum. Незнакомое (маловероятно) → email.
 function mapProvider(p: string): string {
   return AUTH_PROVIDERS.has(p) ? p : "email";

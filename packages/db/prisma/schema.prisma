@@ -18,6 +18,7 @@ enum AuthProvider {
   apple
   anonymous
   email
+  facebook
 }
 
 enum ConversationKind {

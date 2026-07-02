@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { FacebookIcon } from "@/components/facebook-icon";
 import { useMounted } from "@/lib/use-mounted";
 import { accountsEnabled, appleEnabled } from "@/lib/supabase";
-import { useSession } from "@/store/session";
+import { useSession, type OAuthProvider } from "@/store/session";
 
 // Выбор способа регистрации: Google (primary) / Email (secondary) / Apple (за флагом, скрыт).
 // Гостя нет — это единственная точка входа в приложение для новых пользователей.
@@ -16,7 +17,7 @@ export default function RegisterPage() {
   const mounted = useMounted();
   const genderLocked = useSession((s) => s.genderLocked);
   const signInWithOAuth = useSession((s) => s.signInWithOAuth);
-  const [loading, setLoading] = useState<"google" | "apple" | null>(null);
+  const [loading, setLoading] = useState<OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Флаг выключен или уже полностью зарегистрирован на этом устройстве — незачем быть здесь.
@@ -27,7 +28,7 @@ export default function RegisterPage() {
 
   if (!mounted || blocked) return null;
 
-  const oauth = async (provider: "google" | "apple") => {
+  const oauth = async (provider: OAuthProvider) => {
     setError(null);
     setLoading(provider);
     const res = await signInWithOAuth(provider);
@@ -62,6 +63,15 @@ export default function RegisterPage() {
           className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3.5 text-base font-semibold text-accent-fg transition hover:bg-accent-hover disabled:opacity-60"
         >
           {loading === "google" ? "Входим…" : "Войти через Google"}
+        </button>
+
+        <button
+          onClick={() => void oauth("facebook")}
+          disabled={loading !== null}
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface-1 px-4 py-3.5 text-base font-medium text-fg transition hover:bg-surface-2 disabled:opacity-60"
+        >
+          <FacebookIcon size={18} className="text-[#1877f2]" />
+          {loading === "facebook" ? "Входим…" : "Войти через Facebook"}
         </button>
 
         {appleEnabled ? (

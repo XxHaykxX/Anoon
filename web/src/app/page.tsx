@@ -33,7 +33,8 @@ export default function Home() {
       pending = sessionStorage.getItem(PENDING_ADD_KEY);
       if (pending) sessionStorage.removeItem(PENDING_ADD_KEY);
     } catch {}
-    if (pending) router.replace(`/add/${pending}`);
+    // push (не replace) — назад с экрана приглашения должен вернуть на "/", а не выйти из PWA.
+    if (pending) router.push(`/add/${pending}`);
   }, [gate, router]);
 
   if (!mounted) return null;

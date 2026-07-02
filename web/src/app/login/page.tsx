@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { FacebookIcon } from "@/components/facebook-icon";
 import { PasswordField } from "@/components/password-field";
 import { accountsEnabled } from "@/lib/supabase";
 import { useMounted } from "@/lib/use-mounted";
-import { useSession } from "@/store/session";
+import { useSession, type OAuthProvider } from "@/store/session";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,7 +20,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState<"email" | "google" | null>(null);
+  const [loading, setLoading] = useState<"email" | OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const blocked = mounted && (!accountsEnabled || genderLocked);
@@ -45,14 +46,15 @@ export default function LoginPage() {
     router.replace(target ? "/" : "/register/confirm");
   };
 
-  const google = async () => {
+  const oauth = async (provider: OAuthProvider) => {
     setError(null);
-    setLoading("google");
-    const res = await signInWithOAuth("google");
+    setLoading(provider);
+    const res = await signInWithOAuth(provider);
     if (!res.ok) {
       setError(res.error ?? "Не удалось войти");
       setLoading(null);
     }
+    // При успехе браузер уходит на редирект провайдера — loading не сбрасываем.
   };
 
   return (
@@ -111,11 +113,21 @@ export default function LoginPage() {
 
         <button
           type="button"
-          onClick={() => void google()}
+          onClick={() => void oauth("google")}
           disabled={loading !== null}
           className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface-1 px-4 py-3.5 text-base font-medium text-fg transition hover:bg-surface-2 disabled:opacity-60"
         >
           {loading === "google" ? "Входим…" : "Войти через Google"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => void oauth("facebook")}
+          disabled={loading !== null}
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface-1 px-4 py-3.5 text-base font-medium text-fg transition hover:bg-surface-2 disabled:opacity-60"
+        >
+          <FacebookIcon size={18} className="text-[#1877f2]" />
+          {loading === "facebook" ? "Входим…" : "Войти через Facebook"}
         </button>
 
         <p className="pt-2 text-center text-sm text-fg-muted">

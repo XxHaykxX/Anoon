@@ -21,7 +21,7 @@ import { appleEnabled, supabase, supabaseConfigured } from "@/lib/supabase";
 //   "ready"   — полностью онбордён (пол залочен) → в приложение
 export type HydrateResult = "none" | "confirm" | "ready";
 export type AuthResult = { ok: boolean; error?: string; needsEmailConfirm?: boolean };
-export type OAuthProvider = "google" | "apple";
+export type OAuthProvider = "google" | "apple" | "facebook";
 export type Gender = "male" | "female";
 
 type SessionState = {
