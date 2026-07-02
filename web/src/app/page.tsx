@@ -1,7 +1,5 @@
 "use client";
 
-import { Users } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -41,18 +39,8 @@ export default function Home() {
   if (!accountsEnabled) return hasProfile ? <FindPeer /> : <Onboarding />;
   if (gate !== "ready") return null; // "checking"/"blocked" — редирект уже в пути
 
-  return (
-    <div className="relative">
-      {/* Плавающая кнопка — верх FindPeer занят логотипом + кластером иконок (настройки/пуш/профиль),
-          поэтому вход в друзей вынесен в правый нижний угол, вне зоны его шапки. */}
-      <Link
-        href="/friends"
-        aria-label="Друзья"
-        className="fixed bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] right-[calc(env(safe-area-inset-right)+1.25rem)] z-10 flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-surface-2/90 text-fg-secondary shadow-2xl backdrop-blur transition hover:text-fg"
-      >
-        <Users size={20} />
-      </Link>
-      <FindPeer />
-    </div>
-  );
+  // Вход в друзей теперь — таб «Друзья» в нижней навигации (bottom-nav.tsx). Прежняя плавающая
+  // FAB-кнопка убрана: она дублировала таб и физически перекрывалась фиксированным навбаром
+  // (виднелся только «кончик» под панелью).
+  return <FindPeer />;
 }
