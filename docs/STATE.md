@@ -118,3 +118,25 @@ Push — почему не приходит (диагностика):
 - **Находки ревью (учтены):** broadcast=хинт+сервер-гейт ре-фетч личности; enum ADD VALUE отдельной миграцией; `supabaseUserId` nullable→backfill→unique; DB-дефолт `gen_random_uuid()` новым таблицам; provider-agnostic gender-gate; `nextPublicId` гонка→SEQUENCE.
 - **КОНСТАНТА:** anoon — только русский, без i18n.
 
+---
+
+## Сессия 2026-07-02 (вечер) — фича аккаунтов РЕАЛИЗОВАНА и НА ПРОДЕ
+
+Реализована командой Agent Teams (15 задач T1–T10 + INT). tsc+eslint+прод-build зелёные, QA публичных страниц чист. Смёржено в main (merge `be2af5a`, feat `914cc06`).
+
+**ЗАДЕПЛОЕНО НА ПРОД** (`vercel deploy --prod`, alias anoon-web.vercel.app) с `NEXT_PUBLIC_ACCOUNTS_ENABLED=true` в Vercel Production. Анонимный вход ЗАМЕНЁН обязательной регистрацией.
+
+**БД:** 4 аддитивные миграции применены (accounts enum-split, accounts, public_id_fn RPC, message_reactions). БД очищена начисто перед запуском (TRUNCATE юзер-таблиц + Supabase Auth users + Storage bucket media; админы сохранены; SEQUENCE profile_public_seq → 00001).
+
+**Что построено:**
+- Реальные аккаунты: Google OAuth + email/пароль + сброс пароля. Провайдер-агностичный резолв (`getAuthUser`/`profileIdByUid` по `User.supabaseUserId`). PKCE в supabase.ts. Gender-lock (409 при смене).
+- Раскрытие=дружба (единый `Friendship` pending|accepted). Серверный приватность-гейт `/api/profile/[publicId]` (перебор #ID → только publicId+ник). Защита от подделки friend_accept (личность только из server re-fetch).
+- Личка друзей (`/dm/[id]`, kind=friend, отдельный `anoon:dm:` канал) + `/friends` + поиск по #ID/ник. Онлайн-статус друзей (по свежести lastSeen). QR-приглашения `/add/[publicId]`. Реакции в личке (Message.reactions).
+- Эфемерная рулетка per-match: новая Conversation на матч (деанон закрыт), обе стороны сходятся на одном conversationId (инициатор генерит, шлёт в match-broadcast payload.c). Обратно совместимо (без convId → старое поведение).
+
+**Supabase-конфиг (сделано юзером):** Google provider (client anoon-501211), Redirect URLs `https://anoon-web.vercel.app/**`, Site URL прод. Email-провайдер/Confirm — проверить.
+
+**Осталось/проверить:** end-to-end тест auth/друзей/лички на живом проде с реальным Google/email; провайдер-строка из `app_metadata.provider` на реальном Google-токене (фолбэк→email не падает); email-подтверждение. Ротация секретов (Vercel-токен CLI-авторизация, SUPABASE_SECRET_KEY, Google client_secret `GOCSPX-...` — светился при настройке).
+
+Детали плана: `C:\Users\Admin\.claude\plans\synchronous-jumping-diffie.md`.
+
