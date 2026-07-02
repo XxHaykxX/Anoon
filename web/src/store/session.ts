@@ -5,10 +5,10 @@ import { persist } from "zustand/middleware";
 
 import {
   completeProfile,
-  fetchMyProfile,
   ProfileConflictError,
   upsertProfile,
   type CompleteProfileFields,
+  type FullProfileDTO,
 } from "@/lib/api";
 import { appleEnabled, supabase, supabaseConfigured } from "@/lib/supabase";
 
@@ -277,9 +277,35 @@ export const useSession = create<SessionState>()(
             : typeof meta.picture === "string" ? meta.picture
             : undefined;
 
-          const profile = await fetchMyProfile(token); // null → профиля ещё нет
-          const genderLocked = Boolean(profile?.genderLocked);
+          // /me с ретраями. Холодный старт serverless и гонка распространения токена после
+          // OAuth дают ТРАНЗИЕНТНЫЕ 401/5xx. КРИТИЧНО: при неуспехе НЕ перезаписываем
+          // genderLocked — иначе один сбой /me портит persist в false, и на следующих заходах
+          // гейт ЛОЖНО уводит полностью зарегистрированного пользователя на /register/confirm
+          // (залипание: «/ редиректит на confirm, не могу войти»).
+          let profile: FullProfileDTO | null = null;
+          let meOk = false;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const res = await fetch("/api/profile/me", { headers: { authorization: `Bearer ${token}` } });
+              if (res.ok) {
+                profile = (await res.json()) as FullProfileDTO | null; // 200 → профиль или null (реально нет)
+                meOk = true;
+                break;
+              }
+            } catch {
+              // сеть — молча ретраим
+            }
+            await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+          }
 
+          if (!meOk) {
+            // /me недоступно — актуальный статус неизвестен. Сохраняем базовое, genderLocked
+            // НЕ трогаем (не портим persist). Если persist уже помнит залоченный пол — пускаем.
+            set({ authUserId: user.id, email: user.email ?? get().email, accountType: provider });
+            return get().genderLocked ? "ready" : "none";
+          }
+
+          const genderLocked = Boolean(profile?.genderLocked);
           set({
             authUserId: user.id,
             email: user.email ?? get().email,
