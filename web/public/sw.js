@@ -1,7 +1,7 @@
 // anoon web — service worker: Web Push + офлайн-кэш (без сборочной интеграции).
 // TODO(prod): для точного precache хешированных ассетов — Serwist с build-манифестом.
 
-const CACHE = "anoon-v6"; // bump: навигации → stale-while-revalidate (мгновенный запуск PWA)
+const CACHE = "anoon-v7"; // bump: навигации → network-first (гарантия свежего билда после деплоя)
 const PRECACHE = ["/", "/offline", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -20,13 +20,11 @@ self.addEventListener("activate", (event) => {
 });
 
 // Стратегии кэша (только GET):
-// — навигации (запуск PWA / hard-reload): stale-while-revalidate — отдаём кэш оболочки
-//   МГНОВЕННО, свежую версию тянем в фоне и кладём в кэш (следующий запуск уже новый).
-//   Раньше был network-first → каждый запуск ждал сеть (на холодном serverless ~3с / слабой
-//   сети — «страница долго открывается»). Свежесть после деплоя гарантирует version-poll в
-//   app-providers (reload при смене /api/version), поэтому одна «на кадр устаревшая» отдача
-//   безопасна. Клиентские переходы (RSC ?_rsc) сюда НЕ попадают (mode!=navigate) — идут в сеть.
-// — статика (/_next/static, иконки): cache-first + фоновое обновление.
+// — навигации (запуск PWA / hard-reload): NETWORK-FIRST — всегда тянем свежий HTML, кэшируем
+//   его как офлайн-фолбэк. Так после каждого деплоя пользователь СРАЗУ получает новый билд
+//   (stale-while-revalidate это ломал: отдавал старую оболочку, и фиксы не доходили до
+//   устройства до ручной перезагрузки). Кэш отдаём только когда сеть недоступна (офлайн).
+// — статика (/_next/static, иконки): cache-first (хешированные ассеты иммутабельны).
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -36,22 +34,15 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
-        const cached = await caches.match(request);
-        const fetchAndUpdate = fetch(request).then(async (fresh) => {
+        try {
+          const fresh = await fetch(request);
           const cache = await caches.open(CACHE);
           cache.put(request, fresh.clone());
           return fresh;
-        });
-        if (cached) {
-          // Отдаём кэш сразу, сеть обновляет кэш в фоне (не блокирует показ).
-          event.waitUntil(fetchAndUpdate.catch(() => {}));
-          return cached;
-        }
-        try {
-          return await fetchAndUpdate;
         } catch {
-          // Первый заход без кэша и офлайн — красивая офлайн-заглушка.
-          return (await caches.match("/offline")) || (await caches.match("/")) || Response.error();
+          // Офлайн: кэш этой страницы, иначе офлайн-заглушка.
+          const cached = await caches.match(request);
+          return cached || (await caches.match("/offline")) || (await caches.match("/")) || Response.error();
         }
       })(),
     );
