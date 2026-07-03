@@ -208,3 +208,21 @@ Push — почему не приходит (диагностика):
 
 ### ОТКРЫТО / оговорка
 — (real-login через playwright закрыт: работает, см. выше).
+
+---
+
+## Сессия 2026-07-03 — волна «уведомления/бейджи/полировка» (коммит `f9d988a`, на проде)
+tsc+eslint+build=0. `vercel --prod` → dpl_9QvTq3Q…, alias anoon-web.vercel.app READY. Смоук: home 200, sw **v8**, /api/version жив.
+
+**Построено:**
+- **Unread-бейджи друзей:** `/api/friends` считает непрочитанные per-friend (friend-Conversation → Message от собеседника status≠read). `friends/page` (бейдж на строке) + `bottom-nav` (вкладка «Друзья» = входящие заявки + непрочит.).
+- **Live-канал `anoon:user:<publicId>`** (`realtime.pingUser` + `app-providers.useIncomingPing`): отправитель пингует получателя при новом сообщении/заявке → бейджи обновляются без захода в чат (приложение открыто). Свёрнутое — через web-push. Канал кэшируется per-peer (не churn на каждое сообщение).
+- **Опрос друзей/заявок** в `app-providers.refreshFriends` (маунт + 45с + возврат на вкладку) → `useFriendsCache.incoming` известен глобально, бейдж заявок горит без захода на /friends.
+- **Пуш по свежести `lastSeen`** (не по залипающему `online` — свёрнутый юзер не получал пуш; порог 60с). `urgency:high`+TTL 1сут для FCM/Android doze. sw **v8**: tag per-диалог (path) + `renotify` (уведомления не затирают друг друга + звенят повторно). URL пуша /dm/ vs /chat/ по kind.
+- **Баг «не могу писать другу» ПОФИКШЕН:** гейт `friendHydrated` в store/chat — редирект лички только ПОСЛЕ гидрации статуса из fetchHistory. Раньше слепой setTimeout(1200) выкидывал живого друга до ответа "accepted".
+- **Заявки в друзья в `/notifications`** (Принять→сразу в личку / Отклонить) — не надо идти на /friends.
+- **Полиш:** время HH:MM в сообщении (message-row) + галочки redesign; скролл `min-h-full justify-end` (чат/dm — короткая переписка прижата вниз); скрытый скроллбар глобально + **wheel-скролл фикс** (overflow-x:hidden на html, НЕ body — иначе body становился 2-м скроллером и overscroll:none глушил колесо); no-zoom viewport (maximumScale=1); аватар в карточке поиска (find-peer); профиль→настройки строкой, кнопка «назад» профиля→/.
+- **last-seen UTC-парс фикс:** Postgres timestamp без tz парсился как локальное время → «был(а) N часов назад» сразу после активности. `parseServerTime` дописывает `Z`.
+
+**Не проверено (нужен юзер/девайс) — раздел B чеклиста:** friend-flow 2 аккаунта (поиск→раскрытие→личка→бейдж непрочит.), live-пинг бейджей, пуш на реальном Android (urgency:high), медиа/голос SEND на телефоне.
+**Секреты (действие ЮЗЕРА):** отозвать Vercel CLI-токен, ротировать SUPABASE_SECRET_KEY/DB-пароль/admin-пароль/Google client_secret.
