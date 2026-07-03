@@ -16,6 +16,7 @@ import {
   sendBlock,
 } from "@/lib/api";
 import { isOnline, presenceLabel } from "@/lib/last-seen";
+import { pingUser } from "@/lib/realtime";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useRequireAccount } from "@/lib/use-require-account";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,7 @@ export default function FriendsPage() {
     const t = await token();
     if (!t) return;
     await addFriend(publicId, t).catch(() => {});
+    pingUser(publicId, "friend"); // live-бейдж получателю заявки (если приложение открыто)
     setResults((r) => r?.map((h) => (h.publicId === publicId ? { ...h, status: "pending_me" } : h)) ?? null);
   };
 
@@ -254,12 +256,17 @@ export default function FriendsPage() {
               <li key={f.publicId} className="flex items-center gap-3 rounded-2xl bg-surface-1 p-3">
                 <Link href={`/dm/${f.publicId}`} className="flex min-w-0 flex-1 items-center gap-3">
                   <Avatar avatarUrl={f.avatarUrl ?? undefined} publicId={f.publicId} name={fullName(f) || f.nickname} size={44} online={isOnline(f.lastSeen)} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{fullName(f) || f.nickname}</div>
                     <div className={cn("truncate text-xs", isOnline(f.lastSeen) ? "text-success" : "text-fg-muted")}>
                       {presenceLabel(f.lastSeen)}
                     </div>
                   </div>
+                  {f.unread ? (
+                    <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-none text-accent-fg">
+                      {f.unread > 9 ? "9+" : f.unread}
+                    </span>
+                  ) : null}
                 </Link>
                 <button
                   onClick={() => void onRemove(f.publicId)}

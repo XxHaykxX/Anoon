@@ -86,7 +86,7 @@ test("#36 online по полу + #37 история чатов", async ({ browse
   const chats = await chatsResp.json();
   console.log("CHATS count:", chats.conversations?.length);
   const conv = (chats.conversations ?? []).find(
-    (c: any) =>
+    (c: { a: { publicId: string }; b: { publicId: string } }) =>
       (c.a.publicId === idA && c.b.publicId === idB) || (c.a.publicId === idB && c.b.publicId === idA),
   );
   expect(conv, "диалог A↔B должен существовать").toBeTruthy();
@@ -96,7 +96,7 @@ test("#36 online по полу + #37 история чатов", async ({ browse
   const msgResp = await admin.get(`/api/admin/chats?id=${conv.id}`);
   expect(msgResp.status()).toBe(200);
   const msgData = await msgResp.json();
-  expect(msgData.messages.some((m: any) => (m.text ?? "").includes("живых чатов"))).toBeTruthy();
+  expect(msgData.messages.some((m: { text?: string }) => (m.text ?? "").includes("живых чатов"))).toBeTruthy();
 
   await admin.dispose();
   await ctxA.close();

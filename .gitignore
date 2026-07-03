@@ -21,3 +21,4 @@ playwright-report/
 Thumbs.db
 .gstack/
 .claude/
+.playwright-mcp/

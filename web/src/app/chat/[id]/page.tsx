@@ -217,7 +217,8 @@ export default function ChatPage() {
         </div>
       ) : null}
 
-      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4">
+        <div className="flex min-h-full flex-col justify-end space-y-2">
         <AnimatePresence initial={false}>
           {msgs.map((m) => (
             <motion.div
@@ -237,6 +238,7 @@ export default function ChatPage() {
           ))}
         </AnimatePresence>
         <div ref={endRef} />
+        </div>
       </div>
 
       <ChatComposer peer={peer} reply={reply} onClearReply={() => setReply(null)} />

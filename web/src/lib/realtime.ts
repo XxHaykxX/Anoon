@@ -36,6 +36,34 @@ export function dmChannelName(a: string, b: string): string {
   return `anoon:dm:${[a, b].sort().join("_")}`;
 }
 
+// Персональный канал юзера: `anoon:user:<publicId>`. Нужен для live-сигнала о событии (новое
+// сообщение / заявка), когда приложение ОТКРЫТО, но нужный чат закрыт — получатель обновляет
+// бейджи, не заходя в диалог. (Свёрнутое/закрытое приложение ловит то же через web-push.)
+export function userChannelName(publicId: string): string {
+  return `anoon:user:${publicId}`;
+}
+
+// Пинг в персональный канал получателя. Канал КЭШИРУЕТСЯ per-peer и переиспользуется — не создаём
+// новый realtime-канал на каждое сообщение (это churn-ил WebSocket и мог тормозить доставку).
+// Событие: "dm" (новое сообщение) или "friend" (заявка). payload не важен — приёмник рефрешит бейджи.
+const pingChannels = new Map<string, { ch: ReturnType<typeof supabase.channel>; ready: boolean }>();
+export function pingUser(peerPublicId: string, event: "dm" | "friend" = "dm"): void {
+  if (!peerPublicId) return;
+  const name = userChannelName(peerPublicId);
+  let entry = pingChannels.get(name);
+  if (!entry) {
+    const ch = supabase.channel(name, { config: { broadcast: { self: false } } });
+    entry = { ch, ready: false };
+    pingChannels.set(name, entry);
+    ch.subscribe((status) => {
+      if (entry) entry.ready = status === "SUBSCRIBED";
+    });
+  }
+  const send = () => void entry!.ch.send({ type: "broadcast", event, payload: {} });
+  if (entry.ready) send();
+  else setTimeout(send, 400); // канал ещё подписывается — дать кадр
+}
+
 export type ChatHandle = {
   sendMessage: (p: WirePayload) => void;
   sendTyping: (typing: boolean) => void;

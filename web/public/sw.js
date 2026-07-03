@@ -1,7 +1,7 @@
 // anoon web — service worker: Web Push + офлайн-кэш (без сборочной интеграции).
 // TODO(prod): для точного precache хешированных ассетов — Serwist с build-манифестом.
 
-const CACHE = "anoon-v7"; // bump: навигации → network-first (гарантия свежего билда после деплоя)
+const CACHE = "anoon-v8"; // bump: push tag per-диалог + renotify (уведомления не затирают друг друга)
 const PRECACHE = ["/", "/offline", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -133,7 +133,10 @@ self.addEventListener("push", (event) => {
     body: data.body,
     icon: "/icon-512.png",
     badge: "/badge-96.png",
-    tag: data.tag || "anoon-push",
+    // tag per-диалог (path) — уведомления от разных собеседников НЕ затирают друг друга;
+    // renotify — повторное от того же снова звякает/вибрирует, а не тихо обновляется.
+    tag: data.tag || path,
+    renotify: true,
     data: { url: path },
   };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, Copy, Lock, LogOut } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Copy, Lock, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -100,7 +100,7 @@ export default function ProfilePage() {
   return (
     <div className="mx-auto">
       <header className="flex items-center gap-3 border-b border-border px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-        <Link href="/settings" className="flex h-11 w-11 items-center justify-center rounded-full text-fg-secondary hover:bg-surface-2" aria-label="Назад">
+        <Link href="/" className="flex h-11 w-11 items-center justify-center rounded-full text-fg-secondary hover:bg-surface-2" aria-label="Назад">
           <ArrowLeft size={20} />
         </Link>
         <h1 className="text-base font-semibold">Профиль</h1>
@@ -220,6 +220,17 @@ export default function ProfilePage() {
           </section>
 
           {session.publicId ? <ShareQr publicId={session.publicId} /> : null}
+
+          <section className="border-t border-border pt-6">
+            <Link
+              href="/settings"
+              className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-1 px-4 py-3 text-sm transition hover:bg-surface-2"
+            >
+              <Settings size={18} className="text-fg-secondary" />
+              <span className="flex-1">Настройки</span>
+              <ChevronRight size={16} className="text-fg-muted" />
+            </Link>
+          </section>
 
           <section className="space-y-3 border-t border-border pt-6">
             <button

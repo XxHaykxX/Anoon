@@ -282,7 +282,13 @@ export async function pushToProfile(admin: SupabaseClient, profileId: string, pa
   await Promise.all(
     list.map(async (s) => {
       try {
-        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body);
+        // urgency:high + TTL — иначе FCM/Android держит уведомление в doze и оно приходит с большой
+        // задержкой. high = доставить немедленно, разбудив устройство. TTL 1 сутки (если офлайн).
+        await webpush.sendNotification(
+          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+          body,
+          { urgency: "high", TTL: 86_400 },
+        );
       } catch (err) {
         const code = (err as { statusCode?: number })?.statusCode;
         if (code === 404 || code === 410) await admin.from("PushSubscription").delete().eq("id", s.id);

@@ -1,12 +1,22 @@
 "use client";
 
-import { Bell, Check } from "lucide-react";
+import { Bell, Check, X } from "lucide-react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+import { Avatar } from "@/components/avatar";
+import { respondFriend } from "@/lib/api";
+import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useRequireAccount } from "@/lib/use-require-account";
 import { cn } from "@/lib/utils";
+import { useFriendsCache } from "@/store/friends";
 import { useNotifications, type Notif } from "@/store/notifications";
+
+async function token(): Promise<string | null> {
+  if (!supabaseConfigured) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
 
 // Относительное время на русском — короткий формат, как в остальном приложении (lib/last-seen.ts).
 function timeAgo(ts: number): string {
@@ -28,6 +38,23 @@ export default function NotificationsPage() {
   const notifs = useNotifications((s) => s.notifs);
   const unreadCount = useNotifications((s) => s.unreadCount);
   const markAllRead = useNotifications((s) => s.markAllRead);
+  // Входящие заявки в друзья — глобально обновляются в app-providers (опрос 45с), поэтому здесь
+  // сразу доступны без отдельной загрузки. Кнопки Принять/Отклонить прямо в уведомлениях.
+  const incoming = useFriendsCache((s) => s.incoming);
+  const removeIncomingLocal = useFriendsCache((s) => s.removeIncomingLocal);
+
+  const onAccept = async (publicId: string) => {
+    removeIncomingLocal(publicId); // оптимистично
+    const t = await token();
+    if (t) await respondFriend(publicId, "accept", t).catch(() => {});
+    router.push(`/dm/${publicId}`); // приняли → сразу в личку
+  };
+
+  const onDecline = async (publicId: string) => {
+    removeIncomingLocal(publicId);
+    const t = await token();
+    if (t) await respondFriend(publicId, "decline", t).catch(() => {});
+  };
 
   // Зашёл на экран — считаем всё прочитанным (гасим badge).
   useEffect(() => {
@@ -55,12 +82,36 @@ export default function NotificationsPage() {
         ) : null}
       </header>
 
-      {notifs.length === 0 ? (
+      {/* Входящие заявки в друзья — с кнопками прямо здесь (не надо идти в /friends). */}
+      {incoming.length > 0 ? (
+        <section className="mb-4">
+          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Заявки в друзья</h2>
+          <ul className="space-y-2">
+            {incoming.map((p) => (
+              <li key={p.publicId} className="flex items-center gap-3 rounded-2xl border border-l-2 border-white/10 border-l-accent bg-surface-1 p-3">
+                <Avatar publicId={p.publicId} name={p.nickname} size={40} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{p.nickname}</div>
+                  <div className="truncate font-mono text-xs text-fg-muted">#{p.publicId} хочет открыть профили</div>
+                </div>
+                <button onClick={() => void onAccept(p.publicId)} className="flex min-h-9 items-center gap-1 rounded-full bg-accent px-3 text-xs font-medium text-accent-fg">
+                  <Check size={14} /> Принять
+                </button>
+                <button onClick={() => void onDecline(p.publicId)} aria-label="Отклонить" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted hover:text-fg">
+                  <X size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {notifs.length === 0 && incoming.length === 0 ? (
         <div className="flex min-h-[60dvh] flex-col items-center justify-center gap-3 text-center">
           <Bell size={32} className="text-fg-muted" />
           <p className="text-sm text-fg-secondary">Пока нет уведомлений</p>
         </div>
-      ) : (
+      ) : notifs.length > 0 ? (
         <ul className="space-y-2">
           {notifs.map((n) => (
             <li key={n.id}>
@@ -80,7 +131,7 @@ export default function NotificationsPage() {
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }

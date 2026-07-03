@@ -40,20 +40,28 @@ body {
   color: var(--fg);
   color-scheme: dark;
   font-family: var(--font-sans);
-  overscroll-behavior: none;
-  overflow-x: hidden; /* никакого горизонтального скролла на всём приложении */
   max-width: 100%;
 }
 
-/* Резервируем место под вертикальный скроллбар — гасит горизонтальный «прыжок» центрированной
-   вёрстки при мгновенном появлении скроллбара (редирект OAuth / переход экранов) на ДЕСКТОПЕ.
-   ТОЛЬКО pointer:fine (мышь): на тач-устройствах скроллбары overlay (gutter=0, пользы ноль), а
-   `scrollbar-gutter:stable` на корне вместе с `overflow-x:hidden` ломал вертикальный скролл в
-   установленной PWA (standalone) — страница не прокручивалась вниз. */
-@media (pointer: fine) {
-  html {
-    scrollbar-gutter: stable;
-  }
+/* overflow-x:hidden + overscroll-behavior ТОЛЬКО на html (единственный скроллер).
+   НЕ на body: overflow-x:hidden спекой форсит body.overflow-y → auto, делая body
+   вторым scroll-контейнером; тогда overscroll-behavior:none на body ГЛУШИТ передачу
+   wheel-события на html → колёсико мыши не скроллит страницу (баг на всех страницах). */
+html {
+  overscroll-behavior: none;
+  overflow-x: hidden; /* никакого горизонтального скролла на всём приложении */
+}
+
+/* Полностью прячем визуальную полосу скролла (везде: браузер, десктоп, PWA). Скролл работает,
+   но линии справа нет. scrollbar-gutter:stable больше НЕ нужен: полоса имеет нулевую ширину и не
+   отнимает место → нет горизонтального «прыжка», ради которого он добавлялся. */
+* {
+  scrollbar-width: none; /* Firefox */
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* Chrome/Safari/WebKit (в т.ч. установленная PWA) */
 }
 
 :where(a, button, input, textarea, [tabindex]):focus-visible {

@@ -23,7 +23,7 @@ export default function DmPage() {
   const peer = params.id;
   const router = useRouter();
 
-  const { byPeer, seed, connect, deleteMsg, markViewed, peerOnline, peerTyping, peerRecording, friend, peerIdentity, setReaction } = useChat();
+  const { byPeer, seed, connect, deleteMsg, markViewed, peerOnline, peerTyping, peerRecording, friend, friendHydrated, peerIdentity, setReaction } = useChat();
   const myPublicId = useSession((s) => s.publicId);
   const ensureProfile = useSession((s) => s.ensureProfile);
   const blocked = useModeration((s) => s.isBlocked(peer));
@@ -64,17 +64,14 @@ export default function DmPage() {
     return disconnect;
   }, [gate, peer, myPublicId, blocked, connect]);
 
-  // Расфренд/не-друг: после гидрации статус не accepted → личка недоступна (unfriend-гейт).
-  // friend.status приходит из fetchHistory; редиректим на список друзей.
+  // Расфренд/не-друг: личка доступна ТОЛЬКО принятым друзьям (unfriend-гейт). Редиректим лишь
+  // ПОСЛЕ гидрации статуса из fetchHistory (friendHydrated) — иначе гонка: слепой таймер срабатывал
+  // раньше, чем приходил ответ "accepted", и выкидывал из лички живого друга (баг «не могу писать другу»).
   useEffect(() => {
-    if (gate === "ready" && (friend.status === "none" || friend.status === "pending_me" || friend.status === "pending_peer")) {
-      // даём кадр на гидрацию: если реально не друг — уводим
-      const t = setTimeout(() => {
-        if (useChat.getState().friend.status !== "accepted") router.replace("/friends");
-      }, 1200);
-      return () => clearTimeout(t);
+    if (gate === "ready" && friendHydrated && friend.status !== "accepted") {
+      router.replace("/friends");
     }
-  }, [gate, friend.status, router]);
+  }, [gate, friendHydrated, friend.status, router]);
 
   const mediaItems: LightboxItem[] = msgs
     .filter((m) => (m.kind === "image" || m.kind === "video") && m.url && !m.once)
@@ -127,7 +124,8 @@ export default function DmPage() {
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4">
+        <div className="flex min-h-full flex-col justify-end space-y-2">
         {msgs.length === 0 ? (
           <p className="pt-10 text-center text-sm text-fg-muted">Начните переписку с {title}</p>
         ) : null}
@@ -151,6 +149,7 @@ export default function DmPage() {
             </motion.div>
           ))}
         </AnimatePresence>
+        </div>
       </div>
 
       <ChatComposer peer={peer} reply={reply} onClearReply={() => setReply(null)} />

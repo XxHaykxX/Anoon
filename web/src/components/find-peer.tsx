@@ -1,11 +1,10 @@
 "use client";
 
 import { Glass } from "@samasante/liquid-glass";
-import { Settings } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { Avatar } from "@/components/avatar";
 import { InstallPwa } from "@/components/install-pwa";
 import { MatchSetup } from "@/components/match-setup";
 import { PushPrompt } from "@/components/push-prompt";
@@ -19,7 +18,7 @@ import { useMatchPrefs } from "@/store/match-prefs";
 import { useSession } from "@/store/session";
 
 export function FindPeer() {
-  const { nickname, publicId } = useSession();
+  const { nickname, publicId, avatarUrl } = useSession();
   const router = useRouter();
   const [searching, setSearching] = useState(false);
   // Glass использует SVG-фильтры/WebGL — рендерим только после mount (без SSR).
@@ -54,10 +53,11 @@ export function FindPeer() {
   };
 
   const profileCard = (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5">
-      <div className="text-right">
-        <div className="text-sm font-medium">{nickname}</div>
-        <div className="font-mono text-xs text-fg-muted">#{publicId}</div>
+    <div className="flex h-11 shrink-0 items-center gap-2.5 rounded-full border border-white/10 bg-white/5 py-1 pl-1.5 pr-3.5">
+      <Avatar avatarUrl={avatarUrl} name={nickname} publicId={publicId ?? ""} size={34} />
+      <div className="min-w-0 leading-tight">
+        <div className="truncate text-[13px] font-medium">{nickname}</div>
+        <div className="font-mono text-[10px] text-fg-muted">#{publicId}</div>
       </div>
     </div>
   );
@@ -79,17 +79,10 @@ export function FindPeer() {
       <header className="relative flex items-center justify-between pb-4 pl-[calc(env(safe-area-inset-left)+1.25rem)] pr-[calc(env(safe-area-inset-right)+1.25rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
         <span className="text-lg font-bold">anoon</span>
         <div className="flex items-center gap-2">
-          <Link
-            href="/settings"
-            aria-label="Настройки"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-fg-secondary transition hover:text-fg"
-          >
-            <Settings size={18} />
-          </Link>
           <InstallPwa />
           <PushToggle />
           {mounted ? (
-            <Glass radius={16} optics={{ frost: 6, dispersion: 0.4 }}>
+            <Glass radius={22} optics={{ frost: 6, dispersion: 0.4 }}>
               {profileCard}
             </Glass>
           ) : (

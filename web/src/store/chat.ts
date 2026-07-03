@@ -17,7 +17,7 @@ import {
   respondFriend,
   viewMessage,
 } from "@/lib/api";
-import { chatChannelName, dmChannelName, joinChat, type ChatHandle, type WirePayload } from "@/lib/realtime";
+import { chatChannelName, dmChannelName, joinChat, pingUser, type ChatHandle, type WirePayload } from "@/lib/realtime";
 import { compressImage, makeThumbnail, makeVideoThumbnail, resolveMediaUrl, uploadMedia } from "@/lib/storage";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { useSession } from "@/store/session";
@@ -68,6 +68,7 @@ type ChatState = {
   ended: "me" | "peer" | null; // разговор завершён (кем) — live, показываем оценку
   endedAtLoad: boolean; // диалог уже был завершён на момент открытия → не открывать (редирект)
   friend: { status: FriendStatus }; // раскрытие профилей = дружба (единый handshake)
+  friendHydrated: boolean; // fetchHistory вернул статус дружбы (до этого friend.status="none" — НЕ повод редиректить из лички)
   peerIdentity: PeerProfileDTO | null; // личность собеседника — ТОЛЬКО из GET /api/profile/[peer], никогда из broadcast
   rouletteConvByPeer: Record<string, string>; // peer #ID → conversationId текущего матча (эфемерная рулетка)
   setRouletteConv: (peer: string, conversationId: string) => void; // фиксирует сессию матча (find-peer на матче)
@@ -257,6 +258,7 @@ export const useChat = create<ChatState>()(
         pushLocal(peer, msg);
         // Мгновенный placeholder — собеседник сразу видит «загрузка», а не пустоту.
         tx({ id: mid, kind, mediaPending: true, once: extra.once, w: extra.w, h: extra.h, durationSec: extra.durationSec, at });
+        if (activeKind === "friend") pingUser(peer, "dm"); // live-бейдж получателю (личка)
 
         void (async () => {
           // Гарантируем профиль в БД до аплоада — иначе create-upload вернёт 404 (гонка синка).
@@ -302,6 +304,7 @@ export const useChat = create<ChatState>()(
         ended: null,
         endedAtLoad: false,
         friend: { status: "none" },
+        friendHydrated: false,
         peerIdentity: null,
         rouletteConvByPeer: {},
 
@@ -324,7 +327,7 @@ export const useChat = create<ChatState>()(
           const convId = activeConvId;
           const bucket = bucketKey(peer, kind);
           active?.leave();
-          set({ peerOnline: false, peerTyping: false, peerRecording: false, ended: null, endedAtLoad: false, friend: { status: "none" }, peerIdentity: null });
+          set({ peerOnline: false, peerTyping: false, peerRecording: false, ended: null, endedAtLoad: false, friend: { status: "none" }, friendHydrated: false, peerIdentity: null });
           if (!supabaseConfigured || !myId) {
             active = null;
             return () => {};
@@ -447,7 +450,7 @@ export const useChat = create<ChatState>()(
             const {
               messages: hist,
               ended: convEnded,
-              friend: friendHydrated,
+              friend: friendStatus,
               peer: peerHydrated,
             } = await fetchHistory(peer, t, kind, convId).catch(() => ({
               messages: [],
@@ -462,7 +465,8 @@ export const useChat = create<ChatState>()(
             // (в отличие от live-завершения, которое показывает оценку). См. chat/[id]/page.tsx.
             if (convEnded) set({ endedAtLoad: true });
             // Гидрация раскрытия/дружбы — переживает reload/офлайн (урок репозитория).
-            set({ friend: friendHydrated, peerIdentity: peerHydrated ?? null });
+            // friendHydrated:true → теперь личка вправе решать про редирект (до этого none был «не знаю»).
+            set({ friend: friendStatus, peerIdentity: peerHydrated ?? null, friendHydrated: true });
             // Резолв медиа (история + локально сохранённые stale) + read-квитанции.
             await resolveMediaFor(peer);
             await markRead(peer, t, kind, convId).catch(() => {});
@@ -493,6 +497,9 @@ export const useChat = create<ChatState>()(
           pushLocal(peer, msg);
           tx({ id: msg.id, kind: "text", text, replyToId: reply?.id, replyText: reply?.text, at: msg.at });
           void persistRemote(peer, "text", text, msg.id);
+          // Live-сигнал в персональный канал получателя → обновит бейдж «Друзья», даже если его чат
+          // закрыт (но приложение открыто). Свёрнутое приложение поймает через web-push.
+          if (activeKind === "friend") pingUser(peer, "dm");
         },
 
         deleteMsg: (peer, mid) => {

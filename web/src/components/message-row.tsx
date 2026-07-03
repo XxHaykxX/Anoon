@@ -14,14 +14,18 @@ function StatusTicks({ status }: { status?: MsgStatus }) {
   const label = read ? "Просмотрено" : status === "delivered" ? "Доставлено" : "Отправлено";
   return (
     <span
-      className={cn("mt-0.5 flex items-center gap-0.5 self-end pr-1", read ? "text-sky-400" : "text-fg-muted")}
+      className={cn("flex items-center", read ? "text-sky-400" : "text-fg-muted")}
       aria-label={label}
       title={label}
     >
-      {status === "sent" ? <Check size={14} /> : <CheckCheck size={14} />}
+      {status === "sent" ? <Check size={13} /> : <CheckCheck size={13} />}
     </span>
   );
 }
+
+// Время отправки рядом с сообщением (HH:MM). m.at — epoch ms, локальное время корректно.
+const msgTime = (at: number): string =>
+  new Date(at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 
 // Быстрые эмодзи для лонг-пресс пикера (T10). ❤️ первым — тот же эмодзи, что и двойной тап.
 const REACTION_EMOJIS = ["❤️", "👍", "😂", "😮", "😢", "🙏"];
@@ -169,7 +173,10 @@ export function MessageRow({
             ))}
           </div>
         ) : null}
-        {m.mine ? <StatusTicks status={m.status} /> : null}
+        <div className={cn("mt-0.5 flex items-center gap-1 text-[10px] leading-none text-fg-muted", m.mine ? "self-end pr-1" : "self-start pl-1")}>
+          <span>{msgTime(m.at)}</span>
+          {m.mine ? <StatusTicks status={m.status} /> : null}
+        </div>
       </div>
 
       <div className="relative shrink-0">

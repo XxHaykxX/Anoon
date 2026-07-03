@@ -133,7 +133,7 @@ export async function friendStatus(peer: string, accessToken: string): Promise<F
 }
 
 // Список друзей/заявок. friends — accepted (полный DTO); incoming/outgoing — pending (анонимно).
-export type FriendDTO = PeerProfileDTO & { acceptedAt?: string | null };
+export type FriendDTO = PeerProfileDTO & { acceptedAt?: string | null; unread?: number };
 export type PendingDTO = { publicId: string; nickname: string };
 
 export async function fetchFriends(

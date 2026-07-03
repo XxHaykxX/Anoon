@@ -91,6 +91,32 @@ export async function GET(req: Request) {
   const byId = new Map<string, Record<string, unknown>>();
   for (const p of (profs ?? []) as Array<{ id: string }>) byId.set(p.id, p as Record<string, unknown>);
 
+  // Непрочитанные сообщения на друга (сигнал «пришло сообщение», когда чат закрыт).
+  // Friend-Conversation'ы с моим участием → сообщения от собеседника со status != read.
+  const unreadByPeer = new Map<string, number>();
+  const { data: convs } = await admin
+    .from("Conversation")
+    .select("id,profileAId,profileBId")
+    .eq("kind", "friend")
+    .or(`profileAId.eq.${me.id},profileBId.eq.${me.id}`);
+  const convPeer = new Map<string, string>();
+  for (const c of (convs ?? []) as Array<{ id: string; profileAId: string; profileBId: string }>) {
+    convPeer.set(c.id, c.profileAId === me.id ? c.profileBId : c.profileAId);
+  }
+  const convIds = [...convPeer.keys()];
+  if (convIds.length) {
+    const { data: unreadRows } = await admin
+      .from("Message")
+      .select("conversationId")
+      .in("conversationId", convIds)
+      .neq("senderId", me.id)
+      .neq("status", "read");
+    for (const m of (unreadRows ?? []) as Array<{ conversationId: string }>) {
+      const pid = convPeer.get(m.conversationId);
+      if (pid) unreadByPeer.set(pid, (unreadByPeer.get(pid) ?? 0) + 1);
+    }
+  }
+
   const friends: unknown[] = [];
   const incoming: unknown[] = [];
   const outgoing: unknown[] = [];
@@ -110,6 +136,7 @@ export async function GET(req: Request) {
         online: p.online ?? false,
         lastSeen: p.lastSeen ?? null,
         acceptedAt: r.acceptedAt,
+        unread: unreadByPeer.get(peerId) ?? 0,
       });
     } else {
       // pending — анонимно (без имени/фото до раскрытия).

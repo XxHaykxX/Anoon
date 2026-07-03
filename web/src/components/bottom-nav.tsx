@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 
 import { accountsEnabled } from "@/lib/supabase";
 import { useMounted } from "@/lib/use-mounted";
+import { useFriendsCache } from "@/store/friends";
 import { useNotifications } from "@/store/notifications";
 import { useSession } from "@/store/session";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,8 @@ export function BottomNavSpacer() {
 export function BottomNav() {
   const pathname = usePathname();
   const unreadCount = useNotifications((s) => s.unreadCount);
+  const incomingCount = useFriendsCache((s) => s.incoming.length);
+  const friendsUnread = useFriendsCache((s) => s.friends.reduce((n, f) => n + (f.unread ? 1 : 0), 0));
   const show = useShowBottomNav();
 
   if (!show) return null;
@@ -70,7 +73,8 @@ export function BottomNav() {
         {TABS.map((tab) => {
           const active = tab.href === "/" ? pathname === "/" : pathname.startsWith(tab.href);
           const Icon = tab.icon;
-          const badge = tab.href === "/notifications" && unreadCount > 0 ? (unreadCount > 9 ? "9+" : String(unreadCount)) : null;
+          const count = tab.href === "/notifications" ? unreadCount : tab.href === "/friends" ? incomingCount + friendsUnread : 0;
+          const badge = count > 0 ? (count > 9 ? "9+" : String(count)) : null;
           return (
             <Link key={tab.href} href={tab.href} aria-label={tab.label} className="flex min-h-[56px] flex-1">
               <motion.span

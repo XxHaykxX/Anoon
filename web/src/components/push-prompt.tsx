@@ -38,7 +38,7 @@ export function PushPrompt() {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-fg">Включите уведомления</p>
-        <p className="text-xs text-fg-muted">{error ?? "Чтобы не пропустить новые сообщения и собеседников."}</p>
+        {error ? <p className="text-xs text-danger">{error}</p> : null}
       </div>
       <button
         onClick={() => void enable()}

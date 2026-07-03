@@ -16,6 +16,9 @@ export const viewport: Viewport = {
   themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
+  // Запрет зума страниц (pinch + double-tap) — это нативное приложение-like PWA, зум ломает вёрстку.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
 };
 

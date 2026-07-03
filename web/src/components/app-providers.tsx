@@ -3,9 +3,12 @@
 import { MotionConfig } from "framer-motion";
 import { useEffect } from "react";
 
+import { fetchFriends } from "@/lib/api";
 import { registerServiceWorker } from "@/lib/push";
+import { userChannelName } from "@/lib/realtime";
 import { supabase, supabaseConfigured } from "@/lib/supabase";
 import { usePwaBackGuard } from "@/lib/use-pwa-back-guard";
+import { useFriendsCache } from "@/store/friends";
 import { useMatchPrefs } from "@/store/match-prefs";
 import { type Notif, useNotifications } from "@/store/notifications";
 import { useSession } from "@/store/session";
@@ -83,6 +86,18 @@ async function checkVersion() {
   }
 }
 
+// Глобальный опрос друзей/заявок → useFriendsCache.incoming известен везде (не только на /friends),
+// чтобы бейдж входящих заявок на вкладке «Друзья» в нижней навигации горел сразу, без захода на
+// страницу. Пуш о заявке пока не рассылается — этот опрос и есть сигнал «пришла заявка».
+async function refreshFriends() {
+  if (!supabaseConfigured) return;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return;
+  const d = await fetchFriends(token).catch(() => null);
+  if (d) useFriendsCache.getState().setAll(d);
+}
+
 // BELL-DATA: подхватить накопленные в IndexedDB push (SW писал их, пока вкладка была закрыта)
 // + слушать live push, пока вкладка открыта (SW postMessage({type:"notif"}), см. public/sw.js).
 // Отдельный хук — не трогает остальной AppProviders (координация с ui-dev/навбаром).
@@ -99,11 +114,27 @@ function useBellData() {
   }, []);
 }
 
+// Live-сигнал вне чата: подписка на персональный канал `anoon:user:<myId>`. Отправитель пингует
+// его при новом сообщении/заявке (см. realtime.pingUser) → обновляем списки/бейджи, даже если
+// нужный чат закрыт (приложение открыто). Свёрнутое приложение ловит то же через web-push.
+function useIncomingPing() {
+  const publicId = useSession((s) => s.publicId);
+  useEffect(() => {
+    if (!supabaseConfigured || !publicId) return;
+    const ch = supabase.channel(userChannelName(publicId), { config: { broadcast: { self: false } } });
+    ch.on("broadcast", { event: "dm" }, () => void refreshFriends())
+      .on("broadcast", { event: "friend" }, () => void refreshFriends())
+      .subscribe();
+    return () => void supabase.removeChannel(ch);
+  }, [publicId]);
+}
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   // Досев history в standalone PWA — «назад» не должен закрывать приложение вместо навигации
   // (см. lib/use-pwa-back-guard.ts). Висит здесь (маунтится раз на всё приложение), не на страницах.
   usePwaBackGuard();
   useBellData();
+  useIncomingPing();
 
   useEffect(() => {
     void registerServiceWorker();
@@ -134,6 +165,20 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     const t = setInterval(() => void beat(), 30_000);
     const onVis = () => {
       if (document.visibilityState === "visible") void beat();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  // Опрос заявок в друзья: на маунте, каждые 45с и при возврате на вкладку → бейдж «Друзья» актуален.
+  useEffect(() => {
+    void refreshFriends();
+    const t = setInterval(() => void refreshFriends(), 45_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void refreshFriends();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {

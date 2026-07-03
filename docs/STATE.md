@@ -201,8 +201,10 @@ Push — почему не приходит (диагностика):
 ### ЮЗЕРУ (для завершения)
 Убить старый SW чтобы получить v7 + все фиксы: `chrome://serviceworker-internals` → anoon-web.vercel.app → **Unregister** → закрыть все вкладки → открыть заново. Либо Настройки сайта → Очистить данные. После: профиль скроллит, «кончика Друзья» нет, вход не кидает на confirm.
 
-### Тест-аккаунт (создан прямо в БД, argon2)
-**qatester@anoon.app / AnoonQA!2026**, профиль **#00002** (genderLocked, email подтверждён). Для теста реального email/пароль-входа. Можно удалить: DELETE из Profile #00002 + User + auth.users по email.
+### Тест-аккаунт (email/пароль на проде) ✅ РАБОЧИЙ
+**qatester@anoon.app / AnoonQA!2026**, профиль **#00002** (ник «ТестСкролл», genderLocked, email подтверждён). Реальный email/пароль-вход на проде работает (проверено playwright 2026-07-02). Можно удалить: DELETE из Profile #00002 + User + auth.users по email.
+
+**⚠️ Урок (2026-07-02):** юзер, созданный вручную SQL-INSERT в `auth.users`, ломал GoTrue → `token`/`admin/users` отдавали **500 «Database error querying schema»** (вход невозможен). Две причины: (1) NULL в token-колонках `confirmation_token`/`recovery_token`/`email_change`/`email_change_token_new` — GoTrue сканит их в Go-`string`, NULL = ошибка; чинится `COALESCE(...,'')`. (2) отсутствовала строка в `auth.identities` (provider='email'). Правильно создавать тест-юзеров через **Supabase Admin API** (`auth.admin.createUser`), не голым SQL. Пароль сброшен через `extensions.crypt(pwd, extensions.gen_salt('bf'))` (pgcrypto в схеме `extensions`).
 
 ### ОТКРЫТО / оговорка
-Реальный email/пароль-вход через playwright не доснял: playwright-управляемый chromium (и headless, и headed chromium-1229) даёт **net::ERR_FAILED** на anoon-web.vercel.app (QUIC/сетевой квирк этого билда chromium; настоящий Chrome и route-перехват грузят нормально). Обход: ctx.route('**/*', continue) включает CDP Fetch-перехват и иногда обходит ERR_FAILED — сработало для route-mock профиля, но для чистого входа нестабильно. Для живого real-login дампа надёжнее: настоящий Chrome (не playwright-chromium) + CDP, либо создать сессию и inject токен.
+— (real-login через playwright закрыт: работает, см. выше).

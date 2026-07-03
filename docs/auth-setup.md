@@ -20,9 +20,7 @@
 - [ ] 1.2. В **Redirect URLs** добавить прод:
   - `https://anoon-web.vercel.app/auth/callback`
   - `https://anoon-web.vercel.app/recover/reset`
-- [ ] 1.3. Добавить preview-деплои Vercel (wildcard):
-  - `https://*-karapetyanhaykoooo-8237s-projects.vercel.app/auth/callback`
-  - `https://*-karapetyanhaykoooo-8237s-projects.vercel.app/recover/reset`
+- [ ] 1.3. ~~preview-деплои Vercel (wildcard)~~ — **preview больше не существует, только prod** (2026-07-02). Wildcard-редиректы можно удалить из allow-list.
 - [ ] 1.4. Добавить localhost (локальная разработка):
   - `http://localhost:3000/auth/callback`
   - `http://localhost:3000/recover/reset`
@@ -83,8 +81,8 @@
 **Settings → Environment Variables**.
 
 - [ ] 5.1. `NEXT_PUBLIC_ACCOUNTS_ENABLED` — общий выключатель фичи аккаунтов.
-  - Сначала добавить `false` (или не добавлять) в Production, `true` — в Preview,
-    чтобы обкатать на preview-деплоях.
+  - **Preview больше нет (2026-07-02) — только Production.** Обкатывать негде,
+    ставить флаг сразу в Production.
   - Включить в Production (`true`) на шаге выката G8.
 - [ ] 5.2. `NEXT_PUBLIC_APPLE_ENABLED=false` — кнопка Apple ID, по умолчанию выключена
   (см. п. 6).

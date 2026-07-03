@@ -119,13 +119,19 @@ export async function POST(req: Request) {
   if (!msg) return Response.json({ id: msgId, at: new Date().toISOString() });
   await admin.from("Conversation").update({ lastMessageAt: new Date().toISOString() }).eq("id", convId);
 
-  const { data: peerProfile } = await admin.from("Profile").select("online,nickname").eq("id", peerId).maybeSingle();
+  const { data: peerProfile } = await admin.from("Profile").select("lastSeen,nickname").eq("id", peerId).maybeSingle();
   const { data: myProfile } = await admin.from("Profile").select("publicId,nickname").eq("id", senderId).maybeSingle();
-  if (peerProfile && !(peerProfile as { online?: boolean }).online) {
+  // Пуш, если получатель НЕ активен прямо сейчас (свёрнутое/закрытое приложение). Флаг `online`
+  // ЗАЛИПАЕТ (не сбрасывается при сворачивании — beat просто перестаёт слать), поэтому ориентируемся
+  // на СВЕЖЕСТЬ lastSeen (heartbeat 30с → порог 60с). Иначе свёрнутый юзер не получал пуш.
+  const pLastSeen = (peerProfile as { lastSeen?: string | null } | null)?.lastSeen;
+  const active = pLastSeen ? Date.now() - new Date(pLastSeen).getTime() < 60_000 : false;
+  if (peerProfile && !active) {
+    const myPub = (myProfile as { publicId?: string } | null)?.publicId ?? "";
     await pushToProfile(admin, peerId, {
       title: (myProfile as { nickname?: string } | null)?.nickname ?? "Новое сообщение",
       body: kind === "text" ? (text ?? "") : "📎 Медиа",
-      url: `/chat/${(myProfile as { publicId?: string } | null)?.publicId ?? ""}`,
+      url: convKind === "friend" ? `/dm/${myPub}` : `/chat/${myPub}`,
     });
   }
   return Response.json({ id: (msg as { id: string }).id, at: (msg as { createdAt: string }).createdAt });
