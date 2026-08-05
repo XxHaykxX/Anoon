@@ -45,7 +45,7 @@ export default function AnoonForgotPassword() {
           type="button"
           onClick={() => nav.back()}
           aria-label="Назад"
-          className="-ml-3 grid size-9 shrink-0 place-items-center rounded-full text-foreground transition-transform active:scale-95 cursor-pointer"
+          className="-ml-5 grid size-12 shrink-0 place-items-center rounded-full text-foreground transition-transform active:scale-95 cursor-pointer"
         >
           <ChevronLeftIcon className="size-6" />
         </button>

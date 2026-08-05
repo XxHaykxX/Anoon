@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { cn } from "@/lib/utils";
 import { PlayIcon, DownloadIcon, DoubleCheckIcon } from "@/components/icons";
 
@@ -36,21 +37,6 @@ const TOTAL_LOAD_MS = 1200;
 const STEP_MS = 30;
 const RING_RADIUS = 20;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = React.useState(false);
-
-  React.useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-    const handleChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener("change", handleChange);
-    return () => mq.removeEventListener("change", handleChange);
-  }, []);
-
-  return reduced;
-}
 
 /**
  * Chat photo/video bubble that starts blurred and loads on tap, showing a

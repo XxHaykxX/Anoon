@@ -97,10 +97,8 @@ export default function AnoonFriendSearch() {
   useEffect(() => {
     if (!USE_TINODE) return;
     const q = query.trim();
-    if (!q) {
-      setRealRows([]);
-      return;
-    }
+    // The field's onChange already cleared the rows for an empty query.
+    if (!q) return;
     const t = setTimeout(() => {
       void getCompanionClient()
         .friendsSearch(q)
@@ -144,7 +142,14 @@ export default function AnoonFriendSearch() {
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setQuery(next);
+              // Emptying the field drops the previous query's rows right away.
+              // Done here rather than in the debounce effect below: clearing
+              // state is a consequence of this event, not of a render.
+              if (!next.trim()) setRealRows([]);
+            }}
             placeholder="Например, 00042"
             autoFocus
             className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"

@@ -37,9 +37,30 @@ import AnoonProfile from "@/components/anoon/AnoonProfile";
 import AnoonSettings from "@/components/anoon/AnoonSettings";
 import AnoonOffline from "@/components/anoon/AnoonOffline";
 import AnoonInstall from "@/components/anoon/AnoonInstall";
+import AnoonOnboarding from "@/components/anoon/AnoonOnboarding";
+// Wrappers that feed props/fixtures to overlays and chat sub-components.
+import {
+  AnoonChatsShowcase,
+  AnoonWalletShowcase,
+  AnoonMediaViewerShowcase,
+  IncomingCallShowcase,
+  ChatPartsShowcase,
+} from "@/app/showcaseFixtures";
 
+/**
+ * Catalogue of every screen a user can reach.
+ *
+ * Two products live here and they are NOT interchangeable:
+ *   • `a/…`      — anoon, the real product. This is the design reference.
+ *   • unprefixed — the legacy Tinode-clone mockups this repo grew out of.
+ *
+ * The two onboarding entries are labelled explicitly because they were being
+ * confused: `a/Онбординг` is what the app actually boots into (AnoonApp's
+ * `onboarding` route), while `Onboarding (Tinode)` belongs to the old clone and
+ * no user ever sees it.
+ */
 const PHONE_SCREENS = {
-  Onboarding: OnboardingScreen,
+  "Onboarding (Tinode)": OnboardingScreen,
   Login: LoginScreen,
   Chats: ChatsListScreen,
   Chat: ChatScreen,
@@ -74,12 +95,19 @@ const PHONE_SCREENS = {
   "a/Настройки": AnoonSettings,
   "a/Офлайн": AnoonOffline,
   "a/Установка": AnoonInstall,
+  "a/Онбординг": AnoonOnboarding,
+  "a/Чаты": AnoonChatsShowcase,
+  "a/Кошелёк": AnoonWalletShowcase,
+  "a/Входящий звонок": IncomingCallShowcase,
+  "a/Просмотр медиа": AnoonMediaViewerShowcase,
+  "a/Части чата": ChatPartsShowcase,
 } as const;
 
 type PhoneScreenName = keyof typeof PHONE_SCREENS;
 type TabName = PhoneScreenName | "Desktop";
 const TABS: TabName[] = [
-  "Onboarding",
+  "a/Онбординг",
+  "Onboarding (Tinode)",
   "Login",
   "Chats",
   "Chat",
@@ -114,6 +142,11 @@ const TABS: TabName[] = [
   "a/Настройки",
   "a/Офлайн",
   "a/Установка",
+  "a/Чаты",
+  "a/Кошелёк",
+  "a/Входящий звонок",
+  "a/Просмотр медиа",
+  "a/Части чата",
 ];
 
 /**
@@ -161,7 +194,7 @@ function DesktopFrame({ dark }: { dark?: boolean }) {
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<TabName>("Onboarding");
+  const [tab, setTab] = useState<TabName>("a/Онбординг");
   const isDesktop = tab === "Desktop";
   const Screen = isDesktop ? null : PHONE_SCREENS[tab as PhoneScreenName];
 

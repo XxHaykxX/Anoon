@@ -80,8 +80,21 @@ export interface FriendSearchResult {
   hashId: string;
   displayName: string;
   avatarTone: number;
-  /** Relationship with the current user, to pick the right CTA. */
-  relation: "none" | "friends" | "request_sent" | "request_received";
+  /**
+   * Relationship with the current user, to pick the right CTA.
+   *
+   * `blocked` and `self` exist because both states were previously
+   * unrepresentable and collapsed to `none`, so the card offered «Добавить»
+   * for someone you had blocked, and for yourself — where the request then
+   * failed server-side with `self_request`.
+   */
+  relation:
+    | "none"
+    | "friends"
+    | "request_sent"
+    | "request_received"
+    | "blocked"
+    | "self";
 }
 
 /**

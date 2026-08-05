@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { useMediaLoad } from "@/hooks/useMediaLoad";
 import { authedFileUrl, type MediaPart } from "@/lib/tinode";
 import { cn } from "@/lib/utils";
 import { PlayIcon, DoubleCheckIcon } from "@/components/icons";
@@ -149,85 +150,6 @@ const EyeOffIcon = (p: React.SVGProps<SVGSVGElement>) => (
  */
 const BUBBLE_SHRINK = "shrink-0";
 
-/** Backoff between retries of a failed/stalled media load, in ms. Length = retry budget. */
-const MEDIA_RETRY_DELAYS = [400, 1200, 2500];
-/**
- * A load that neither completes nor errors within this window counts as a
- * failure. An `<img>` whose request never *starts* fires neither event, so
- * without this the bubble would wait forever (BUG: receiver-side photo never
- * appears — see {@link useMediaLoad}).
- */
-const MEDIA_STALL_MS = 6000;
-
-/**
- * Load bookkeeping shared by the photo/video bubbles: tracks whether the media
- * finished loading, retries a bounded number of times with backoff, and only
- * then gives up to {@link BrokenNote}.
- *
- * Two failure modes are covered:
- *  - the request *fails* (Tinode answers 401/400 when the session token wasn't
- *    in the query string yet) → `onError` fires and we retry, re-resolving the
- *    URL so a token that arrived in the meantime is picked up;
- *  - the request never *starts or finishes* → neither event fires, so the
- *    stall watchdog forces the same retry path.
- *
- * `attempt` is meant to be spread onto the media tag as its `key`: re-rendering
- * with an identical `src` would not make the browser reissue anything, whereas
- * remounting the element does.
- *
- * @param watchStall only arm the watchdog when this bubble actually renders a
- *   tag wired to `onLoad` — a document/voice bubble never reports a load, and
- *   would otherwise be declared broken 6s in.
- */
-function useMediaLoad(watchStall: boolean) {
-  const [loaded, setLoaded] = React.useState(false);
-  const [broken, setBroken] = React.useState(false);
-  const [attempt, setAttempt] = React.useState(0);
-  const budget = React.useRef(0);
-  const timer = React.useRef<number | null>(null);
-
-  const clear = React.useCallback(() => {
-    if (timer.current !== null) {
-      window.clearTimeout(timer.current);
-      timer.current = null;
-    }
-  }, []);
-
-  const retry = React.useCallback(() => {
-    clear();
-    if (budget.current >= MEDIA_RETRY_DELAYS.length) {
-      setBroken(true);
-      return;
-    }
-    const delay = MEDIA_RETRY_DELAYS[budget.current];
-    budget.current += 1;
-    timer.current = window.setTimeout(() => setAttempt((n) => n + 1), delay);
-  }, [clear]);
-
-  const onLoad = React.useCallback(() => {
-    clear();
-    setLoaded(true);
-  }, [clear]);
-
-  // A retry that hits the browser cache can finish before React attaches the
-  // `load` listener, leaving `loaded` false and letting the watchdog condemn a
-  // perfectly good image. Reading `complete` at mount closes that window.
-  const imgRef = React.useCallback(
-    (el: HTMLImageElement | null) => {
-      if (el?.complete && el.naturalWidth > 0) onLoad();
-    },
-    [onLoad],
-  );
-
-  React.useEffect(() => {
-    if (!watchStall || loaded || broken) return;
-    timer.current = window.setTimeout(retry, MEDIA_STALL_MS);
-    return clear;
-  }, [watchStall, attempt, loaded, broken, retry, clear]);
-
-  return { loaded, broken, attempt, imgRef, onLoad, onError: retry };
-}
-
 /**
  * Placeholder painted behind the media while it loads. Purely structural — it
  * exists so the bubble reserves height instead of collapsing to 0px, which
@@ -291,7 +213,7 @@ export default function ChatMediaBubble({
     ? !viewed && part.kind === "image"
     : part.kind === "image" || part.kind === "video";
 
-  const { loaded, broken, attempt, imgRef, onLoad, onError } = useMediaLoad(hasLoadableTag);
+  const { loaded, broken, attempt, mediaRef, onLoad, onError } = useMediaLoad(hasLoadableTag);
   const align = mine ? "self-end" : "self-start";
   // Tinode file GETs 403 without auth in the query string — resolve the ref.
   // Recomputed on every retry (`attempt`) so a session token that only became
@@ -332,7 +254,7 @@ export default function ChatMediaBubble({
           // eslint-disable-next-line @next/next/no-img-element -- server-relative ref, no next/image loader needed
           <img
             key={attempt}
-            ref={imgRef}
+            ref={mediaRef}
             src={src}
             alt=""
             aria-hidden
@@ -373,7 +295,7 @@ export default function ChatMediaBubble({
         {/* eslint-disable-next-line @next/next/no-img-element -- server-relative ref, no next/image loader needed */}
         <img
           key={attempt}
-          ref={imgRef}
+          ref={mediaRef}
           src={src}
           alt={part.name || "Изображение"}
           width={part.width}
@@ -413,6 +335,7 @@ export default function ChatMediaBubble({
         {!loaded && <MediaSkeleton />}
         <video
           key={attempt}
+          ref={mediaRef}
           preload="metadata"
           muted
           playsInline

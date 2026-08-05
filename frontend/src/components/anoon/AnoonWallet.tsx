@@ -12,12 +12,27 @@ import {
 } from "@/store/walletStore";
 import { PRESS_FX } from "@/components/anoon/_shared";
 
+/**
+ * The coin glyph's three golds. Deliberately NOT the brand yellow and
+ * deliberately NOT tokens: this is one object shaded in three tones — a lit
+ * face, a darker rim, and a dark engraved symbol — and it only reads as a coin
+ * because they differ. There is a single gold token (`--primary`, #FDBF2D), so
+ * putting the coin on the token system would flatten all three into one disc,
+ * and it would also make the currency glyph the exact colour of every CTA and
+ * accent in the app, which is precisely what a coin must not look like.
+ *
+ * Named here rather than inlined so the set is visible and changes together.
+ */
+const COIN_FACE = "#E7B75F";
+const COIN_RIM = "#C98F3B";
+const COIN_ENGRAVING = "#7A5420";
+
 /** Small coin glyph — no icon set entry for it, so a local inline SVG (see AnoonProfile's QrPlaceholder for the same pattern). */
 function CoinIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className}>
-      <circle cx="12" cy="12" r="9" fill="#E7B75F" stroke="#C98F3B" strokeWidth="1.5" />
-      <text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="700" fill="#7A5420">
+      <circle cx="12" cy="12" r="9" fill={COIN_FACE} stroke={COIN_RIM} strokeWidth="1.5" />
+      <text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="700" fill={COIN_ENGRAVING}>
         ₼
       </text>
     </svg>

@@ -403,10 +403,9 @@ export default function AnoonAnonChat() {
 
   // Flash a one-time confirmation the moment the profiles are revealed. This
   // syncs a transient UI banner to a one-shot store event (reveal), which is a
-  // legitimate effect-driven setState despite the lint heuristic.
+  // legitimate effect-driven setState.
   useEffect(() => {
     if (real && anonRevealState === "revealed") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBanner("Профили открыты — вы теперь друзья");
       const t = setTimeout(() => setBanner(null), 2200);
       return () => clearTimeout(t);

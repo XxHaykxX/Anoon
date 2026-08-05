@@ -129,10 +129,12 @@ export default function AnoonGenderSelect() {
       </div>
 
       <div className="border-t border-border px-6 py-4">
+        {/* `go`, not `push`: gender is confirmed irreversible on this screen, so
+            there is nothing to come back to — don't leave an unreachable entry. */}
         <button
           type="button"
           disabled={!canContinue}
-          onClick={() => nav.push("auth-profile-setup")}
+          onClick={() => nav.go("auth-profile-setup")}
           className={`w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer ${
             canContinue ? "" : "cursor-not-allowed opacity-50"
           }`}

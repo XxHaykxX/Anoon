@@ -150,8 +150,7 @@ function BottomTabItem({
 /* Calm, desaturated avatar gradient — shared visual language across screens. */
 const AVATAR_GRADIENT_TEAL = "linear-gradient(135deg, #86B7BD 0%, #5D939B 100%)";
 
-const TABS = ["chat", "bot", "moments", "bolt", "profile"] as const;
-type Tab = (typeof TABS)[number];
+type Tab = "chat" | "bot" | "moments" | "bolt" | "profile";
 
 export default function AccountScreen() {
   const [activeTab, setActiveTab] = useState<Tab>("profile");

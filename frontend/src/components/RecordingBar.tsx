@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { MicIcon, SendIcon, TrashIcon } from "@/components/icons";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { cn } from "@/lib/utils";
 
 /** Number of waveform bars kept on screen before the oldest ones are dropped. */
@@ -53,7 +54,7 @@ function formatDuration(totalSeconds: number): string {
 export default function RecordingBar({ onSend, onCancel, className }: RecordingBarProps) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [bars, setBars] = useState<WaveformBar[]>([]);
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
   const nextBarIndexRef = useRef(0);
 
   // Running timer.
@@ -78,19 +79,6 @@ export default function RecordingBar({ onSend, onCancel, className }: RecordingB
     }, BAR_PUSH_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, []);
-
-  // Respect prefers-reduced-motion for the blinking record dot.
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReducedMotion(mediaQuery.matches);
-
-    const handleChange = (event: MediaQueryListEvent) => {
-      setPrefersReducedMotion(event.matches);
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
   const handleSend = () => {

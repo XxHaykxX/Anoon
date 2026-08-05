@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChevronLeftIcon } from "@/components/icons";
 import { AnoonLogo } from "@/components/anoon/_shared";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
 import { getCompanionClient } from "@/lib/companion";
@@ -66,7 +67,9 @@ export default function AnoonVerifyEmail() {
     setConfirmError(null);
     try {
       await getCompanionClient().confirmEmailVerify(token.trim());
-      nav.push("auth-gender");
+      // `go`, not `push`: the verification token is spent, so returning here is
+      // meaningless — reset the stack instead of leaving an unreachable entry.
+      nav.go("auth-gender");
     } catch (err) {
       setConfirmError(err instanceof Error ? err.message : "Неверный или истёкший код");
     } finally {
@@ -81,7 +84,15 @@ export default function AnoonVerifyEmail() {
         style={{ background: "rgba(253,191,45,0.14)" }}
       />
 
-      <div className="relative z-10 px-6 pt-6">
+      <div className="relative z-10 flex items-center gap-1 px-6 pt-6">
+        <button
+          type="button"
+          onClick={() => nav.back()}
+          aria-label="Назад"
+          className="-ml-5 grid size-12 shrink-0 place-items-center rounded-full text-foreground transition-transform active:scale-95 cursor-pointer"
+        >
+          <ChevronLeftIcon className="size-6" />
+        </button>
         <AnoonLogo className="text-xl" />
       </div>
 

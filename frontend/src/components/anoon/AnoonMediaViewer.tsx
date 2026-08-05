@@ -3,6 +3,9 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { CloseIcon } from "@/components/icons";
+import { useMediaLoad } from "@/hooks/useMediaLoad";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
+import { authedFileUrl } from "@/lib/tinode";
 import {
   useMediaViewerStore,
   type MediaViewerItem,
@@ -17,21 +20,121 @@ const DOUBLE_TAP_DIST = 44;
 
 type Pt = { x: number; y: number };
 
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = React.useState(false);
-  React.useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
-
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
+
+/**
+ * Slides carry full-size originals, not chat thumbnails, so they get a longer
+ * grace period than {@link MEDIA_STALL_MS} before the watchdog calls a load
+ * stalled. (The hook additionally extends this on its own for any element that
+ * is visibly still decoding, so a slow-but-live download is never cut off.)
+ */
+const VIEWER_STALL_MS = 15_000;
+
+/**
+ * The viewer is handed an already-resolved URL, captured by the chat screen
+ * when the lightbox opened (`openConversationMedia` in AnoonPrivateChat /
+ * AnoonAnonChat runs `authedFileUrl` at that moment). If the session token
+ * baked into that URL has since gone stale — the socket reconnected and Tinode
+ * issued a new one while the viewer stayed open — retrying the identical URL
+ * would just 401 again forever. Rebuilding it from the path makes every retry
+ * carry the *current* token.
+ *
+ * Absolute (`http…`) and `data:` URLs are returned untouched, matching
+ * `authedFileUrl`'s own contract; the first attempt is never rewritten, since
+ * the captured URL is fresh by construction.
+ */
+function refreshedSrc(src: string, attempt: number): string {
+  if (attempt === 0 || !src.startsWith("/")) return src;
+  return authedFileUrl(src.split("?")[0]);
+}
+
+/**
+ * One slide of the lightbox. Owns its own load/retry lifecycle via the shared
+ * {@link useMediaLoad} (the same hook backing the chat bubbles), so a slide
+ * that fails or stalls retries with backoff and then shows «Не удалось
+ * загрузить» instead of spinning forever.
+ */
+function ViewerSlide({
+  item,
+  isCurrent,
+  widthPct,
+  transform,
+  transition,
+}: {
+  item: MediaViewerItem;
+  isCurrent: boolean;
+  widthPct: string;
+  transform?: string;
+  transition: string;
+}) {
+  // Watch for a stall only on the slide actually on screen. Every slide's
+  // `<img>` starts loading at once, so with a long gallery the browser's
+  // per-origin connection cap leaves later ones queued — not stalled — and a
+  // watchdog armed on all of them would condemn slides the user never looked
+  // at (and restart their transfers). Arming on `isCurrent` re-arms with a
+  // fresh window the moment a queued slide is swiped to, which is also exactly
+  // when its spinner becomes visible. A real failure still fires `onError` and
+  // retries on every slide regardless.
+  const { loaded, broken, attempt, mediaRef, onLoad, onError } = useMediaLoad(
+    isCurrent,
+    VIEWER_STALL_MS,
+  );
+  const src = refreshedSrc(item.src, attempt);
+
+  return (
+    <div
+      className="flex h-full items-center justify-center px-2"
+      style={{ width: widthPct }}
+    >
+      <div
+        className="relative flex h-full w-full items-center justify-center overflow-hidden"
+        style={{ transform, transformOrigin: "center center", transition }}
+      >
+        {/* Loading spinner until the current slide's media decodes. */}
+        {isCurrent && !broken && !loaded && (
+          <span className="pointer-events-none absolute z-10 size-8 animate-spin rounded-full border-2 border-white/25 border-t-white" />
+        )}
+        {broken ? (
+          <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm text-white/70">
+            Не удалось загрузить
+          </span>
+        ) : item.type === "image" ? (
+          // eslint-disable-next-line @next/next/no-img-element -- pre-resolved authed ref, no next/image loader
+          <img
+            key={attempt}
+            ref={mediaRef}
+            src={src}
+            alt={item.caption || "Изображение"}
+            draggable={false}
+            data-testid={isCurrent ? "media-viewer-item" : undefined}
+            onLoad={onLoad}
+            onError={onError}
+            className="max-h-full max-w-full select-none object-contain"
+          />
+        ) : (
+          <video
+            key={attempt}
+            ref={mediaRef}
+            src={src}
+            controls
+            playsInline
+            autoPlay={isCurrent}
+            data-testid={isCurrent ? "media-viewer-item" : undefined}
+            onLoadedData={onLoad}
+            onError={onError}
+            // Keep native scrubbing/controls: don't let the lightbox
+            // gesture surface hijack pointer events on the video.
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            className="max-h-full max-w-full bg-black object-contain"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Fullscreen media viewer (lightbox). Store-driven: reads the REAL media of the
@@ -61,9 +164,8 @@ export default function AnoonMediaViewer() {
     clamp(storeIndex, 0, Math.max(0, count - 1)),
   );
 
-  // Per-slide load failures + load-complete (drives the spinner).
-  const [errored, setErrored] = React.useState<Record<number, boolean>>({});
-  const [loaded, setLoaded] = React.useState<Record<number, boolean>>({});
+  // Per-slide load state now lives in each {@link ViewerSlide}'s own
+  // `useMediaLoad`, which also owns the retry/stall handling.
 
   // Zoom/pan of the current slide.
   const [scale, setScale] = React.useState(1);
@@ -76,6 +178,13 @@ export default function AnoonMediaViewer() {
   const [animating, setAnimating] = React.useState(false); // true while a pointer gesture is live
 
   const surfaceRef = React.useRef<HTMLDivElement>(null);
+  // Height of the gesture surface, mirrored into state at the moment a gesture
+  // starts. The swipe-down backdrop fade needs it *during render*, and reading
+  // `rect.current` there is a ref access in render (react-hooks/refs): refs are
+  // not reactive, so a render triggered by anything other than the measuring
+  // event would silently use a stale value. `rect` stays the source of truth
+  // for the event handlers, which may read it freely.
+  const [surfaceH, setSurfaceH] = React.useState(0);
 
   // Live gesture bookkeeping (kept in refs so pointermove doesn't thrash renders on the model).
   const pointers = React.useRef<Map<number, Pt>>(new Map());
@@ -185,7 +294,10 @@ export default function AnoonMediaViewer() {
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const surface = surfaceRef.current;
-    if (surface) rect.current = surface.getBoundingClientRect();
+    if (surface) {
+      rect.current = surface.getBoundingClientRect();
+      setSurfaceH(rect.current.height);
+    }
     surface?.setPointerCapture?.(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -324,9 +436,7 @@ export default function AnoonMediaViewer() {
 
   const activeItem: MediaViewerItem | undefined = items[current];
   const transition = animating || reduced ? "none" : "transform 260ms ease-out";
-  const bgAlpha = rect.current
-    ? clamp(1 - dragY / (rect.current.height * 1.4), 0.4, 1)
-    : 1;
+  const bgAlpha = surfaceH > 0 ? clamp(1 - dragY / (surfaceH * 1.4), 0.4, 1) : 1;
 
   const trackTransform = `translateX(calc(${(-current * 100) / count}% + ${dragX}px))`;
 
@@ -396,62 +506,19 @@ export default function AnoonMediaViewer() {
           >
             {items.map((item, i) => {
               const isCurrent = i === current;
-              const isBroken = errored[i];
               return (
-                <div
+                <ViewerSlide
                   key={i}
-                  className="flex h-full items-center justify-center px-2"
-                  style={{ width: `${100 / count}%` }}
-                >
-                  <div
-                    className="relative flex h-full w-full items-center justify-center overflow-hidden"
-                    style={{
-                      transform:
-                        isCurrent && item.type === "image"
-                          ? `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`
-                          : undefined,
-                      transformOrigin: "center center",
-                      transition: isCurrent ? transition : "none",
-                    }}
-                  >
-                    {/* Loading spinner until the current slide's media decodes. */}
-                    {isCurrent && !isBroken && !loaded[i] && (
-                      <span className="pointer-events-none absolute z-10 size-8 animate-spin rounded-full border-2 border-white/25 border-t-white" />
-                    )}
-                    {isBroken ? (
-                      <span className="rounded-2xl bg-white/10 px-4 py-3 text-sm text-white/70">
-                        Не удалось загрузить
-                      </span>
-                    ) : item.type === "image" ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- pre-resolved authed ref, no next/image loader
-                      <img
-                        src={item.src}
-                        alt={item.caption || "Изображение"}
-                        draggable={false}
-                        data-testid={isCurrent ? "media-viewer-item" : undefined}
-                        onLoad={() => setLoaded((m) => ({ ...m, [i]: true }))}
-                        onError={() => setErrored((m) => ({ ...m, [i]: true }))}
-                        className="max-h-full max-w-full select-none object-contain"
-                      />
-                    ) : (
-                      <video
-                        src={item.src}
-                        controls
-                        playsInline
-                        autoPlay={isCurrent}
-                        data-testid={isCurrent ? "media-viewer-item" : undefined}
-                        onLoadedData={() => setLoaded((m) => ({ ...m, [i]: true }))}
-                        onError={() => setErrored((m) => ({ ...m, [i]: true }))}
-                        // Keep native scrubbing/controls: don't let the lightbox
-                        // gesture surface hijack pointer events on the video.
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onPointerMove={(e) => e.stopPropagation()}
-                        onPointerUp={(e) => e.stopPropagation()}
-                        className="max-h-full max-w-full bg-black object-contain"
-                      />
-                    )}
-                  </div>
-                </div>
+                  item={item}
+                  isCurrent={isCurrent}
+                  widthPct={`${100 / count}%`}
+                  transform={
+                    isCurrent && item.type === "image"
+                      ? `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`
+                      : undefined
+                  }
+                  transition={isCurrent ? transition : "none"}
+                />
               );
             })}
           </div>

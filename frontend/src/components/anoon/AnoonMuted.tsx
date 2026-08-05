@@ -23,14 +23,15 @@ export default function AnoonMuted() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      {/* Chat-style header: keeps AnoonPrivateChat's dense `py`/gutter rather than
-          the px-6 pt-6 of the standalone screens — the back button itself is the
-          standard 36px target and still lands on the same 12px left edge. */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-3">
+      {/* Chat-style header: keeps AnoonPrivateChat's dense gutter rather than the
+          px-6 pt-6 of the standalone screens. `px-3 -ml-2` puts the 44px target on
+          the same 4px left edge as everywhere else, and `py-2` keeps the row at
+          61px — the same height as AnoonPrivateChat's header. */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-2">
         <button
           type="button"
           onClick={() => nav.back()}
-          className="grid size-9 shrink-0 cursor-pointer select-none place-items-center rounded-full text-foreground transition-transform active:scale-95"
+          className="-ml-2 grid size-12 shrink-0 cursor-pointer select-none place-items-center rounded-full text-foreground transition-transform active:scale-95"
           aria-label="Назад"
         >
           <ChevronLeftIcon className="size-6" />

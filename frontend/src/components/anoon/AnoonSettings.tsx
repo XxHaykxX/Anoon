@@ -357,10 +357,13 @@ export default function AnoonSettings() {
 
         {/* Blocked — expandable */}
         <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
+          {/* `active:` matters more than `hover:` here — the app is mobile-first
+              and a touch screen has no hover at all, so without it a tap gets no
+              feedback at all. Same pair as AnoonNotifications' feed rows. */}
           <button
             type="button"
             onClick={() => setBlockedOpen((o) => !o)}
-            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted"
+            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted active:bg-muted"
           >
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
               <BlockIcon className="size-5 text-primary-foreground" />
@@ -493,10 +496,12 @@ function Row({
   onClick?: () => void;
 }) {
   return (
+    // `active:bg-muted` alongside the hover: on a touch screen there is no
+    // hover, so the hover-only version gave a tapped row no feedback at all.
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted"
+      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted active:bg-muted"
     >
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
         {icon}

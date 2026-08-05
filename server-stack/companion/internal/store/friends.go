@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -206,30 +208,181 @@ func (s *Store) BlockedUserIDs(ctx context.Context, userID int64) (map[int64]boo
 	return out, rows.Err()
 }
 
+// Relation is one user's relationship with another, from the FIRST user's point
+// of view. The string values are a wire contract: they are serialized straight
+// into GET /friends/search and the client switches on them to pick the card's
+// CTA, so they must stay character-identical to the `relation` union in
+// frontend/src/types/companion.ts (FriendSearchResult). Do not add a value here
+// without adding it there — an unknown string silently falls through the
+// client's switch.
+type Relation string
+
+const (
+	RelationNone            Relation = "none"
+	RelationFriends         Relation = "friends"
+	RelationRequestSent     Relation = "request_sent"     // me -> them, pending
+	RelationRequestReceived Relation = "request_received" // them -> me, pending
+	RelationBlocked         Relation = "blocked"          // either direction — see relationRank
+	RelationSelf            Relation = "self"             // the "other" user is the caller
+)
+
+// relationRank orders the relations by precedence so that folding the rows of a
+// pair in ANY order yields the same answer — rows come back unordered, and a
+// pair can legitimately have two rows (both directions).
+//
+//	blocked          — terminal: whoever set it, the pair must not be re-linked
+//	friends          — an accepted link beats any outstanding request
+//	request_received — beats request_sent: if two people requested each other,
+//	                   "accept theirs" is the actionable CTA, not "sent"
+//	request_sent
+//	none
+//
+// RelationSelf is not ranked: it never comes from a row (nobody can befriend or
+// block themselves — both CreateFriendRequest and BlockUser reject it), it is
+// assigned up front in Relations.
+func relationRank(r Relation) int {
+	switch r {
+	case RelationBlocked:
+		return 4
+	case RelationFriends:
+		return 3
+	case RelationRequestReceived:
+		return 2
+	case RelationRequestSent:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// applyRelationRow folds one friendships row into the relation accumulated for
+// that pair so far, keeping whichever ranks higher. Split out from Relations so
+// the precedence rules are unit-testable without a database.
+//
+// `blocked` is emitted for a block in EITHER direction. The table does record
+// who blocked whom (BlockUser writes a directed blocker->blocked row), so this
+// is a deliberate choice, not a schema limitation:
+//
+//   - Blocking is already symmetric everywhere else in this package —
+//     BlockedUserIDs excludes the pair from matchmaking regardless of who
+//     blocked whom. A search CTA using an asymmetric notion of "blocked" would
+//     be a second, conflicting definition of blocking in the same codebase.
+//   - Both directions must suppress «Добавить» anyway: a request to someone who
+//     blocked you must not be offered.
+//   - One undirected value leaks nothing. "They blocked me" is indistinguishable
+//     on the wire from "I blocked them", so the endpoint never discloses that
+//     someone blocked the caller.
+func applyRelationRow(cur Relation, me, userID, friendID int64, status string) Relation {
+	var next Relation
+	switch {
+	case status == "blocked":
+		next = RelationBlocked
+	case status == "accepted":
+		next = RelationFriends
+	case status == "pending" && friendID == me:
+		next = RelationRequestReceived
+	case status == "pending" && userID == me:
+		next = RelationRequestSent
+	default:
+		return cur // unknown status, or a row that isn't about `me` at all
+	}
+	if relationRank(next) > relationRank(cur) {
+		return next
+	}
+	return cur
+}
+
+// Relations resolves `me`'s relationship with each of `ids` in a SINGLE round
+// trip, so a caller rendering a list of people never turns into an N+1 of
+// per-row relationship lookups. Every requested id is present in the result:
+// ids with no friendships row come back as RelationNone, and `me` itself comes
+// back as RelationSelf (you are not a stranger to yourself — the client needs to
+// render "это вы" rather than an «Добавить» button that would then be rejected
+// server-side with self_request).
+//
+// The friendships table is directed — CreateFriendRequest writes one row
+// requester->target, and accepting writes both directions — so the direction of
+// a 'pending' row is exactly what distinguishes a request I sent from one I
+// received. Rows arrive unordered and a pair may have two of them; precedence is
+// therefore resolved by rank, not by arrival order. See applyRelationRow for the
+// ordering and for why 'blocked' is undirected.
+//
+// The id list is expanded into explicit $N placeholders rather than passed as a
+// Postgres array. It is still one query; it just avoids depending on the
+// driver's array-encoding behaviour for a slice argument, which database/sql's
+// default value converter does not itself accept.
+func (s *Store) Relations(ctx context.Context, me int64, ids []int64) (map[int64]Relation, error) {
+	out := make(map[int64]Relation, len(ids))
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, me)
+	holders := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if id == me {
+			out[id] = RelationSelf
+			continue
+		}
+		if _, dup := out[id]; dup {
+			continue // same id twice: one placeholder is enough
+		}
+		out[id] = RelationNone
+		args = append(args, id)
+		holders = append(holders, "$"+strconv.Itoa(len(args)))
+	}
+	if me == 0 || len(holders) == 0 {
+		return out, nil // nobody to look up (empty, all self, or no caller)
+	}
+	list := strings.Join(holders, ",")
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_id, friend_id, status
+		FROM friendships
+		WHERE (user_id = $1 AND friend_id IN (`+list+`))
+		   OR (friend_id = $1 AND user_id IN (`+list+`))`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: relations for %d: %w", me, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID, friendID int64
+		var status string
+		if err := rows.Scan(&userID, &friendID, &status); err != nil {
+			return nil, fmt.Errorf("store: scan relation: %w", err)
+		}
+		other := friendID
+		if friendID == me {
+			other = userID
+		}
+		cur, tracked := out[other]
+		if !tracked {
+			continue
+		}
+		out[other] = applyRelationRow(cur, me, userID, friendID, status)
+	}
+	return out, rows.Err()
+}
+
 // AreFriends reports whether a and b have an accepted friendship. Used as the
 // membership check for relays addressed by a Tinode p2p topic (msg:del,
 // activity): p2p topics aren't tracked in roulette_matches, so the friendship
 // row is what proves the sender is actually in that conversation and isn't
 // spoofing a topic they have no part in. Direction-agnostic — markAcceptedBoth
 // writes both rows, but a one-sided row is still enough to be in the chat.
+//
+// Deliberately a thin wrapper over Relations rather than its own query, so
+// "are these two friends?" has exactly one answer in this package.
 func (s *Store) AreFriends(ctx context.Context, a, b int64) (bool, error) {
 	if a == 0 || b == 0 || a == b {
 		return false, nil
 	}
-	var n int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT 1 FROM friendships
-		WHERE status = 'accepted'
-		  AND ((user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1))
-		LIMIT 1`, a, b,
-	).Scan(&n)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
+	rel, err := s.Relations(ctx, a, []int64{b})
 	if err != nil {
-		return false, fmt.Errorf("store: are friends %d/%d: %w", a, b, err)
+		return false, err
 	}
-	return true, nil
+	return rel[b] == RelationFriends, nil
 }
 
 // Friends lists a user's accepted friends.

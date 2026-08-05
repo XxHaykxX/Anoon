@@ -766,10 +766,30 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
           set((s) => ({ chatMessages: applyEdit(s.chatMessages, editSeq, plainText(m.content)) }));
           return;
         }
-        // Pre-reveal anon messages carry a blanked `from` — not part of the
-        // post-reveal friend thread. Own messages are shown optimistically.
+        // Pre-reveal anon messages carry a server-blanked `from` — not part of
+        // the post-reveal friend thread (BUG-3/#110).
         if (!m.from) return;
-        if (m.from === myUid) return;
+        if (m.from === myUid) {
+          // Our own message, replayed from the SDK cache (sent this session) or
+          // fetched back from the server (sent before this page load). Dropping
+          // it here meant no message we ever sent survived closing the chat:
+          // openChat empties `chatMessages` and this replay is the only thing
+          // that refills it. Idempotent by seq id, and it never overwrites an
+          // optimistic bubble that already carries its delivery ticks.
+          const own = inboundMsg(m, true);
+          set((s) =>
+            s.chatMessages.some((x) => x.id === own.id)
+              ? {}
+              : {
+                  chatMessages: applyOwnReceipts(
+                    upsertMsg(s.chatMessages, { ...own, status: "sent" }),
+                    peerRecvSeq,
+                    peerReadSeq,
+                  ),
+                },
+          );
+          return;
+        }
         const msg = inboundMsg(m, false);
         set((s) => ({ chatMessages: upsertMsg(s.chatMessages, msg) }));
         // Delivered + read receipts (chat is open) and chats-list preview.

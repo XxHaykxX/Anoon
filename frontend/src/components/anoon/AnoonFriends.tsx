@@ -21,16 +21,17 @@ function FriendAvatar({
 }) {
   const ref = USE_TINODE && topic ? getTinodeClient().avatarRefFor(topic) : null;
   // A stored ref whose blob 404s (lost/GC'd upload) falls back to initials
-  // instead of a broken <img> (BUG-39/41).
-  const [broken, setBroken] = useState(false);
-  useEffect(() => setBroken(false), [ref]);
-  if (ref && !broken) {
+  // instead of a broken <img> (BUG-39/41). Remembering *which* ref failed,
+  // rather than a bare boolean, means a new ref is retried on the render that
+  // introduces it — no effect needed to reset the flag afterwards.
+  const [brokenRef, setBrokenRef] = useState<string | null>(null);
+  if (ref && brokenRef !== ref) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={authedFileUrl(ref)}
         alt=""
-        onError={() => setBroken(true)}
+        onError={() => setBrokenRef(ref)}
         className="rounded-full object-cover"
         style={{ width: size, height: size }}
       />

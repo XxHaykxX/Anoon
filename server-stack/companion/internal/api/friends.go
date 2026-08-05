@@ -152,25 +152,81 @@ func (s *Server) handleFriendRespond(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// friendSearchItem is one entry in GET /friends/search. It mirrors
+// FriendSearchResult in frontend/src/types/companion.ts, where all four fields
+// are REQUIRED — this struct exists so they cannot be omitted by accident again
+// (relation and avatarTone previously went unsent, and the search card offered
+// «Добавить» to people who were already friends).
+type friendSearchItem struct {
+	HashID      string `json:"hashId"`
+	DisplayName string `json:"displayName"`
+	AvatarTone  int    `json:"avatarTone"`
+	Relation    string `json:"relation"`
+}
+
+// avatarTone reproduces the frontend's `toneFor` so a given person renders in
+// the same colour on the search card as in Contacts.
+//
+// The friends list does NOT get its tone from GET /friends (that endpoint sends
+// none): it is built from the Tinode `me` topic's contacts, and
+// contactToFriend in frontend/src/store/slices.ts sets
+// `avatarTone: toneFor(c.topic)` — keyed on the p2p TOPIC, which is the peer's
+// uid. So the key here must be the peer's tinode_uid (stored with its "usr"
+// prefix, exactly the topic string), not their #ID.
+//
+// toneFor sums JS charCodeAt values, i.e. UTF-16 code units. Tinode uids are
+// base64url ASCII, so summing bytes is identical for every input this can see.
+func avatarTone(key string) int {
+	sum := 0
+	for i := 0; i < len(key); i++ {
+		sum += int(key[i])
+	}
+	return sum % 6
+}
+
 // handleFriendSearch resolves a #ID query to a single user (search is by exact
 // #ID only — there are no nicknames).
+//
+// Searching your own #ID returns you, with relation "self" — deliberately a
+// result rather than an empty list, because an empty list reads as "no such
+// user" about an id that plainly exists. The client renders that card without a
+// «Добавить» button; previously the button was offered and the request then
+// failed server-side with self_request.
 func (s *Server) handleFriendSearch(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireUser(w, r); !ok {
+	u, ok := s.requireUser(w, r)
+	if !ok {
 		return
 	}
 	n, err := parseHashID(r.URL.Query().Get("q"))
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+		writeJSON(w, http.StatusOK, map[string]any{"results": []friendSearchItem{}})
 		return
 	}
 	target, err := s.Store.UserByHashID(r.Context(), n)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+		writeJSON(w, http.StatusOK, map[string]any{"results": []friendSearchItem{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": []map[string]any{{
-		"hashId":      store.FormatHashID(target.HashID),
-		"displayName": store.FormatHashID(target.HashID),
+
+	// One Relations call for the whole result set, not one per result — search
+	// returns a single exact match today, but this is the shape that keeps it
+	// from becoming an N+1 if it ever widens beyond exact-#ID lookup. It also
+	// resolves the caller-is-the-target case to RelationSelf for us.
+	rels, err := s.Store.Relations(r.Context(), u.ID, []int64{target.ID})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "store_failed", "could not resolve relation")
+		return
+	}
+	rel, ok := rels[target.ID]
+	if !ok {
+		rel = store.RelationNone // unreachable: target.ID is always in the query
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"results": []friendSearchItem{{
+		HashID:      store.FormatHashID(target.HashID),
+		DisplayName: store.FormatHashID(target.HashID),
+		AvatarTone:  avatarTone(target.TinodeUID),
+		Relation:    string(rel),
 	}}})
 }
 

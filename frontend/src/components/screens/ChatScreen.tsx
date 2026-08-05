@@ -23,7 +23,6 @@ import {
   MissedCallIcon,
   SendIcon,
   CheckIcon,
-  PauseIcon,
   PlayIcon,
   SortLinesIcon,
 } from "@/components/icons";

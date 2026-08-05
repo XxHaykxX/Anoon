@@ -41,7 +41,14 @@ export default function IncomingCall({ peerName, peerId, media, onAccept, onDecl
   return (
     // `absolute`, not `fixed`: the whole app renders inside a fixed-size phone
     // frame (see AnoonApp), so a viewport-fixed overlay would break out of it.
-    <div className="absolute inset-0 z-50 flex flex-col items-center justify-between overflow-hidden bg-neutral-950 px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3rem,env(safe-area-inset-top))] text-white animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+    //
+    // Design tokens, not raw neutrals/white: `background`+`foreground` render
+    // #000/#fff under the app's forced dark (AnoonApp's `<div className="dark">`),
+    // i.e. identical to the old bg-neutral-950/text-white, but they follow the
+    // theme if it is ever unforced. Literal white/black survives ONLY where it
+    // sits on a fixed-colour fill (the red decline / green accept buttons),
+    // which reads the same in either theme.
+    <div className="absolute inset-0 z-50 flex flex-col items-center justify-between overflow-hidden bg-background px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3rem,env(safe-area-inset-top))] text-foreground animate-in fade-in-0 duration-200 motion-reduce:animate-none">
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
         <span className="relative flex items-center justify-center">
           {/* Concentric pinging rings — matches the roulette "searching" motif. */}
@@ -53,8 +60,8 @@ export default function IncomingCall({ peerName, peerId, media, onAccept, onDecl
 
         <div className="flex flex-col items-center gap-1.5 text-center">
           <p className="text-xl font-semibold">{peerName}</p>
-          <p className="text-sm tabular-nums text-white/50">{peerId}</p>
-          <p className="mt-1 text-sm text-white/70">{kindLabel}</p>
+          <p className="text-sm tabular-nums text-foreground/50">{peerId}</p>
+          <p className="mt-1 text-sm text-foreground/70">{kindLabel}</p>
         </div>
       </div>
 
@@ -71,7 +78,7 @@ export default function IncomingCall({ peerName, peerId, media, onAccept, onDecl
           >
             <PhoneIcon className="size-7 rotate-[135deg]" />
           </button>
-          <span className="text-xs text-white/70">Отклонить</span>
+          <span className="text-xs text-foreground/70">Отклонить</span>
         </div>
 
         <div className="flex flex-col items-center gap-2">
@@ -86,7 +93,7 @@ export default function IncomingCall({ peerName, peerId, media, onAccept, onDecl
           >
             <PhoneIcon className="size-7" />
           </button>
-          <span className="text-xs text-white/70">Принять</span>
+          <span className="text-xs text-foreground/70">Принять</span>
         </div>
       </div>
     </div>

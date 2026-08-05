@@ -89,12 +89,16 @@ function CallControlButton({
         onClick={onClick}
         className={cn(
           "grid size-14 place-items-center rounded-full transition-transform active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100",
-          active ? "bg-primary text-primary-foreground" : "bg-white/10 text-white",
+          // The inactive chip is a translucent tint of the surface's own text
+          // colour — `foreground/10` is white/10 under dark, exactly as before,
+          // and stays legible if the theme is ever unforced (in audio calls this
+          // chip sits on `bg-background`, not on video).
+          active ? "bg-primary text-primary-foreground" : "bg-foreground/10 text-foreground",
         )}
       >
         {children}
       </button>
-      <span className="text-xs text-white/70">{label}</span>
+      <span className="text-xs text-foreground/70">{label}</span>
     </div>
   );
 }
@@ -346,9 +350,13 @@ export default function CallScreen({
     return () => {
       cleanup();
     };
-    // Intentionally run once per mounted call — callId identifies the call for
-    // this component's whole lifetime; the parent should key on it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // These five deps ARE the call's identity: they all come from the one
+    // `call` entry in callStore and none of them changes while a call is up, so
+    // in practice this runs once per call — and AnoonApp additionally renders
+    // this component with `key={call.callId}`, which remounts it outright for a
+    // genuinely different call. They are listed honestly rather than elided to
+    // `[]` so that if a prop ever did change, the connection is rebuilt for the
+    // new call instead of silently continuing on the old one's peer connection.
   }, [callId, peerId, media, role, initialOffer]);
 
   const hangUp = useCallback(() => {
@@ -396,7 +404,15 @@ export default function CallScreen({
   return (
     // `absolute`, not `fixed`: the whole app renders inside a fixed-size phone
     // frame (see AnoonApp), so a viewport-fixed overlay would break out of it.
-    <div className="absolute inset-0 z-50 flex flex-col overflow-hidden bg-neutral-950 text-white animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+    //
+    // Design tokens, not raw neutrals/white: `background`+`foreground` render
+    // #000/#fff under the app's forced dark (AnoonApp's `<div className="dark">`),
+    // i.e. identical to the old bg-neutral-950/text-white, but they follow the
+    // theme if it is ever unforced. Literal white/black survives ONLY where it
+    // sits on a fixed-colour fill (the red hang-up button) or is a scrim over
+    // the live video stream (the notice chip, the PIP hairline) — both of which
+    // read the same in either theme.
+    <div className="absolute inset-0 z-50 flex flex-col overflow-hidden bg-background text-foreground animate-in fade-in-0 duration-200 motion-reduce:animate-none">
       {mediaNotice && (
         <div className="absolute left-1/2 top-[max(1rem,env(safe-area-inset-top))] z-10 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-center text-xs text-white/90 shadow-lg">
           {mediaNotice}
@@ -409,18 +425,18 @@ export default function CallScreen({
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              className="absolute inset-0 h-full w-full bg-neutral-900 object-cover"
+              className="absolute inset-0 h-full w-full bg-card object-cover"
             />
             {!connected && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-950/70">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/70">
                 <AnoonAvatar initials={initials} tone={tone} size={96} className="shadow-xl" />
                 <p className="text-lg font-semibold">{peerName}</p>
-                <p className="text-sm text-white/60">{statusLabel}</p>
+                <p className="text-sm text-foreground/60">{statusLabel}</p>
               </div>
             )}
 
             {/* Local self-view PIP — muted (own audio must not echo back) and mirrored. */}
-            <div className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] h-32 w-24 overflow-hidden rounded-2xl border border-white/15 bg-neutral-800 shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+            <div className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] h-32 w-24 overflow-hidden rounded-2xl border border-white/15 bg-muted shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -428,8 +444,10 @@ export default function CallScreen({
                 playsInline
                 className={cn("h-full w-full scale-x-[-1] object-cover", cameraOff && "opacity-0")}
               />
+              {/* Sits on the PIP's own `bg-muted` (the local stream is hidden at
+                  opacity-0), not over video — so it needs the token too. */}
               {cameraOff && (
-                <div className="absolute inset-0 grid place-items-center text-center text-[11px] leading-tight text-white/60">
+                <div className="absolute inset-0 grid place-items-center text-center text-[11px] leading-tight text-foreground/60">
                   Камера
                   <br />
                   выкл.
@@ -447,7 +465,7 @@ export default function CallScreen({
             </span>
             <div className="flex flex-col items-center gap-1">
               <p className="text-xl font-semibold">{peerName}</p>
-              <p className="text-sm text-white/60">{statusLabel}</p>
+              <p className="text-sm text-foreground/60">{statusLabel}</p>
             </div>
             {/* Remote audio sink — no visual, the avatar above is the UI. */}
             <audio ref={remoteAudioRef} autoPlay />
@@ -480,7 +498,7 @@ export default function CallScreen({
           >
             <PhoneIcon className="size-6 rotate-[135deg]" />
           </button>
-          <span className="text-xs text-white/70">Завершить</span>
+          <span className="text-xs text-foreground/70">Завершить</span>
         </div>
       </div>
     </div>

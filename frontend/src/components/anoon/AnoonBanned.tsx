@@ -12,7 +12,7 @@ export default function AnoonBanned() {
         type="button"
         onClick={() => nav.back()}
         aria-label="Назад"
-        className="absolute left-3 top-6 grid size-9 place-items-center rounded-full text-foreground transition-transform active:scale-95"
+        className="absolute left-1 top-6 grid size-12 place-items-center rounded-full text-foreground transition-transform active:scale-95"
       >
         <ChevronLeftIcon className="size-6" />
       </button>

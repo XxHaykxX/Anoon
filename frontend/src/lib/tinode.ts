@@ -543,16 +543,94 @@ export class TinodeClient {
     const t = this.topics.get(topic) ?? this.tinode!.getTopic(topic);
     await this.ensureAttached(t);
     try {
-      return this.publishSeq(await t.publishMessage(t.createMessage(content, true)));
+      return this.publishSeq(await this.publishCached(t, content, true));
     } catch (err) {
       // A racing leave() can detach the topic between our attach check and the
       // publish. Re-attach once and retry before giving up.
       if (!(t as { subscribed?: boolean }).subscribed) {
         await this.ensureAttached(t);
-        return this.publishSeq(await t.publishMessage(t.createMessage(content, true)));
+        return this.publishSeq(await this.publishCached(t, content, true));
       }
       throw err;
     }
+  }
+
+  /**
+   * Publish on `t` the way the SDK's own `Topic#publishDraft` does — reserving
+   * the message's cache slot up front — instead of handing `publishMessage` a
+   * bare packet straight from `createMessage`. Two things go wrong without it,
+   * and both only surface when a chat is reopened, since a reopen renders from
+   * this local cache alone (the topic stays subscribed, so nothing is refetched).
+   *
+   * 1. `publishMessage` runs `swapMessageId(pub, seq)` on ack, which looks the
+   *    message up with `_messages.find(pub)` while `pub.seq` is still undefined.
+   *    The cache's comparator is `a.seq - b.seq`, so every comparison is NaN;
+   *    `CBuffer#findNearest` treats NaN as neither `<` nor `>` and reports a
+   *    bogus EXACT hit at the binary-search midpoint. The SDK then deletes that
+   *    unrelated, real message before inserting ours — one silently destroyed
+   *    message per send, taken from the middle of the thread. Giving the packet
+   *    a local seq id and its own cache entry first makes the lookup an exact
+   *    hit on us, so the swap replaces the right message.
+   * 2. A locally-published message is otherwise cached with no `from` at all
+   *    (only `publishDraft` stamps it), which the replay on the next open can't
+   *    tell apart from a pre-reveal anon message — whose `from` the server
+   *    blanks on purpose — so the store dropped every message we ever sent.
+   *
+   * The wire frame is unaffected: `Tinode#publishMessage` clones the packet and
+   * clears `from`/`seq` before sending. `_noForwarding` stops `_routeData` from
+   * re-inserting what the swap has already placed; it does not suppress the
+   * `onData` echo, which still fires with the real seq once the ack lands.
+   *
+   * Falls back to a plain `publishMessage` if the SDK internals this leans on
+   * ever disappear — same behavior as before, defects included.
+   */
+  private async publishCached(
+    t: Topic,
+    content: unknown,
+    noEcho: boolean,
+    head?: Record<string, unknown>,
+  ): Promise<unknown> {
+    const pub = t.createMessage(content, noEcho) as Record<string, unknown>;
+    if (head) {
+      pub.head = { ...(pub.head as Record<string, unknown> | undefined), ...head };
+    }
+    const sdk = t as unknown as {
+      _getQueuedSeqId?: () => number;
+      _messages?: { put: (m: unknown) => void };
+      cancelSend?: (seq: number) => boolean;
+    };
+    const localSeq =
+      typeof sdk._getQueuedSeqId === "function" && sdk._messages
+        ? sdk._getQueuedSeqId()
+        : 0;
+    if (localSeq) {
+      pub.seq = localSeq;
+      pub.from = this.uid ?? undefined;
+      pub._noForwarding = true;
+      sdk._messages!.put(pub);
+    }
+    // Drop the reserved entry when the message never made it to the server, so a
+    // later replay can't resurrect it under its (out-of-range) local seq id.
+    const rollback = () => {
+      if (localSeq) {
+        try {
+          sdk.cancelSend?.(localSeq);
+        } catch {
+          // Older SDK without cancelSend — the placeholder stays until reload.
+        }
+      }
+    };
+    let ctrl: unknown;
+    try {
+      ctrl = await t.publishMessage(pub as Parameters<Topic["publishMessage"]>[0]);
+    } catch (err) {
+      rollback();
+      throw err;
+    }
+    // `Topic#publishMessage` swallows a server-side rejection and resolves with
+    // nothing, so a missing seq is the only signal that the publish failed.
+    if (!this.publishSeq(ctrl)) rollback();
+    return ctrl;
   }
 
   /** Attach `t` if it isn't already, tolerating a racing subscribe. */
@@ -609,9 +687,7 @@ export class TinodeClient {
    */
   async editMessage(topic: string, seq: number, content: unknown): Promise<number> {
     const t = this.topics.get(topic) ?? this.tinode!.getTopic(topic);
-    const pub = t.createMessage(content, false) as Record<string, unknown>;
-    pub.head = { ...(pub.head as Record<string, unknown> | undefined), replace: `:${seq}` };
-    const ctrl = await t.publishMessage(pub);
+    const ctrl = await this.publishCached(t, content, false, { replace: `:${seq}` });
     const newSeq = (ctrl as TinodeCtrl)?.params?.seq;
     return typeof newSeq === "number" ? newSeq : 0;
   }
@@ -626,12 +702,7 @@ export class TinodeClient {
    */
   async sendReaction(topic: string, targetSeq: number, emoji: string): Promise<void> {
     const t = this.topics.get(topic) ?? this.tinode!.getTopic(topic);
-    const pub = t.createMessage(emoji, false) as Record<string, unknown>;
-    pub.head = {
-      ...(pub.head as Record<string, unknown> | undefined),
-      reaction: { seq: targetSeq, emoji },
-    };
-    await t.publishMessage(pub);
+    await this.publishCached(t, emoji, false, { reaction: { seq: targetSeq, emoji } });
   }
 
   /** Emit a "typing" notification on a topic (throttle at the call site). */
