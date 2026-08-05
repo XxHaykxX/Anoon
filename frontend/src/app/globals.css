@@ -1,0 +1,213 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-in-foreground: var(--bubble-in-foreground);
+  --color-bubble-out: var(--bubble-out);
+  --color-bubble-out-foreground: var(--bubble-out-foreground);
+  --color-online: var(--online);
+  --color-read-tick: var(--read-tick);
+  --color-verified: var(--verified);
+  --color-info: var(--info);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Anoon — light theme, primary = brand yellow */
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #FDBF2D;
+  --primary-foreground: #000000;
+  --secondary: #f2f2f7;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f2f2f7;
+  --muted-foreground: #8e8e93;
+  --accent: #FDBF2D;
+  --accent-foreground: #000000;
+  --destructive: #ff3b30;
+  --border: #e5e5ea;
+  --input: #e5e5ea;
+  --ring: #FDBF2D;
+  /* messenger custom tokens */
+  --bubble-in: #e9e9eb;
+  --bubble-in-foreground: #0a0a0a;
+  --bubble-out: #FDBF2D;
+  --bubble-out-foreground: #000000;
+  --online: #34c759;
+  --read-tick: #0a84ff;   /* status blue — read receipts / verified / links (NOT the yellow primary) */
+  --verified: #0a84ff;
+  --info: #0a84ff;
+  --hairline: rgba(0,0,0,0.06);
+  /* elevation scale (consistent, subtle) */
+  --elevation-1: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+  --elevation-2: 0 4px 12px rgba(0,0,0,0.08);
+  --elevation-3: 0 12px 32px rgba(0,0,0,0.12);
+  --cta-glow: 0 8px 24px -6px rgba(253,191,45,0.40);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.9rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  /* Anoon — dark theme, primary = brand yellow */
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #1c1c1e;
+  --card-foreground: #ffffff;
+  --popover: #1c1c1e;
+  --popover-foreground: #ffffff;
+  --primary: #FDBF2D;
+  --primary-foreground: #000000;
+  --secondary: #1c1c1e;
+  --secondary-foreground: #ffffff;
+  --muted: #1c1c1e;
+  --muted-foreground: #8e8e93;
+  --accent: #FDBF2D;
+  --accent-foreground: #000000;
+  --destructive: #ff453a;
+  --border: #2c2c2e;
+  --input: #2c2c2e;
+  --ring: #FDBF2D;
+  --bubble-in: #262628;
+  --bubble-in-foreground: #ffffff;
+  --bubble-out: #FDBF2D;
+  --bubble-out-foreground: #000000;
+  --online: #32d74b;
+  --read-tick: #3898ff;   /* status blue (lighter for dark) */
+  --verified: #3898ff;
+  --info: #3898ff;
+  --hairline: rgba(255,255,255,0.08);
+  --elevation-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.4);
+  --elevation-2: 0 4px 16px rgba(0,0,0,0.5);
+  --elevation-3: 0 12px 36px rgba(0,0,0,0.6);
+  --cta-glow: 0 8px 24px -6px rgba(253,191,45,0.35);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    /* Compact type scale for the phone frame: shrink the rem baseline so
+       rem-based text (text-base/-lg/-2xl) and spacing read app-sized, not
+       web-sized. Arbitrary px labels (text-[10px]) are intentionally untouched. */
+    font-size: 15px;
+  }
+}
+/* ===== Anoon motion: duration tokens =====
+   Three speeds, so every transition in the app lands on one of them:
+     --dur-fast  press + hover feedback (button scale, row tint)
+     --dur-base  screen, modal and toggle transitions
+     --dur-slow  bottom sheets and media reveals (longer travel needs longer)
+   Existing call sites still hardcode their durations; migrating them onto
+   these tokens is a separate sweep. */
+:root {
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+  --dur-slow: 300ms;
+}
+
+/* ===== Anoon motion: screen entrance + message appear ===== */
+@keyframes anoon-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes anoon-msg-in { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+.anoon-screen-in { animation: anoon-fade-in 0.22s ease-out both; }
+.anoon-msg-in { animation: anoon-msg-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .anoon-screen-in, .anoon-msg-in { animation: none; }
+}
+
+/* ===== Native-app scrollbars: hide inside phone/desktop frames, no stray x-scroll ===== */
+.anoon-noscroll, .anoon-noscroll * { scrollbar-width: none; -ms-overflow-style: none; }
+.anoon-noscroll::-webkit-scrollbar, .anoon-noscroll *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* ===== List/message windowing (low-risk virtualization) =====
+   `content-visibility: auto` skips layout + paint for off-screen rows while
+   `contain-intrinsic-size` reserves an estimated box so the scrollbar stays
+   stable and skipped rows don't collapse. Cheap DOM-cost reduction for lists
+   that can grow unbounded (friends, notifications, chat threads) without a
+   virtualization dependency. `contain-intrinsic-size: auto <n>` lets the
+   browser remember each row's real rendered size after its first paint. */
+.anoon-cv-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+.anoon-cv-msg {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}

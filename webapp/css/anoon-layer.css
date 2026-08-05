@@ -1,0 +1,228 @@
+/* ============================================================
+   anoon design layer — anoon Design System overrides
+   Appended after base.css; later source-order wins.
+   Reversible: delete everything below this banner.
+   Palette source: DESIGN-SYSTEM.md §0
+   ============================================================ */
+:root {
+  color-scheme: dark !important;
+
+  /* — Surfaces — */
+  --clr-body-background: #000000;
+  --clr-header-stripe-bg: #0e0e0e;
+  --clr-background-off-white: #191919;
+  --clr-background-light-gray: #191919;
+  --clr-background-extra-light-gray: #191919;
+  --clr-background-blue-gray-50: #0e0e0e;   /* contact hover, msg panel, send panel */
+  --clr-background-blue-gray-75: #141414;   /* pinned */
+  --clr-background-blue-gray-100: #191919;  /* selected */
+  --clr-background-blue-gray-300: #0e0e0e;  /* caption panels */
+  --clr-menu-item-hover-bg: #191919;
+  --clr-alert-overlay-bg: rgba(0,0,0,0.6);
+  --clr-cyan-50: #000000;                   /* splash / dummy-view bg */
+  --clr-blue-wash-light: #191919;           /* bot form button bg */
+  --clr-blue-wash-medium: #201a05;          /* pinned active bg */
+  --clr-primary-wash: #201a05;              /* secondary-button hover, meta-deleted bg */
+  --clr-indigo-50: #191919;                 /* outline button hover */
+
+  /* — Text — */
+  --clr-bright: #0e0e0e;      /* was white surfaces */
+  --clr-dark: #fafafa;        /* was black text */
+  --clr-text-primary: #fafafa;
+  --clr-text-secondary: #a3a3a3;
+  --clr-text-tertiary: #8a8a8a;
+  --clr-text-tertiary-activated: #c8c8c8;
+  --clr-text-placeholder: #8a8a8a;
+  --clr-text-disabled: #6a6a6a;
+
+  /* — Borders — */
+  --clr-border-light: #262626;
+  --clr-border-muted: #262626;
+
+  /* — Accent → brand yellow (one accent) — */
+  --clr-primary-accent: #FDBF2D;
+  --clr-primary-accent-hover: #e0a800;
+  --clr-primary-accent-focus-shadow: rgba(253,191,45,0.25);
+  --clr-primary-action: #FDBF2D;
+  --clr-primary-action-hover: #e0a800;
+  --clr-secondary-accent: #FDBF2D;    /* unread badge, checkmark */
+  --clr-light-blue-accent: #FDBF2D;   /* reply-quote border, pinned dot */
+  --clr-verified-accent: #FDBF2D;     /* verified check */
+  --clr-primary-light-blue: #a3a3a3;  /* side caption secondary text */
+
+  /* — Buttons: text on accent = black — */
+  --clr-button-primary-bg: #FDBF2D;
+  --clr-button-primary-text: #000000;
+  --clr-button-primary-hover-bg: #e0a800;
+  --clr-button-secondary-bg: #191919;
+  --clr-button-secondary-text: #FDBF2D;
+  --clr-button-outline-text: #FDBF2D;
+  --clr-button-outline-border: #262626;
+
+  /* — Inputs — */
+  --clr-input-border-focus: #FDBF2D;
+
+  /* — Semantic — */
+  --clr-online: #22c55e;
+  --clr-danger-text: #ef4444;
+  --clr-danger-text-hover: #f87171;
+
+  /* — Chat bubbles — */
+  --clr-bubble-left-bg: #191919;      /* incoming = surface-2 */
+  --clr-bubble-right-bg: #FDBF2D;     /* own = accent */
+  --clr-bubble-text: #fafafa;         /* incoming text */
+  --clr-reply-quote-border: #FDBF2D;
+
+  /* — Toast — */
+  --clr-toast-bg: #191919;
+  --clr-toast-text: #fafafa;
+}
+
+/* Own bubble: black text on yellow (--clr-bubble-text is shared L/R) */
+.chat-box .right .bubble { color: #000000; }
+.chat-box .right .bubble a { color: #4a2e00; }
+.chat-box .right .bubble .timestamp,
+.chat-box .right .bubble .timestamp .material-icons { color: rgba(0,0,0,.6) !important; }
+
+/* Bubble tails match their bubble colour */
+.chat-box .right .bubble.tip::before { background-color: #FDBF2D !important; }
+.chat-box .left  .bubble.tip::before { background-color: #191919 !important; }
+
+/* Read tick = the single sanctioned blue (#38bdf8) */
+.chat-box .timestamp .material-icons.blue { color: #38bdf8 !important; }
+
+/* Left sidebar header: dark surface, not full accent */
+#side-caption-panel { background-color: #0e0e0e !important; color: #fafafa !important; }
+#side-caption-panel a,
+#side-caption-panel .material-icons { color: #fafafa !important; }
+
+/* Radius anchor — pill badges */
+.unread { border-radius: 9999px !important; }
+
+/* Destructive actions = danger red, never accent (DS §2) */
+.danger-color,
+.material-icons.danger-color,
+a.red, .red > .material-icons { color: var(--clr-danger-text) !important; }
+
+/* Primary CTA glow — one accent, one glow */
+button.primary {
+  box-shadow: 0 0 0 1px rgba(253,191,45,.40), 0 8px 24px -6px rgba(253,191,45,.35) !important;
+}
+button.primary:hover {
+  box-shadow: 0 0 0 1px rgba(253,191,45,.60), 0 10px 30px -6px rgba(253,191,45,.50) !important;
+}
+
+/* ============================================================
+   COMPONENT POLISH — tasks 2-6 (chat list, chat, settings, polish)
+   ============================================================ */
+
+/* — Radius anchors (6/12/16/full) — */
+button { border-radius: 9999px !important; }               /* pill CTAs */
+button.round, button.round.small { border-radius: 9999px !important; }
+textarea, input[type=text], input[type=email], input[type=password],
+input[type=search], input[type=tel] { border-radius: 0.75rem !important; }
+ul.menu { border-radius: 0.75rem !important; }
+div.alert { border-radius: 0.75rem !important; }
+.info-box { border-radius: 0.75rem !important; }
+
+/* — Motion: smooth CSS transitions (no framer-motion) — */
+.contact-box > li,
+button, .flat-button, .action-button,
+#send-message-panel .material-icons,
+.menuTrigger a {
+  transition: background-color .18s cubic-bezier(0.16,1,0.3,1),
+              color .18s cubic-bezier(0.16,1,0.3,1),
+              transform .12s cubic-bezier(0.16,1,0.3,1),
+              box-shadow .18s cubic-bezier(0.16,1,0.3,1) !important;
+}
+button:active, .action-button:active { transform: scale(.93); }
+
+/* ---------- Chat list (sidebar) ---------- */
+/* 44px avatars (was 48) */
+.contact-box .avatar-box { width: 2.75rem !important; height: 2.75rem !important; }
+/* Row separators via border token; hairline top-highlight feel */
+.contact-box > li { border-bottom: 1px solid var(--clr-border-light); }
+/* Selected row: accent left marker */
+.contact-box > li.selected {
+  box-shadow: inset 3px 0 0 var(--clr-primary-accent);
+}
+/* Unread badge: pill, bold, black on yellow */
+.unread {
+  background-color: var(--clr-primary-accent) !important;
+  color: #000 !important;
+  font-weight: 600;
+}
+
+/* ---------- Glass bars (header + composer) ---------- */
+.caption-panel {
+  background-color: rgba(14,14,14,.72) !important;
+  backdrop-filter: saturate(140%) blur(20px);
+  -webkit-backdrop-filter: saturate(140%) blur(20px);
+  border-bottom: 1px solid var(--clr-hairline, rgba(255,255,255,.08));
+}
+#side-caption-panel {
+  background-color: rgba(14,14,14,.72) !important;
+  backdrop-filter: saturate(140%) blur(20px);
+  -webkit-backdrop-filter: saturate(140%) blur(20px);
+}
+#send-message-panel {
+  background-color: rgba(14,14,14,.82) !important;
+  backdrop-filter: saturate(140%) blur(18px);
+  -webkit-backdrop-filter: saturate(140%) blur(18px);
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+/* ---------- Chat bubbles ---------- */
+.bubble { border-radius: 1rem !important; }                /* radius anchor 16 */
+.chat-box .right .bubble.tip { border-bottom-right-radius: 0.25rem !important; }
+.chat-box .left  .bubble.tip { border-bottom-left-radius: 0.25rem !important; }
+/* Date divider chip */
+.chat-box .meta .bubble.date {
+  background-color: #191919 !important;
+  color: var(--clr-text-tertiary) !important;
+  border-radius: 9999px !important;
+}
+
+/* ---------- Composer: send + mic accent, attach muted ---------- */
+#send-message-panel .material-icons:not(.secondary) {
+  color: var(--clr-primary-accent) !important;
+}
+
+/* ---------- Popover / menu ---------- */
+ul.menu {
+  background-color: #191919 !important;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 8px 30px rgba(0,0,0,.55) !important;
+}
+ul.menu > li:hover { background-color: #262626 !important; }
+
+/* ---------- Modal / dialog ---------- */
+div.alert {
+  background-color: #191919 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08) !important;
+}
+div.alert .title { color: var(--clr-primary-accent) !important; }
+
+/* ---------- Settings nav (flat-button rows) ---------- */
+.flat-button:hover { background-color: #191919 !important; }
+.scrollable-panel .flat-button .material-icons { color: var(--clr-primary-accent); }
+
+/* ---------- Splash / logo area brand glow ---------- */
+#dummy-view {
+  background:
+    radial-gradient(60% 40% at 50% 30%, rgba(253,191,45,.08), transparent 70%),
+    #000 !important;
+}
+#dummy-view h2 { color: var(--clr-primary-accent) !important; font-size: 0 !important; }
+#dummy-view h2::after {
+  content: "anoon"; font-size: 1.6rem; font-weight: 700;
+  color: var(--clr-primary-accent); letter-spacing: -0.02em;
+}
+
+/* ---------- Chat canvas: dark gradient, kill light wallpaper (§12.1) ---------- */
+#messages-container::before {
+  background: linear-gradient(180deg, #0a0a0c 0%, #050506 60%, #000 100%) !important;
+  filter: none !important;
+}
+/* subtle brand glow behind empty splash only, handled by #dummy-view */
+

@@ -1,0 +1,44 @@
+# server-stack/Caddyfile — single-origin reverse proxy for FREE phone testing.
+#
+# Purpose: put ONE origin (this proxy, :80) in front of all three services so the
+# frontend frontend can talk to them over same-origin *relative* paths. Then a
+# Cloudflare Tunnel can expose :80 over HTTPS, and even though the random
+# https://xxxx.trycloudflare.com URL changes on every restart, NOTHING in the app
+# is hard-coded to a host — so no env has to change between runs.
+#
+# Requires the frontend to be built/run with NEXT_PUBLIC_SAME_ORIGIN=1.
+#
+# Run (from this directory):   caddy run
+# Then expose it:              cloudflared tunnel --url http://localhost:80
+# See PHONE-TEST.md for the full walkthrough.
+#
+# NOTE: Caddy 2's reverse_proxy passes WebSocket upgrade headers through
+# automatically — no extra header/transport config is needed for /api/ws or
+# /v0/channels.
+
+:80 {
+	# --- Companion backend (Go): REST + event WebSocket -------------------
+	# External /api/*  →  companion :6062, with the /api prefix STRIPPED, so the
+	# companion still sees its own normal paths (/auth/register, /roulette/...,
+	# /friends, /me, and the /ws event socket). handle_path strips the matched
+	# prefix; the WS upgrade for /api/ws → /ws is proxied automatically.
+	handle_path /api/* {
+		reverse_proxy localhost:6062
+	}
+
+	# --- anoon server: WebSocket + media ----------------------------
+	# The tinode-sdk hardcodes its endpoint path to /v0/channels (WebSocket) and
+	# uses /v0/file/... for media up/download, so we forward the WHOLE /v0/*
+	# namespace UNCHANGED to tinode :6061 (no prefix stripping — tinode expects
+	# these exact paths). WebSocket upgrade handled automatically.
+	handle /v0/* {
+		reverse_proxy localhost:6061
+	}
+
+	# --- Next.js frontend (frontend): everything else -------------------
+	# /, /anoon, /_next/* assets, images, etc. → the Next dev (or prod) server on
+	# :3001. This is the catch-all, so it must stay last.
+	handle {
+		reverse_proxy localhost:3001
+	}
+}

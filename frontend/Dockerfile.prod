@@ -1,0 +1,77 @@
+# =============================================================================
+# frontend — PRODUCTION image (used by server-stack/compose.prod.yml)
+#
+# Why a separate file from ./Dockerfile: Next.js inlines NEXT_PUBLIC_* values
+# into the client bundle AT BUILD TIME, and .dockerignore (correctly) excludes
+# all .env files from the build context — so the values must arrive as build
+# args. The generic Dockerfile declares none; this one does.
+#
+# Build (normally driven by compose):
+#   docker build -f Dockerfile.prod \
+#     --build-arg NEXT_PUBLIC_SAME_ORIGIN=1 \
+#     --build-arg NEXT_PUBLIC_USE_TINODE=1 \
+#     --build-arg NEXT_PUBLIC_TINODE_API_KEY=<prod api key> \
+#     -t anoon-frontend:prod .
+#
+# Single-origin mode (NEXT_PUBLIC_SAME_ORIGIN=1): the app derives all backend
+# URLs from window.location (/api/* → companion, /v0/* → Tinode via the prod
+# Caddy), so no host names are baked in — only the flags and the api-key.
+# Rebuild this image whenever NEXT_PUBLIC_TINODE_API_KEY changes.
+# =============================================================================
+
+ARG NODE_VERSION=24.14.1-slim
+
+# ---- Stage 1: deps ----------------------------------------------------------
+FROM node:${NODE_VERSION} AS dependencies
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci --no-audit --no-fund
+
+# ---- Stage 2: build (NEXT_PUBLIC_* inlined here) -----------------------------
+FROM node:${NODE_VERSION} AS builder
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY . .
+
+# Client-visible config, inlined into the JS bundle by `next build`.
+ARG NEXT_PUBLIC_SAME_ORIGIN=1
+ARG NEXT_PUBLIC_USE_TINODE=1
+ARG NEXT_PUBLIC_TINODE_API_KEY
+# TURN relay creds for WebRTC calls behind NAT (RTC_CONFIG). Optional: empty
+# means STUN-only — calls between peers behind symmetric NAT won't connect.
+ARG NEXT_PUBLIC_TURN_URL=
+ARG NEXT_PUBLIC_TURN_USER=
+ARG NEXT_PUBLIC_TURN_PASS=
+ENV NEXT_PUBLIC_SAME_ORIGIN=${NEXT_PUBLIC_SAME_ORIGIN} \
+    NEXT_PUBLIC_USE_TINODE=${NEXT_PUBLIC_USE_TINODE} \
+    NEXT_PUBLIC_TINODE_API_KEY=${NEXT_PUBLIC_TINODE_API_KEY} \
+    NEXT_PUBLIC_TURN_URL=${NEXT_PUBLIC_TURN_URL} \
+    NEXT_PUBLIC_TURN_USER=${NEXT_PUBLIC_TURN_USER} \
+    NEXT_PUBLIC_TURN_PASS=${NEXT_PUBLIC_TURN_PASS} \
+    NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+
+# Fail fast: an image built without the api-key would ship a client that the
+# Tinode server rejects on every connection.
+RUN test -n "$NEXT_PUBLIC_TINODE_API_KEY" \
+  || (echo "ERROR: NEXT_PUBLIC_TINODE_API_KEY build arg is required" && exit 1)
+
+RUN npm run build
+
+# ---- Stage 3: runtime (standalone output, non-root) --------------------------
+FROM node:${NODE_VERSION} AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=builder --chown=node:node /app/public ./public
+RUN mkdir .next && chown node:node .next
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

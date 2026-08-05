@@ -1,0 +1,111 @@
+# Reproducible self-hosted Tinode stack for anoon — built FROM SOURCE.
+#
+#   cd "server-stack" && docker compose up -d --build
+#
+# Runs on host ports 6061 (HTTP/API) and 16061 (gRPC) so it does NOT clash with
+# any pre-existing demo Tinode on 6060. Postgres + uploads + logs are persisted
+# in named volumes. Secrets come from .env (never commit real .env).
+
+name: anoon-tinode
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: anoon-tinode-db
+    environment:
+      # Must be 'postgres': Tinode's init-db opens a maintenance connection with an
+      # empty db name (pgx defaults it to the username) to CREATE DATABASE tinode.
+      # A non-'postgres' user would resolve to a non-existent db and fail.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - anoon_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  tinode:
+    build:
+      context: ../server
+      dockerfile: ../server-stack/Dockerfile
+    image: anoon-tinode:0.25.2
+    container_name: anoon-tinode
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      STORE_USE_ADAPTER: postgres
+      POSTGRES_DSN: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/tinode?sslmode=disable&connect_timeout=10"
+      WAIT_FOR: "db:5432"
+      # Security keys (from .env). API_KEY_SALT kept at upstream default so the
+      # bundled web client's api-key still validates; rotate salt + client key together later.
+      API_KEY_SALT: ${API_KEY_SALT}
+      AUTH_TOKEN_KEY: ${AUTH_TOKEN_KEY}
+      UID_ENCRYPTION_KEY: ${UID_ENCRYPTION_KEY}
+      # No bundled web client: frontend (separate Next.js app) is the only frontend.
+      # Tinode runs as a pure chat engine (HTTP API + WebSocket + gRPC), no static UI.
+      MEDIA_HANDLER: fs
+      # Pure chat engine: no bundled web client. "-" disables static serving in the
+      # entrypoint (--static_data=-), avoiding the fatal "Static content dir not found"
+      # (the image ships no ./static). frontend is the only frontend.
+      EXT_STATIC_DIR: "-"
+      SMTP_HOST_URL: "http://localhost:6061"
+      # DB lifecycle (override on the CLI: RESET_DB=true docker compose up -d).
+      RESET_DB: ${RESET_DB:-false}
+      UPGRADE_DB: ${UPGRADE_DB:-false}
+      SAMPLE_DATA: ${SAMPLE_DATA:-data.json}
+    volumes:
+      - anoon_uploads:/opt/tinode/uploads
+      - anoon_logs:/var/log
+    ports:
+      - "6061:6060"
+      - "16061:16060"
+    restart: unless-stopped
+
+  companion:
+    build:
+      context: ./companion
+    image: anoon-companion:0.1
+    container_name: anoon-companion
+    depends_on:
+      db:
+        condition: service_healthy
+      tinode:
+        condition: service_started
+    environment:
+      # dev|prod. In prod, config.Load refuses to start if COMPANION_DEV_AUTH
+      # is on, and requires CORS_ALLOWED_ORIGINS to be set explicitly.
+      ENV: ${ENV:-dev}
+      COMPANION_ADDR: ":8080"
+      COMPANION_DB_DSN: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/anoon?sslmode=disable&connect_timeout=10"
+      TINODE_GRPC_ADDR: "tinode:16060"
+      COMPANION_ROOT_LOGIN: ${COMPANION_ROOT_LOGIN}
+      COMPANION_ROOT_SECRET: ${COMPANION_ROOT_SECRET}
+      # Dev-only auth bypass (X-Anoon-Uid / X-Anoon-Hash-Id). Off by default;
+      # the service refuses to start if this is "1"/"true" while ENV=prod.
+      COMPANION_DEV_AUTH: ${COMPANION_DEV_AUTH:-0}
+      COMPANION_ADMIN_SECRET: ${COMPANION_ADMIN_SECRET:-}
+      # Comma-separated CORS allowlist (exact origins or "*.suffix" wildcards,
+      # e.g. "*.trycloudflare.com"). Unset in dev falls back to localhost +
+      # *.trycloudflare.com (phone-testing tunnels); required in prod.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      ROULETTE_RECENT_WINDOW: ${ROULETTE_RECENT_WINDOW:-2h}
+      # Web Push (VAPID). Empty keys disable push entirely (no-op + one log
+      # line) — generate a real P-256 keypair before relying on this in prod.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@anoon.app}
+      # Temp-ban expiry sweep interval; <=0 disables the background job.
+      BAN_SWEEP_INTERVAL: ${BAN_SWEEP_INTERVAL:-60s}
+    ports:
+      - "6062:8080"
+    restart: unless-stopped
+
+volumes:
+  anoon_pgdata:
+  anoon_uploads:
+  anoon_logs:

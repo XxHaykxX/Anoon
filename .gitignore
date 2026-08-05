@@ -1,0 +1,51 @@
+# ── SECRETS — never commit, this repository is public ────────────────────────
+# server-stack/.env holds the auth-token signing key, the uid encryption key,
+# the DB password, the ROOT bot secret, the admin secret and the VAPID private
+# key. Leaking any of them lets anyone mint valid login tokens.
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+!.env.local.example
+!.env.prod.example
+
+# ── User data ────────────────────────────────────────────────────────────────
+# Postgres dumps (password hashes, private messages) and uploaded media.
+_backup/
+
+# ── The superseded anoon project (Supabase stack) ────────────────────────────
+# Already has its own history on GitHub; kept locally for reference only.
+_archive/
+
+# ── Dependencies & build output ──────────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# ── Vendored binaries (100 MB+, re-downloadable) ─────────────────────────────
+server-stack/bin/*.exe
+server/*.exe
+*.exe
+
+# ── Test & tooling artefacts ─────────────────────────────────────────────────
+test-results/
+playwright-report/
+playwright/.cache/
+qa-shots/
+qa-shots-chat/
+.playwright-mcp/
+graphify-out/
+
+# ── Local tooling state ──────────────────────────────────────────────────────
+.gstack/
+.vercel/
+.DS_Store
+Thumbs.db
+*.log
+
+# Disabled nested repos (renamed so their files commit as plain source)
+*.git.disabled/

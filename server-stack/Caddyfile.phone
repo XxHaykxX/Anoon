@@ -1,0 +1,25 @@
+# Phone-test single-origin proxy on :8088 (non-privileged port, no admin needed).
+# cloudflared tunnel --url http://localhost:8088  → public HTTPS URL.
+# Frontend must run with NEXT_PUBLIC_SAME_ORIGIN=1 (+ NEXT_PUBLIC_USE_TINODE=1 for live backend).
+
+{
+	admin off
+	auto_https off
+}
+
+:8088 {
+	# Companion backend (REST + /ws event socket). /api prefix stripped.
+	handle_path /api/* {
+		reverse_proxy localhost:6062
+	}
+
+	# Tinode WS + media — tinode-sdk hardcodes /v0/channels, forward /v0/* unchanged.
+	handle /v0/* {
+		reverse_proxy localhost:6061
+	}
+
+	# Next.js frontend (frontend) — catch-all, must stay last.
+	handle {
+		reverse_proxy localhost:3001
+	}
+}

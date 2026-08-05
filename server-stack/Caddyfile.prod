@@ -1,0 +1,77 @@
+# =============================================================================
+# anoon — production Caddyfile (single-origin, automatic HTTPS)
+#
+# Mounted read-only into the caddy service by compose.prod.yml. {$VAR} values
+# come from the container environment (DOMAIN, ACME_EMAIL — set in prod .env).
+#
+# One public origin, three backends (same routing model as Caddyfile.phone):
+#   /api/*  → companion:8080   REST + /ws event socket ( /api prefix stripped )
+#   /v0/*   → tinode:6060      Tinode WS /v0/channels + media /v0/file/*
+#   else    → frontend:3000    frontend Next.js PWA
+#
+# HTTPS is automatic: Caddy obtains + renews Let's Encrypt certificates for
+# $DOMAIN as long as (a) DNS A/AAAA records point at this server and (b) ports
+# 80 and 443 are reachable from the internet. Certificates persist in the
+# caddy_data volume.
+#
+# WebSockets: Caddy 2 proxies Upgrade requests out of the box — no extra
+# directives needed. Proxied WS connections are exempt from HTTP idle timeouts,
+# so long-lived Tinode/companion sockets survive.
+# =============================================================================
+
+{
+	# ACME account contact — expiry/problem notices from Let's Encrypt.
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	# Compress API/HTML responses (media files are already-compressed binaries;
+	# encoders skip them by content-type automatically).
+	encode zstd gzip
+
+	# Cap request bodies at 128MB — generous for media uploads via Tinode's
+	# LargeFileHelper (/v0/file/u/) while still bounding abuse. Caddy's default
+	# is UNLIMITED, so an explicit cap is safer. Raise if bigger files needed.
+	request_body {
+		max_size 128MB
+	}
+
+	# --- Companion (anoon business logic) -----------------------------------
+	# handle_path strips the /api prefix: /api/roulette/join → /roulette/join.
+	# Includes the companion event WebSocket: wss://$DOMAIN/api/ws → /ws.
+	# External uptime check target: https://$DOMAIN/api/health
+	handle_path /api/* {
+		reverse_proxy companion:8080
+	}
+
+	# --- Tinode (chat engine) ----------------------------------------------
+	# Path kept as-is: tinode-sdk hardcodes /v0/channels; media lives under
+	# /v0/file/s/ (downloads) and /v0/file/u/ (uploads).
+	handle /v0/* {
+		reverse_proxy tinode:6060 {
+			# Media downloads can be slow on mobile networks; give the
+			# backend response generous streaming room.
+			flush_interval -1
+		}
+	}
+
+	# --- Frontend (frontend PWA) — catch-all, must stay last --------------
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# Basic security headers (the app itself sets CSP as needed).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# Optional: uncomment to also serve www.<domain> as a redirect to the apex.
+# Requires a DNS record for www as well.
+#
+# www.{$DOMAIN} {
+# 	redir https://{$DOMAIN}{uri} permanent
+# }

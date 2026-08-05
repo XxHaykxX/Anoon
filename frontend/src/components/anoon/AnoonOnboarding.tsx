@@ -1,0 +1,127 @@
+"use client";
+
+import { useState } from "react";
+import { AnoonLogo } from "@/components/anoon/_shared";
+import { useAnoonNav } from "@/components/anoon/anoonNav";
+
+interface Slide {
+  title: string;
+  tagline: string;
+}
+
+/* anoon-specific onboarding: anonymous roulette → chat → friends. */
+const slides: Slide[] = [
+  {
+    title: "Живая рулётка",
+    tagline: "Один тап — и ты в анонимном чате с новым человеком. Пол подбираем противоположный.",
+  },
+  {
+    title: "Полная анонимность",
+    tagline: "Никаких имён и фото. Настоящий профиль виден, только если оба захотят открыться.",
+  },
+  {
+    title: "Открывайтесь и дружите",
+    tagline: "Понравился собеседник — жмите «открыться». Взаимно — и он в твоих друзьях навсегда.",
+  },
+  {
+    title: "Твой #ID вместо номера",
+    tagline: "Короткий 5-значный #ID — по нему добавляют в друзья. Готов начать?",
+  },
+];
+
+export default function AnoonOnboarding() {
+  const nav = useAnoonNav();
+  const [activeSlide, setActiveSlide] = useState(0);
+  const isLastSlide = activeSlide === slides.length - 1;
+
+  const goToSlide = (index: number) =>
+    setActiveSlide(Math.min(Math.max(index, 0), slides.length - 1));
+
+  const handleNext = () => {
+    if (isLastSlide) {
+      nav.push("auth-register");
+      return;
+    }
+    goToSlide(activeSlide + 1);
+  };
+
+  const current = slides[activeSlide];
+
+  return (
+    <div className="relative flex h-full w-full flex-col items-center justify-between overflow-hidden bg-background px-8 py-14 text-center text-foreground">
+      {/* Soft brand glow */}
+      <div
+        className="pointer-events-none absolute -top-16 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-3xl"
+        style={{ background: "rgba(253,191,45,0.16)" }}
+      />
+
+      {/* Top bar: Skip → login */}
+      <div className="relative z-10 flex w-full items-center justify-between">
+        <AnoonLogo className="text-xl" />
+        {!isLastSlide && (
+          <button
+            type="button"
+            onClick={() => nav.push("auth-login")}
+            className="cursor-pointer text-sm font-medium text-muted-foreground transition-transform active:scale-95"
+          >
+            Пропустить
+          </button>
+        )}
+      </div>
+
+      {/* Middle block */}
+      <div className="relative z-10 flex flex-col items-center">
+        <div
+          className="grid size-24 place-items-center rounded-[28px] bg-primary"
+          style={{ boxShadow: "0 20px 48px -12px rgba(253,191,45,0.5)" }}
+        >
+          <span className="text-5xl font-bold text-primary-foreground">b</span>
+        </div>
+
+        <div key={activeSlide} className="anoon-screen-in flex flex-col items-center">
+          <h1 className="mt-8 text-2xl font-bold text-balance">{current.title}</h1>
+          <p className="mt-3 max-w-[17rem] text-sm leading-relaxed text-muted-foreground">
+            {current.tagline}
+          </p>
+        </div>
+
+        {/* Progress dots */}
+        <div className="mt-8 flex items-center gap-2">
+          {slides.map((slide, index) => (
+            <button
+              key={slide.title}
+              type="button"
+              aria-label={`Слайд ${index + 1}`}
+              onClick={() => goToSlide(index)}
+              className={`h-2 cursor-pointer rounded-full transition-all active:scale-95 ${
+                index === activeSlide ? "w-6 bg-primary" : "w-2 bg-muted"
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Bottom CTA */}
+      <div className="relative z-10 flex w-full flex-col items-center gap-3">
+        <button
+          type="button"
+          onClick={handleNext}
+          className="w-full cursor-pointer rounded-2xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95"
+          style={{ boxShadow: "0 12px 32px -8px rgba(253,191,45,0.45)" }}
+        >
+          {isLastSlide ? "Начать" : "Далее"}
+        </button>
+        <p className="text-sm text-muted-foreground">
+          Уже есть аккаунт?{" "}
+          <button
+            type="button"
+            onClick={() => nav.push("auth-login")}
+            className="cursor-pointer font-medium text-primary transition-transform active:scale-95"
+          >
+            Войти
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}

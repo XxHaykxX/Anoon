@@ -1,0 +1,273 @@
+# =============================================================================
+# anoon — PRODUCTION compose (single Hetzner CX32 VPS, see DEPLOY-PROD.md)
+#
+#   docker compose -f compose.prod.yml up -d --build
+#
+# Differences from the dev docker-compose.yml:
+#   * Only TWO services publish ports: Caddy (80/443, all HTTP traffic) and
+#     coturn (3478/5349 + relay range — TURN is not HTTP and cannot sit behind
+#     Caddy). Postgres, Tinode (HTTP + gRPC) and the companion are reachable
+#     solely on the internal docker network — never exposed to the internet.
+#   * The frontend frontend runs here too (Next.js standalone container) and
+#     is served by Caddy on the same single origin as /api/* and /v0/*
+#     (NEXT_PUBLIC_SAME_ORIGIN=1 — same model as the phone-test proxy).
+#   * Prod safety: SAMPLE_DATA is force-empty (no demo users), dev-auth is
+#     force-off, CORS is narrowed to the real origin, log rotation everywhere.
+#
+# Secrets/config come from ./.env (copy .env.prod.example → .env on the server,
+# chmod 600, NEVER commit). Expected server layout (created by deploy-hetzner.sh):
+#
+#   /opt/anoon/server/        Tinode source (anon patch)   → tinode build ctx
+#   /opt/anoon/server-stack/  this dir (compose, Caddyfile, companion/)
+#   /opt/anoon/frontend/    Next.js frontend             → frontend build ctx
+#
+# On a workstation with the original layout (frontend as a sibling of the
+# "anoon" dir) override the frontend context: FRONTEND_DIR=../../frontend
+# =============================================================================
+
+name: anoon-prod
+
+# Shared log rotation — docker json-file logs otherwise grow unbounded.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Postgres — holds BOTH databases: `tinode` (created by Tinode's init-db) and
+  # `anoon` (companion; created by initdb/10-create-anoon-db.sql on FIRST boot of
+  # an empty volume — the companion migrates its own schema but cannot create
+  # the database itself).
+  # NO ports: — never reachable from outside the docker network.
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: anoon-prod-db
+    environment:
+      # Must stay 'postgres': Tinode's init-db opens a maintenance connection
+      # with an empty db name (pgx defaults it to the username) to CREATE
+      # DATABASE tinode. A non-'postgres' user would resolve to a missing db.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - anoon_pgdata:/var/lib/postgresql/data
+      # First-init only (empty volume): creates the companion's `anoon` database.
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # anoon engine — built FROM SOURCE (../server, incl. the anon patch).
+  # Internal only: Caddy proxies /v0/* → tinode:6060 (HTTP API + WebSocket +
+  # media at /v0/file/...); gRPC :16060 is used ONLY by the companion inside
+  # the docker network and is never published.
+  # Image HEALTHCHECK (nc -z :6060) is baked into server-stack/Dockerfile.
+  # ---------------------------------------------------------------------------
+  tinode:
+    build:
+      context: ../server
+      dockerfile: ../server-stack/Dockerfile
+    image: anoon-tinode:prod
+    container_name: anoon-prod-tinode
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      STORE_USE_ADAPTER: postgres
+      POSTGRES_DSN: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/tinode?sslmode=disable&connect_timeout=10"
+      WAIT_FOR: "db:5432"
+      # Security keys — generate FRESH values for prod (see .env.prod.example).
+      # API_KEY_SALT must be rotated away from the upstream default BEFORE
+      # launch, together with a matching client api-key (TINODE_API_KEY).
+      API_KEY_SALT: ${API_KEY_SALT}
+      AUTH_TOKEN_KEY: ${AUTH_TOKEN_KEY}
+      UID_ENCRYPTION_KEY: ${UID_ENCRYPTION_KEY}
+      # Pure chat engine: no bundled static web UI (frontend is the frontend).
+      MEDIA_HANDLER: fs
+      EXT_STATIC_DIR: "-"
+      # Media-endpoint CORS: only the real app origin (dev image default is *).
+      FS_CORS_ORIGINS: '["https://${DOMAIN}"]'
+      # Absolute URL used in verification emails etc. — the public origin.
+      SMTP_HOST_URL: "https://${DOMAIN}"
+      # TLS stays OFF here — Caddy terminates HTTPS in front of us.
+      TLS_ENABLED: "false"
+      # PROD: hard-coded empty — never seed demo users in production.
+      SAMPLE_DATA: ""
+      # DB lifecycle. UPGRADE_DB=true only when bumping the Tinode version
+      # (take a backup first!). Never set RESET_DB=true on a live prod DB.
+      RESET_DB: ${RESET_DB:-false}
+      UPGRADE_DB: ${UPGRADE_DB:-false}
+    volumes:
+      - anoon_uploads:/opt/tinode/uploads
+      - anoon_logs:/var/log
+    # NO ports: — Caddy reaches tinode:6060 by service name; gRPC stays internal.
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Companion — anoon business logic (Go). Auth, roulette, friends, moderation,
+  # web push, admin API. Runs its own SQL migrations on startup.
+  # Internal only: Caddy proxies /api/* → companion:8080 (prefix stripped).
+  # No container healthcheck: the distroless image has no shell/curl to exec;
+  # liveness is covered by the external uptime monitor on /api/health.
+  # ---------------------------------------------------------------------------
+  companion:
+    build:
+      context: ./companion
+    image: anoon-companion:prod
+    container_name: anoon-prod-companion
+    depends_on:
+      db:
+        condition: service_healthy
+      tinode:
+        condition: service_started
+    environment:
+      COMPANION_ADDR: ":8080"
+      COMPANION_DB_DSN: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/anoon?sslmode=disable&connect_timeout=10"
+      TINODE_GRPC_ADDR: "tinode:16060"
+      # Prod mode + safety gate (W3-1): refuses to start with dev shortcuts on.
+      ENV: "prod"
+      # PROD: hard-coded off — the X-Anoon-Uid header bypass must never ship.
+      COMPANION_DEV_AUTH: "0"
+      # CORS allowlist (W3-2): exact origins allowed to call the REST/WS API.
+      # With the single-origin Caddy setup this is just https://$DOMAIN.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # ROOT bot credentials (promote once with init-db --make_root, see runbook).
+      COMPANION_ROOT_LOGIN: ${COMPANION_ROOT_LOGIN}
+      COMPANION_ROOT_SECRET: ${COMPANION_ROOT_SECRET}
+      # Google sign-in (prod OAuth client). Empty disables Google login.
+      COMPANION_GOOGLE_CLIENT_ID: ${COMPANION_GOOGLE_CLIENT_ID:-}
+      # Shared secret for the admin panel's /admin/* API. Empty disables it.
+      COMPANION_ADMIN_SECRET: ${COMPANION_ADMIN_SECRET:-}
+      # Roulette anti-repeat window (prod default 2h; dev used 0).
+      ROULETTE_RECENT_WINDOW: ${ROULETTE_RECENT_WINDOW:-2h}
+      # Web Push (VAPID) — generate a PROD keypair; empty disables push.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@anoon.app}
+      # Temp-ban expiry sweep; <=0 disables the background job.
+      BAN_SWEEP_INTERVAL: ${BAN_SWEEP_INTERVAL:-60s}
+    # NO ports: — Caddy reaches companion:8080 by service name.
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Frontend — frontend (Next.js standalone). NEXT_PUBLIC_* values are BAKED
+  # AT BUILD TIME (Next.js inlines them into the JS bundle), hence build args,
+  # not runtime env. Single-origin mode: the browser talks only to https://$DOMAIN
+  # and Caddy fans out to /api/* and /v0/*, so no host URLs are baked in —
+  # only the api-key. Rebuild the image whenever TINODE_API_KEY changes.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      # Server layout: /opt/anoon/frontend (sibling of server-stack).
+      # Workstation layout override: FRONTEND_DIR=../../frontend
+      context: ${FRONTEND_DIR:-../frontend}
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_SAME_ORIGIN: "1"
+        NEXT_PUBLIC_USE_TINODE: "1"
+        # Must be an api-key generated with the PROD API_KEY_SALT (keygen).
+        NEXT_PUBLIC_TINODE_API_KEY: ${TINODE_API_KEY}
+        # TURN relay for WebRTC calls behind NAT (consumed by the app's
+        # RTC_CONFIG). Static creds — public by design once in the bundle;
+        # abuse is bounded server-side (see coturn/turnserver.conf).
+        NEXT_PUBLIC_TURN_URL: ${NEXT_PUBLIC_TURN_URL:-}
+        NEXT_PUBLIC_TURN_USER: ${NEXT_PUBLIC_TURN_USER:-}
+        NEXT_PUBLIC_TURN_PASS: ${NEXT_PUBLIC_TURN_PASS:-}
+    image: anoon-frontend:prod
+    container_name: anoon-prod-frontend
+    # NO ports: — Caddy reaches frontend:3000 by service name.
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Caddy — the single public entrypoint. Terminates TLS (automatic Let's
+  # Encrypt for $DOMAIN), serves the whole stack on ONE origin:
+  #   /api/*  → companion:8080   (prefix stripped; REST + /ws event socket)
+  #   /v0/*   → tinode:6060      (WebSocket /v0/channels + media /v0/file/*)
+  #   else    → frontend:3000    (Next.js PWA)
+  # caddy_data persists certificates/ACME account — keep it, or you risk
+  # hitting Let's Encrypt rate limits on re-issue.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: anoon-prod-caddy
+    depends_on:
+      - frontend
+      - companion
+      - tinode
+    ports:
+      - "80:80"       # ACME HTTP-01 challenge + redirect to HTTPS
+      - "443:443"     # HTTPS
+      - "443:443/udp" # HTTP/3 (QUIC)
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # coturn — TURN/STUN relay for WebRTC calls (W3-3). Roughly 10–20% of peer
+  # pairs (symmetric NAT, strict mobile carriers) cannot connect P2P and need
+  # a relay, or their calls simply never establish.
+  #
+  # TURN is not HTTP, so it CANNOT sit behind Caddy — coturn publishes its own
+  # ports (the only other public service besides Caddy):
+  #   3478  tcp+udp  STUN + plain TURN
+  #   5349  tcp+udp  TURN over TLS/DTLS (turns:) — for networks that block 3478
+  #   49160-49200/udp  relay range (narrow on purpose; see turnserver.conf)
+  #
+  # Static config lives in ./coturn/turnserver.conf; env-dependent values are
+  # CLI args below (a coturn .conf cannot read env vars):
+  #   --external-ip: the container is behind docker NAT, so coturn must
+  #     advertise the HOST's public IP in relay candidates. The coturn image
+  #     ships a detect-external-ip helper; the entrypoint eval's the $( ).
+  #     ($$ is compose escaping for a literal $.)
+  #   --cert/--pkey: reuse the Let's Encrypt cert Caddy already maintains
+  #     (read-only mount of caddy_data). TLS on 5349 only works AFTER Caddy's
+  #     first successful issuance — restart coturn once then. Until that,
+  #     coturn logs a cert error but keeps serving plain TURN on 3478.
+  # ---------------------------------------------------------------------------
+  coturn:
+    image: coturn/coturn:4
+    container_name: anoon-prod-coturn
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # Caddy's ACME storage, for the TLS cert on 5349. Read-only.
+      - caddy_data:/certs:ro
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "5349:5349"
+      - "5349:5349/udp"
+      # MUST match min-port/max-port in turnserver.conf and the ufw rule in
+      # deploy-hetzner.sh — change all three together.
+      - "49160-49200:49160-49200/udp"
+    command:
+      - --external-ip=$$(detect-external-ip)
+      - --realm=${TURN_REALM}
+      - --user=${TURN_USER}:${TURN_PASS}
+      - --cert=/certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${DOMAIN}/${DOMAIN}.crt
+      - --pkey=/certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${DOMAIN}/${DOMAIN}.key
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  anoon_pgdata:   # Postgres data (tinode + anoon databases)
+  anoon_uploads:  # Tinode media uploads (MEDIA_HANDLER=fs)
+  anoon_logs:     # Tinode server logs
+  caddy_data:    # TLS certificates + ACME account (DO NOT delete casually)
+  caddy_config:  # Caddy runtime config cache

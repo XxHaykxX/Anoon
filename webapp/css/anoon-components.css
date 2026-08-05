@@ -1,0 +1,119 @@
+/*
+ * anoon-components.css
+ * Anoon design system §6.6 — segmented control
+ * Used by account-settings-view.jsx to render the General / Notifications /
+ * Security / Support navigation as a horizontal segmented group that wraps
+ * to a 2x2 grid on narrow viewports.
+ */
+
+.anoon-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px;
+}
+
+.anoon-seg-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 9999px;
+  border: 1px solid var(--clr-border-light);
+  background: rgba(255, 255, 255, .05);
+  color: var(--clr-text-secondary);
+  cursor: pointer;
+  transition: all .18s cubic-bezier(0.16, 1, 0.3, 1);
+  font-weight: 500;
+}
+
+.anoon-seg-item:hover {
+  color: var(--clr-text-primary);
+  background: #191919;
+}
+
+.anoon-seg-item.active,
+.anoon-seg-item[aria-current="page"] {
+  border-color: var(--clr-primary-accent);
+  background: rgba(253, 191, 45, .15);
+  color: var(--clr-primary-accent);
+}
+
+.anoon-seg-item .material-icons {
+  color: inherit;
+  font-size: 20px;
+}
+
+/* DS §8: Empty states */
+.anoon-empty { min-height:60dvh; display:grid; place-items:center; text-align:center; gap:8px; padding:24px; }
+.anoon-empty-icon { font-size:64px !important; color:var(--clr-text-tertiary); opacity:.6; }
+.anoon-empty-title { font-size:16px; color:var(--clr-text-secondary); font-weight:500; }
+.anoon-empty-sub { font-size:14px; color:var(--clr-text-tertiary); max-width:22rem; }
+
+/* ==== anoon fix-pack: avatar scroll + danger red ==== */
+
+/* FIX 1: kill the unwanted scrollbar around the avatar in account settings.
+   .avatar-upload is fixed-height (~133px) while its content (~223px) overflows;
+   let the box size to its content instead of clipping/scrolling. The 10rem
+   avatar image itself is untouched — only the wrapper's clipping is removed. */
+.avatar-upload,
+.avatar-upload.read-only {
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.avatar-upload .avatar-box {
+  overflow: visible !important;
+}
+
+/* FIX 2: destructive actions (delete/trash/logout-danger) render in
+   --clr-danger-text, not the yellow primary accent. */
+.flat-button.danger,
+a.danger,
+.danger > .material-icons,
+.material-icons.red,
+a.red .material-icons {
+  color: var(--clr-danger-text) !important;
+}
+
+.scrollable-panel a[title*="delete" i] .material-icons,
+.contacts .material-icons.clickable[class*="delete"] {
+  color: var(--clr-danger-text) !important;
+}
+
+/* Trash icon next to a contact's email/phone in Account Settings
+   (src/views/account-settings-view.jsx ~line 85): markup is
+   <div class="group quoted"><span><a><i class="material-icons">delete</i></a></span></div>.
+   The icon itself carries no "clickable" or "delete" class — only the
+   sibling <tt> does — so the selector below scopes on the real DOM shape
+   (anchor-wrapped icon inside .group.quoted) rather than a class that
+   doesn't exist on the icon. Verified no other ".group.quoted" block in
+   the codebase wraps an icon in an <a>, so this should not catch anything
+   unintended. */
+.group.quoted a .material-icons {
+  color: var(--clr-danger-text) !important;
+}
+
+/* Requested defensive selectors kept for forward-compatibility, though no
+   element in the current codebase has .material-icons.clickable directly
+   (the "clickable" class is applied to the <tt>/<a>, not the icon) — see
+   note above for the rule that actually targets today's markup. */
+.panel-form-row .material-icons.clickable,
+.quoted .material-icons.clickable {
+  color: var(--clr-danger-text) !important;
+}
+
+/* ==== anoon fix-pack: logout button (surfaced in account settings hub) ==== */
+.anoon-logout {
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  margin:16px 12px 8px; min-height:44px; border-radius:9999px;
+  border:1px solid rgba(239,68,68,.4); background:rgba(239,68,68,.08);
+  color:var(--clr-danger-text) !important; font-weight:600; cursor:pointer;
+  transition:all .18s cubic-bezier(0.16,1,0.3,1);
+}
+.anoon-logout:hover { background:rgba(239,68,68,.15); }
+.anoon-logout .material-icons { color:inherit !important; font-size:20px; }
+
+/* ==== anoon fix: kill 1px scroll in caption panels (side + topic headers) ==== */
+.caption-panel, #side-caption-panel, #topic-caption-panel { overflow: hidden !important; }
