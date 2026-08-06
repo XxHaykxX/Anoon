@@ -13,7 +13,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 // Источник данных: ADMIN_BACKEND=companion → companion REST; иначе (по умолчанию) Supabase.
 // Переключатель точечный — media/chats/gallery/broadcast у companion пока нет эндпоинтов,
 // они остаются на Supabase-пути даже при ADMIN_BACKEND=companion.
-function useCompanion(resource: string): boolean {
+// Имя НЕ начинается с `use`: это серверный предикат, а не React-хук, но
+// eslint-plugin-react-hooks различает их только по имени и заводил 4 ошибки
+// rules-of-hooks на каждый вызов — в файле, который в React вообще не попадает.
+function servedByCompanion(resource: string): boolean {
   return companionEnabled() && companionHandles(resource);
 }
 
@@ -155,21 +158,21 @@ const RESOURCE_LIST: Record<string, (p: ListParams) => Promise<{ data: unknown[]
 };
 
 export async function listResource(resource: string, p: ListParams) {
-  if (useCompanion(resource)) return companionList(resource, p);
+  if (servedByCompanion(resource)) return companionList(resource, p);
   const fn = RESOURCE_LIST[resource];
   if (!fn) throw new Error(`unknown resource: ${resource}`);
   return fn(p);
 }
 
 export async function getOne(resource: string, id: string) {
-  if (useCompanion(resource)) return companionGetOne(resource, id);
+  if (servedByCompanion(resource)) return companionGetOne(resource, id);
   const { data } = await listResource(resource, { ids: [id] });
   return data[0] ?? null;
 }
 
 // Обновление жалобы: смена статуса + каскад (Ban + аудит) при бане/отклонении.
 export async function updateReport(id: string, values: { status?: string }, adminId: string, role: AdminRoleName = "moderator") {
-  if (useCompanion("reports")) return companionUpdateReport(id, values, adminId, role);
+  if (servedByCompanion("reports")) return companionUpdateReport(id, values, adminId, role);
   const admin = supabaseAdmin();
   const status = values.status;
   const now = new Date().toISOString();
@@ -205,7 +208,7 @@ export async function updateResource(
   if (resource === "reports") return updateReport(id, values as { status?: string }, adminId, role);
 
   // companion-путь для users/bans (mute/ban/unban/lift). media и пр. — остаются на Supabase ниже.
-  if (useCompanion(resource)) return companionUpdateResource(resource, id, values, adminId, role);
+  if (servedByCompanion(resource)) return companionUpdateResource(resource, id, values, adminId, role);
 
   // Бан/разбан юзера: в Profile НЕТ поля banned — состояние живёт в таблице Ban.
   // Создаём/снимаем строку Ban(active) + аудит. `id` здесь = Profile.id.

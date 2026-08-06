@@ -96,6 +96,24 @@ COMPANION_DB_DSN="postgres://postgres:pass@localhost:5432/anoon?sslmode=disable"
 
 `GET http://localhost:8080/health` -> `{"status":"ok","service":"companion",...}`.
 
+## Pre-land gate
+
+Run all four before landing anything in this service:
+
+```sh
+cd server-stack/companion
+go build ./...
+go vet ./...
+go test ./...
+go vet -tags integration ./...   # ← do not skip: see below
+```
+
+That last line is not redundant. `internal/integration` sits behind the
+`integration` build tag, so plain `go test ./...` and plain `go vet ./...` never
+compile it — a call in there that no longer matches its function's signature
+compiles nowhere, fails nothing, and survives indefinitely. One did, for a whole
+wave of changes, and only turned up when someone ran the tagged build by hand.
+
 ## docker-compose service block
 
 Paste this into `server-stack/docker-compose.yml` under `services:` (orchestrator

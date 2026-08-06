@@ -83,7 +83,7 @@ Next.js 16 + React 19 + Tailwind v4 + TS. `npm run dev` → **localhost:3001**. 
 | Фронт↔сервер: вход (basic+email-login), чаты из `me`, живой 1:1 | ✅ готово (B1/B2/C1) |
 | Фронт: **реальная рулетка/анон-чат/раскрытие, профиль+#ID из companion** | ✅ готово, живой 2-user матч подтверждён |
 | Фронт: logout/report/block/notifications/settings подключены к companion | ✅ готово, tsc 0 |
-| Админка (`admin`) — companion-client + `ADMIN_BACKEND` switch | 🟡 reports/users/bans/overview live; chats/media/broadcast — нет endpoint |
+| Админка (`admin`) — companion-client + `ADMIN_BACKEND` switch | 🟡 reports/users/bans/overview/media/broadcast live (списки + карточки + мутации, покрыто `--project=admin`, 6 тестов); эндпоинта нет только у `chats` — намеренно, юр-вопрос Q7a. Вход в панель под автотестами НЕ ходит: учётка оператора в Supabase, проект из `admin/.env` не резолвится |
 | E2E-тесты (Playwright, mock-mode, 17 тестов) + phone-test инфра (Caddy+cloudflared) | ✅ готово (`frontend/tests/e2e`, `server-stack/PHONE-TEST.md`) |
 | Реальные пуши (VAPID/FCM) | ⬜ не начато (Phase E) |
 | Прод-деплой — Hetzner CX32 ~€14/мес | 🟡 план готов (`DEPLOY-PLAN.md`), не выполнен |
