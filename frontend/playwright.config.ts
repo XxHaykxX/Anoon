@@ -47,10 +47,36 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      // The admin panel is a different app on a different origin with a desktop
+      // layout — it gets its own project below, and must not be swept up by the
+      // phone-framed default one.
+      //
+      // A regex anchored on the tests path, NOT the glob "**/admin/**": globs
+      // are matched against the ABSOLUTE path, which on this machine is
+      // C:\Users\Admin\… — so that glob ignored every spec in the repo and the
+      // whole suite silently listed zero tests.
+      testIgnore: /[\\/]tests[\\/]e2e[\\/]admin[\\/]/,
       use: {
         ...devices["Desktop Chrome"],
         // Override the device's default (desktop) viewport with the phone frame.
         viewport: { width: 390, height: 844 },
+      },
+    },
+    {
+      // The admin panel (admin/, :3002). Opt-in — `--project=admin` with
+      // E2E_ADMIN=1 and ADMIN_SESSION_SECRET; see tests/e2e/admin/helpers.ts for
+      // what has to be running and why the app must be BUILT in api mode.
+      name: "admin",
+      testDir: "./tests/e2e/admin",
+      // Not parallel: these drive ONE live backend and some of them mutate it —
+      // the role-gate test bans a user for a moment, which the overview's
+      // «Активных банов» card counts, so a parallel run had it comparing the
+      // card against a number that was true a second earlier.
+      fullyParallel: false,
+      use: {
+        ...devices["Desktop Chrome"],
+        baseURL: process.env.ADMIN_BASE_URL ?? "http://localhost:3002",
+        viewport: { width: 1280, height: 900 },
       },
     },
   ],

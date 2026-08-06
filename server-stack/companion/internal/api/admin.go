@@ -298,6 +298,24 @@ func (s *Server) handleAdminListReports(w http.ResponseWriter, r *http.Request) 
 	writeList(w, rows, total)
 }
 
+// handleAdminGetReport serves the report detail card and the echo-back after a
+// status change. Same body shape as one row of the list, so the panel maps it
+// with the same code — see the routing note in router.go for what a missing
+// single-row GET did to every mutation.
+func (s *Server) handleAdminGetReport(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "report id must be numeric")
+		return
+	}
+	row, err := s.Store.GetReport(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "no_such_report", "report not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, row)
+}
+
 // adminReportPatch is the PATCH /admin/reports/{id} body. status moves the
 // report through its lifecycle; action "ban" additionally bans the reported user
 // (permanent -> super_admin only).
@@ -375,6 +393,25 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 		rows[i].Online = s.Hub.Online(rows[i].ID)
 	}
 	writeList(w, rows, total)
+}
+
+// handleAdminGetUser serves the user detail card and the echo-back after a
+// ban/mute. Presence is overlaid exactly as the list does it — a row that says
+// "offline" only because it came from the single-row path would read as the
+// user having just dropped off.
+func (s *Server) handleAdminGetUser(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "user id must be numeric")
+		return
+	}
+	row, err := s.Store.ProfileByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "no_such_user", "user not found")
+		return
+	}
+	row.Online = s.Hub.Online(row.ID)
+	writeJSON(w, http.StatusOK, row)
 }
 
 // adminUserPatch is the PATCH /admin/users/{id} body. It supports ban/unban and
@@ -486,6 +523,21 @@ func (s *Server) handleAdminListBans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeList(w, rows, total)
+}
+
+// handleAdminGetBan serves one ban row (detail view + echo-back after lifting).
+func (s *Server) handleAdminGetBan(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "ban id must be numeric")
+		return
+	}
+	row, err := s.Store.GetBan(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "no_such_ban", "ban not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, row)
 }
 
 // adminBanPatch is the PATCH /admin/bans/{id} body: the only allowed mutation is

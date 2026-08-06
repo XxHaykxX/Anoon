@@ -229,11 +229,21 @@ func (s *Server) Handler() http.Handler {
 	// COMPANION-ADMIN-API.md §1/§2 and internal/api/admin.go.
 	mux.HandleFunc("GET /admin/overview", s.adminOnly(s.handleAdminOverview))
 	mux.HandleFunc("GET /admin/online", s.adminOnly(s.handleAdminOnline))
+	// The single-row GETs matter more than they look: the admin panel calls one
+	// after EVERY mutation, to echo the updated row back (companionUpdateResource
+	// → companionGetOne). While they were missing, Go's mux answered the plain
+	// text "Method Not Allowed", the panel failed to parse it as JSON, and every
+	// ban / mute / unban / report-status change reported an error to the operator
+	// **after having been applied** — plus the /users/{id} and /reports/{id}
+	// detail pages could not open at all.
 	mux.HandleFunc("GET /admin/reports", s.adminOnly(s.handleAdminListReports))
+	mux.HandleFunc("GET /admin/reports/{id}", s.adminOnly(s.handleAdminGetReport))
 	mux.HandleFunc("PATCH /admin/reports/{id}", s.adminOnly(s.handleAdminPatchReport))
 	mux.HandleFunc("GET /admin/users", s.adminOnly(s.handleAdminListUsers))
+	mux.HandleFunc("GET /admin/users/{id}", s.adminOnly(s.handleAdminGetUser))
 	mux.HandleFunc("PATCH /admin/users/{id}", s.adminOnly(s.handleAdminPatchUser))
 	mux.HandleFunc("GET /admin/bans", s.adminOnly(s.handleAdminListBans))
+	mux.HandleFunc("GET /admin/bans/{id}", s.adminOnly(s.handleAdminGetBan))
 	mux.HandleFunc("PATCH /admin/bans/{id}", s.adminOnly(s.handleAdminPatchBan))
 	mux.HandleFunc("GET /admin/media/folders", s.adminOnly(s.handleAdminMediaFolders))
 	mux.HandleFunc("GET /admin/media", s.adminOnly(s.handleAdminListMedia))
