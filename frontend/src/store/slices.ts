@@ -504,6 +504,9 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
   hashId: null,
   status: "signed_out",
   authError: null,
+  uiError: null,
+  showError: (message) => set({ uiError: message }),
+  dismissError: () => set({ uiError: null }),
   signInWithBasic: async (input) => {
     set({ status: "connecting", authError: null });
     try {
@@ -721,7 +724,11 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
         }
       }
     } catch {
-      /* companion down — chat list falls back to the raw uid until it loads */
+      // Swallowed on purpose, and this is the one caller where that is right:
+      // the map only ENRICHES rows the me-topic already produced, so a failure
+      // degrades "#00012" to the raw uid instead of hiding anyone. Nothing here
+      // claims a friend does or does not exist. (friendsList itself now rethrows
+      // a refusal rather than answering it with [] — see companion.ts.)
     }
   };
   // Peer's highest received/read seq for the OPEN chat (contract A, BUG-8).

@@ -91,6 +91,8 @@ export default function AnoonSettings() {
   const [soundOn, setSoundOn] = useState(isNotifySoundEnabled);
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [blocked, setBlocked] = useState<BlockedFriend[]>([]);
+  /** The block list could not be read — distinct from "there is nobody in it". */
+  const [blocksFailed, setBlocksFailed] = useState(false);
 
   // Change password
   const [currentPassword, setCurrentPassword] = useState("");
@@ -110,8 +112,27 @@ export default function AnoonSettings() {
 
   // Real mode: load the block list from companion (same fire-and-forget
   // pattern AnoonFriends uses for startContacts).
+  //
+  // A refused read is NOT an empty blacklist. listBlocks used to answer both
+  // with [], so a failure rendered «Список пуст» — the one screen where a
+  // wrong "nobody is blocked" is likely to be acted on. Track the failure
+  // separately and say so instead.
   useEffect(() => {
-    if (real) void getCompanionClient().listBlocks().then(setBlocked);
+    if (!real) return;
+    let alive = true;
+    void getCompanionClient()
+      .listBlocks()
+      .then((rows) => {
+        if (!alive) return;
+        setBlocked(rows);
+        setBlocksFailed(false);
+      })
+      .catch(() => {
+        if (alive) setBlocksFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
   }, [real]);
 
   // Reconcile the push toggle with the actual browser subscription — the
@@ -369,7 +390,9 @@ export default function AnoonSettings() {
               <BlockIcon className="size-5 text-primary-foreground" />
             </div>
             <span className="min-w-0 flex-1">Заблокированные</span>
-            <span className="text-sm text-muted-foreground">{blocked.length}</span>
+            <span className="text-sm text-muted-foreground">
+              {blocksFailed ? "—" : blocked.length}
+            </span>
             <ChevronRightIcon
               className={`size-4 text-muted-foreground transition-transform ${
                 blockedOpen ? "rotate-90" : ""
@@ -379,7 +402,11 @@ export default function AnoonSettings() {
 
           {blockedOpen && (
             <div className="border-t border-border animate-in slide-in-from-top-2 fade-in-0 duration-200 motion-reduce:animate-none">
-              {blocked.length === 0 ? (
+              {blocksFailed ? (
+                <p className="px-4 py-4 text-center text-sm text-destructive">
+                  Не удалось загрузить список. Откройте экран заново
+                </p>
+              ) : blocked.length === 0 ? (
                 <p className="px-4 py-4 text-center text-sm text-muted-foreground">
                   Список пуст
                 </p>

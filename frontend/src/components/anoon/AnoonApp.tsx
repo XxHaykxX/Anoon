@@ -333,6 +333,19 @@ export default function AnoonApp() {
     const t = window.setTimeout(() => setCallToast(null), 3500);
     return () => window.clearTimeout(t);
   }, [callToast]);
+
+  // The one place a refused backend call becomes visible. Lives here rather
+  // than on each screen because the screens that most need it (friend search,
+  // requests, blacklist) have no error UI of their own, which is exactly why
+  // those refusals used to be drawn as successes. Longer-lived than the call
+  // toast: this one reports that something the user asked for did not happen.
+  const uiError = useAnoonStore((s) => s.uiError);
+  const dismissError = useAnoonStore((s) => s.dismissError);
+  useEffect(() => {
+    if (!uiError) return;
+    const t = window.setTimeout(dismissError, 5000);
+    return () => window.clearTimeout(t);
+  }, [uiError, dismissError]);
   useEffect(() => {
     if (!USE_TINODE) return;
     return onCall((frame) => {
@@ -578,6 +591,20 @@ export default function AnoonApp() {
                 <div className="rounded-full bg-black/80 px-4 py-2 text-center text-xs text-white shadow-lg">
                   {callToast}
                 </div>
+              </div>
+            )}
+            {uiError && (
+              <div
+                role="alert"
+                className="absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 flex justify-center px-4"
+              >
+                <button
+                  type="button"
+                  onClick={dismissError}
+                  className="max-w-full cursor-pointer rounded-2xl bg-destructive px-4 py-2.5 text-center text-xs font-medium text-white shadow-lg transition-transform active:scale-95"
+                >
+                  {uiError}
+                </button>
               </div>
             )}
 

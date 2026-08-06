@@ -422,14 +422,27 @@ export class CompanionClient {
   }
 
   /** End the active anon match on `topic`. */
+  /**
+   * Leave a chat: ends an active pairing and records the caller's departure
+   * either way (companion #24 — a revealed match keeps its status but stops
+   * being reported as the caller's current match).
+   *
+   * **Rethrows when the backend refuses.** A swallowed refusal leaves the
+   * pairing open server-side while the UI has already closed it, so the next
+   * `GET /roulette/status` still names that chat. Callers who genuinely cannot
+   * act on the failure catch it themselves — see the store's `closeAnon`, which
+   * is fire-and-forget on purpose because re-entering the queue records the
+   * leave anyway.
+   */
   async end(topic: string): Promise<void> {
     this.clearMockTimers();
     this.mockPeer = null;
     this.mockPeerAlias = null;
     try {
       await this.post("/roulette/end", { topic });
-    } catch {
-      /* nothing to do in mock */
+    } catch (err) {
+      if (err instanceof CompanionHttpError) throw err;
+      this.mock = true;
     }
   }
 
@@ -520,17 +533,33 @@ export class CompanionClient {
       // same way {@link friendsSearch} does (BUG-43).
       const res = await this.request<{ friends?: Friend[] } | Friend[]>("/friends");
       return Array.isArray(res) ? res : res?.friends ?? [];
-    } catch {
+    } catch (err) {
+      // **Rethrows when the backend refuses.** An empty array is a claim — "you
+      // have no friends" — and a refused read is not evidence for it. Returning
+      // one wiped the list the user was looking at (a 401 on an expired session
+      // showed an empty Contacts tab rather than "session expired"), and every
+      // caller has no way to tell that apart from the real thing.
+      if (err instanceof CompanionHttpError) throw err;
+      this.mock = true;
       return [];
     }
   }
 
-  /** Send a friend request to a #ID. */
+  /**
+   * Send a friend request to a #ID.
+   *
+   * **Rethrows when the backend refuses**, same rule as {@link report} and
+   * {@link blockFriend}: swallowing it turned every refusal — blocked by that
+   * person, they no longer exist, rate limit — into the same silent "Заявка
+   * отправлена" as a success, and the request the user believes is pending was
+   * never created. An unreachable backend still no-ops into the mock.
+   */
   async friendRequest(hashId: string): Promise<void> {
     try {
       await this.post("/friends/request", { hashId });
-    } catch {
-      /* mock: no-op */
+    } catch (err) {
+      if (err instanceof CompanionHttpError) throw err;
+      this.mock = true;
     }
   }
 
@@ -550,8 +579,14 @@ export class CompanionClient {
         hashId?: string;
       };
       return res ?? {};
-    } catch {
-      /* mock: no-op */
+    } catch (err) {
+      // **Rethrows when the backend refuses.** This one was the worst of the
+      // swallowing set: an empty object reads as "accepted, just without a
+      // topic", so the caller removed the request from the list and drew the
+      // person as a friend — a friendship that exists on nobody's server. The
+      // request is also gone from the UI, so there is nothing left to retry.
+      if (err instanceof CompanionHttpError) throw err;
+      this.mock = true;
       return {};
     }
   }
@@ -592,7 +627,13 @@ export class CompanionClient {
         "/friends/blocks",
       );
       return Array.isArray(res) ? res : res?.blocks ?? [];
-    } catch {
+    } catch (err) {
+      // **Rethrows when the backend refuses** — same reasoning as
+      // {@link friendsList}, and it lands somewhere more sensitive: an empty
+      // blacklist tells the user nobody is blocked, which is the one screen
+      // where a wrong "nothing here" invites them to act on it.
+      if (err instanceof CompanionHttpError) throw err;
+      this.mock = true;
       return [];
     }
   }

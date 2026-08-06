@@ -43,6 +43,8 @@ export default function AnoonFriendRequests() {
   const storeRequests = useAnoonStore((s) => s.requests);
   const upsertFriend = useAnoonStore((s) => s.upsertFriend);
   const removeRequest = useAnoonStore((s) => s.removeRequest);
+  const addRequest = useAnoonStore((s) => s.addRequest);
+  const showError = useAnoonStore((s) => s.showError);
 
   const rows: FriendRequestRow[] = USE_TINODE
     ? storeRequests
@@ -64,6 +66,9 @@ export default function AnoonFriendRequests() {
     setStatus(r.id, accept ? "accepted" : "declined");
     if (!USE_TINODE) return;
     const raw = r.hashId.replace(/^#/, "");
+    // Keep the original row so a refused respond can put it back — once it is
+    // out of the store there is nothing left for the user to retry.
+    const original = storeRequests.find((x) => x.id === r.id);
     // Add the friend WITH the p2p topic the backend returns — without it the
     // chat opens topic-less and messages go nowhere (BUG-42).
     void getCompanionClient()
@@ -79,6 +84,19 @@ export default function AnoonFriendRequests() {
           online: true,
           lastActiveAt: Date.now(),
         });
+      })
+      .catch(() => {
+        // The backend said no. Undo the optimistic UI rather than leave the
+        // user believing they now have a friend nobody's server agrees about
+        // — friendRespond used to swallow this and return {}, which read as
+        // "accepted, just without a topic".
+        setStatus(r.id, "pending");
+        if (original) addRequest(original);
+        showError(
+          accept
+            ? "Не удалось принять заявку. Попробуйте ещё раз"
+            : "Не удалось отклонить заявку. Попробуйте ещё раз",
+        );
       });
     // Drop it from the store too (mirrors AnoonNotifications.handleRequest) —
     // otherwise it lingers in `requests` forever: it'd reappear next visit and

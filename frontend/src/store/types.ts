@@ -53,6 +53,21 @@ export interface SessionSlice {
   restoreSession: () => Promise<boolean>;
   signOut: () => void;
   setUser: (user: User | null) => void;
+  /**
+   * A refusal from the backend that the user has to see, rendered as a toast by
+   * AnoonApp. Distinct from {@link authError}, which belongs to the auth screens
+   * and stays on the form.
+   *
+   * This exists because the alternative kept producing the same bug: a call
+   * fails, nobody can show it, so the screen draws a success (a friend request
+   * that was never created, a friendship nobody's server has, an empty list
+   * that means "we could not read yours"). Set it through `showError`, which
+   * every companion catch block can reach without the screen needing its own
+   * error UI.
+   */
+  uiError: string | null;
+  showError: (message: string) => void;
+  dismissError: () => void;
 }
 
 /** Confirmed friends + pending requests. Chats list is derived from friends. */

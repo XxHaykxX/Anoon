@@ -78,6 +78,7 @@ export default function AnoonFriendSearch() {
 
   const friends = useAnoonStore((s) => s.friends);
   const requests = useAnoonStore((s) => s.requests);
+  const showError = useAnoonStore((s) => s.showError);
 
   /** #ID → what we already know locally about that person. */
   const localById = useMemo(() => {
@@ -126,8 +127,25 @@ export default function AnoonFriendSearch() {
   const results = USE_TINODE ? realResults : mockResults;
 
   const addFriend = (p: Person) => {
-    if (USE_TINODE) void getCompanionClient().friendRequest(p.id);
+    if (!USE_TINODE) {
+      setSent((prev) => ({ ...prev, [p.id]: true }));
+      return;
+    }
+    // «Отправлено» is a claim about the backend, so it waits for the backend to
+    // agree. It used to be set unconditionally next to a fire-and-forget call
+    // that swallowed refusals, which turned "blocked you" / "no such #ID" /
+    // rate-limited into a request the user believes is pending.
     setSent((prev) => ({ ...prev, [p.id]: true }));
+    void getCompanionClient()
+      .friendRequest(p.id)
+      .catch(() => {
+        setSent((prev) => {
+          const next = { ...prev };
+          delete next[p.id];
+          return next;
+        });
+        showError("Не удалось отправить заявку. Попробуйте ещё раз");
+      });
   };
 
   return (

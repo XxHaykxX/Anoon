@@ -164,6 +164,8 @@ export default function AnoonNotifications() {
   const storeNotifications = useAnoonStore((s) => s.notifications);
   const storeUnread = useAnoonStore((s) => s.unreadCount);
   const removeRequest = useAnoonStore((s) => s.removeRequest);
+  const addRequest = useAnoonStore((s) => s.addRequest);
+  const showError = useAnoonStore((s) => s.showError);
   const markRead = useAnoonStore((s) => s.markRead);
   const markAllReadStore = useAnoonStore((s) => s.markAllRead);
 
@@ -182,7 +184,19 @@ export default function AnoonNotifications() {
 
   const handleRequest = (req: FriendRequest, accept: boolean) => {
     if (USE_TINODE) {
-      if (req.hashId) void getCompanionClient().friendRespond(req.hashId, accept);
+      if (req.hashId) {
+        // Keep the STORE row (not this screen's view model) so a refusal can
+        // put back exactly what was there.
+        const original = storeRequests.find((r) => r.id === req.id);
+        void getCompanionClient()
+          .friendRespond(req.hashId, accept)
+          .catch(() => {
+            // Refused — put the request back rather than let the user think it
+            // was answered (same reasoning as AnoonFriendRequests.respond).
+            if (original) addRequest(original);
+            showError("Не удалось ответить на заявку. Попробуйте ещё раз");
+          });
+      }
       removeRequest(req.id);
     } else {
       setMockRequests((prev) => prev.filter((r) => r.id !== req.id));
