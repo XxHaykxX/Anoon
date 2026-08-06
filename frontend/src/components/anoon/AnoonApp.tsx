@@ -21,6 +21,7 @@ import {
   type AnoonNavVerb,
   type AnoonRoute,
 } from "@/components/anoon/anoonNav";
+import { AnoonSideNav, type AnoonTab } from "@/components/anoon/_shared";
 
 // Statically imported: onboarding/auth entry + the always-reachable primary
 // tabs (first-paint or hot paths). These live in the main app chunk.
@@ -153,6 +154,43 @@ const NEEDS_TOP_BAR: Partial<Record<AnoonRoute, true>> = {
 };
 
 /**
+ * Desktop only (≥1024px): which routes show the navigation rail, and which tab
+ * it highlights while they are open. See docs/DESKTOP-LAYOUT.md.
+ *
+ * The set is deliberately wider than the phone's bottom bar (which only the 5
+ * tab screens draw): on a desktop the rail must not disappear under a pushed
+ * sub-screen — «Настройки» or «Заявки» sliding in should not make the whole
+ * layout jump left. It is deliberately NARROWER than "everything": routes left
+ * out are the ones where a stray tab click would abandon live state or a flow
+ * the user has to finish — onboarding/auth, `searching` and `anon-chat` (leaving
+ * a match has to go through leaveQueue/closeAnon, see the back-overlay below),
+ * the moderation/terminal screens, and the modal-style routes.
+ */
+const SIDE_NAV_TAB: Partial<Record<AnoonRoute, AnoonTab>> = {
+  chats: "chats",
+  "private-chat": "chats",
+  friends: "friends",
+  "friend-search": "friends",
+  "friend-requests": "friends",
+  home: "home",
+  notifications: "notifications",
+  profile: "profile",
+  settings: "profile",
+  invite: "profile",
+  install: "profile",
+};
+
+/**
+ * Desktop only: routes that get the FULL work area instead of the centred
+ * `--anoon-content-max` column — for layouts that genuinely use the width
+ * (e.g. a future list+conversation two-pane «Чаты»). Empty today: every screen
+ * is still a phone layout, and clamping is the safer default. A screen cannot
+ * opt out from the inside — the clamp is on its parent — so widening one is a
+ * one-line entry here.
+ */
+const WIDE_ROUTES: Partial<Record<AnoonRoute, true>> = {};
+
+/**
  * Viewport-fit for the fixed 390x844 phone frame. Same technique as the
  * showcase's own PhoneFrame (`app/page.tsx`) — a breakpoint-driven transform
  * scale — extended to fit BOTH axes: `--anoon-fw` is the largest scale the
@@ -164,6 +202,10 @@ const NEEDS_TOP_BAR: Partial<Record<AnoonRoute, true>> = {
  * doesn't affect layout, so without it a centred flex parent would clip the
  * top of the frame); the inner `.anoon-frame-scale` keeps the untouched
  * 390x844 coordinate system every screen lays out against.
+ *
+ * All of this is PHONE-ONLY. From 1024px up, globals.css cancels the scale and
+ * the fixed box (`.anoon-desktop .anoon-frame-fit`) so the same markup fills the
+ * viewport instead — that is the single desktop breakpoint, don't add another.
  */
 const FRAME_FIT_CSS = `
 .anoon-frame-fit {
@@ -200,15 +242,26 @@ const FRAME_FIT_CSS = `
 @media (min-height: 860px) { .anoon-frame-fit { --anoon-fh: 1; } }
 `;
 
-/** The phone shell itself: dark scope + the self-scaling 390x844 bezel. */
+/**
+ * The app shell: dark scope + the self-scaling 390x844 bezel below `lg`, and
+ * the same box full-bleed from `lg` up (bezel, notch and shadow all drop away —
+ * a desktop app is not a phone in a frame).
+ *
+ * `anoon-desktop` is the scope hook every desktop rule in globals.css hangs off.
+ * It sits here and nowhere else, which is what keeps the showcase's own fixed
+ * phone frames on the phone branch at any window width.
+ *
+ * Plain `lg:` utilities are fine INSIDE this file (nothing here is reused by the
+ * showcase); shared components under `_shared.tsx` must use the class scope.
+ */
 function PhoneFrame({ className = "", children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className="dark">
+    <div className="anoon-desktop dark">
       <style>{FRAME_FIT_CSS}</style>
       <div className="anoon-frame-fit mx-auto">
         <div className="anoon-frame-scale">
           <div
-            className={`relative flex h-[844px] w-[390px] flex-col overflow-hidden rounded-[44px] border-[10px] border-neutral-800 bg-background text-foreground shadow-2xl ${className}`}
+            className={`relative flex h-[844px] w-[390px] flex-col overflow-hidden rounded-[44px] border-[10px] border-neutral-800 bg-background text-foreground shadow-2xl lg:h-full lg:w-full lg:rounded-none lg:border-0 lg:shadow-none ${className}`}
           >
             {children}
           </div>
@@ -476,6 +529,24 @@ export default function AnoonApp() {
   const Screen = SCREENS[current];
   const needsTopBar = NEEDS_TOP_BAR[current];
 
+  // Desktop rail (≥1024px). Its badges are derived here, from the same store
+  // fields the phone screens read, because the rail outlives any one screen —
+  // on the phone each tab screen hands its own numbers to AnoonBottomNav, and
+  // there is no such screen behind «Настройки» or «Заявки».
+  const unreadCount = useAnoonStore((s) => s.unreadCount);
+  const requests = useAnoonStore((s) => s.requests);
+  const sideTab = SIDE_NAV_TAB[current];
+  /** Desktop content clamp — empty for routes that asked for the full width. */
+  const clampCls = WIDE_ROUTES[current] ? "" : "lg:max-w-[var(--anoon-content-max)]";
+  const sideBadges = useMemo(
+    () => ({
+      chats: friends.reduce((sum, f) => sum + (f.unread ?? 0), 0),
+      friends: requests.filter((r) => r.direction === "incoming").length,
+      notifications: unreadCount,
+    }),
+    [friends, requests, unreadCount],
+  );
+
   // Splash while a persisted session is being restored (BUG-44) — keeps the
   // onboarding screen from flashing before the silent re-login lands.
   if (booting) {
@@ -491,125 +562,149 @@ export default function AnoonApp() {
   return (
     <AnoonNavContext.Provider value={nav}>
       <PhoneFrame>
-        {/* Notch */}
-        <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-6 w-36 -translate-x-1/2 rounded-b-2xl bg-neutral-800" />
-        <div className="flex h-full flex-col">
-          {/* Status bar spacer — clears the decorative notch */}
-          <div className="h-7 shrink-0 bg-background" />
-          {/* Shell-provided back bar for sub-screens without their own */}
-          {needsTopBar && (
-            <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border bg-background px-2">
-              <button
-                type="button"
-                onClick={back}
-                aria-label="Назад"
-                className="grid size-9 place-items-center rounded-full text-foreground transition-transform active:scale-95"
-              >
-                <ChevronLeftIcon className="size-6" />
-              </button>
-            </div>
-          )}
-
-          <div className="relative min-h-0 flex-1">
-            <div
-              key={current}
-              className={`${SCREEN_ANIM[navVerb.current]} anoon-noscroll flex h-full flex-col overflow-x-hidden`}
-            >
-              <Screen />
-            </div>
-
-            {/*
-              Anonymous chat: an invisible hit target sitting exactly on the
-              screen's own back chevron. NOT redundant with that chevron —
-              it deliberately overrides where "back" goes. The screen's own
-              handler calls nav.back(), which pops to "searching" (anon-chat
-              is pushed from there, AnoonSearching.tsx:29/35) and that screen
-              immediately re-pushes anon-chat on its match state — a loop the
-              user can't escape. Leaving the match has to be go("home").
-              Sized to the header's own 44x44 box so it no longer clips the
-              left edge of the peer avatar (which starts at x=46).
-            */}
-            {current === "anon-chat" && (
-              <button
-                type="button"
-                onClick={() => {
-                  // The real "leave the match" point — closeAnon() is no
-                  // longer tied to AnoonAnonChat's own unmount (see its
-                  // comment) so it must fire explicitly here.
-                  closeAnon();
-                  go("home");
-                }}
-                aria-label="Назад"
-                className="absolute left-0 top-0 z-30 size-11"
-              />
-            )}
-
-            {/* Friends: floating entry to the friend-requests screen.
-                `bottom-[72px]` clears the 57px bottom nav — at bottom-16 the
-                pill's lower edge sat 7px above it and read as overlapping. */}
-            {current === "friends" && (
-              <button
-                type="button"
-                onClick={() => push("friend-requests")}
-                className="absolute bottom-[72px] right-4 z-30 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg transition-transform active:scale-95"
-              >
-                Заявки
-              </button>
-            )}
-
-            {/* Global connectivity banner — overlays whatever screen is active. */}
-            {offline && (
-              <div className="absolute inset-0 z-40">
-                <AnoonOffline />
-              </div>
-            )}
-
-            {/* Global call overlay — ringing / outgoing / in-call, above everything else. */}
-            {call?.status === "incoming" && (
-              <IncomingCall
-                peerName={call.peerName}
-                peerId={call.peerHashId}
-                media={call.media}
-                onAccept={acceptIncoming}
-                onDecline={declineIncoming}
-              />
-            )}
-            {(call?.status === "outgoing" || call?.status === "active") && (
-              <CallScreen
-                key={call.callId}
-                callId={call.callId}
-                peerId={call.peerHashId}
-                peerName={call.peerName}
-                media={call.media}
-                role={call.incomingOffer ? "callee" : "caller"}
-                initialOffer={call.incomingOffer}
-                onEnded={endCall}
-              />
-            )}
-            {callToast && (
-              <div className="pointer-events-none absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 flex justify-center">
-                <div className="rounded-full bg-black/80 px-4 py-2 text-center text-xs text-white shadow-lg">
-                  {callToast}
+        {/* Notch — decorative, part of the phone bezel only */}
+        <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-6 w-36 -translate-x-1/2 rounded-b-2xl bg-neutral-800 lg:hidden" />
+        {/* Phone: one column. Desktop: nav rail + work area, side by side. */}
+        <div className="flex h-full flex-col lg:flex-row">
+          {sideTab && <AnoonSideNav active={sideTab} badges={sideBadges} />}
+          {/* `min-w-0` so a wide child (chat bubbles, long handles) can't push
+              the flex row past the viewport and give the rail a scrollbar. */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* Status bar spacer — clears the decorative notch */}
+            <div className="h-7 shrink-0 bg-background lg:hidden" />
+            {/* Shell-provided back bar for sub-screens without their own. The
+                hairline runs the full work area; the chevron inside sits on the
+                same clamp as the content, so on desktop it lines up with the
+                screen's own heading instead of floating off to the left. */}
+            {needsTopBar && (
+              <div className="shrink-0 border-b border-border bg-background">
+                <div className={`mx-auto flex h-11 w-full items-center gap-1 px-2 ${clampCls}`}>
+                  <button
+                    type="button"
+                    onClick={back}
+                    aria-label="Назад"
+                    className="grid size-9 place-items-center rounded-full text-foreground transition-transform active:scale-95"
+                  >
+                    <ChevronLeftIcon className="size-6" />
+                  </button>
                 </div>
               </div>
             )}
-            {uiError && (
+
+            {/*
+              The work area, and on desktop the content clamp: screens AND every
+              shell overlay below live inside it, so a floating button or a
+              banner still lands next to the content it belongs to instead of at
+              the far edge of a 4K monitor. Below `lg` this is exactly the old
+              full-width box.
+            */}
+            <div className={`relative mx-auto min-h-0 w-full min-w-0 flex-1 ${clampCls}`}>
               <div
-                role="alert"
-                className="absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 flex justify-center px-4"
+                key={current}
+                className={`${SCREEN_ANIM[navVerb.current]} anoon-noscroll flex h-full flex-col overflow-x-hidden`}
               >
+                <Screen />
+              </div>
+
+              {/*
+                Anonymous chat: an invisible hit target sitting exactly on the
+                screen's own back chevron. NOT redundant with that chevron —
+                it deliberately overrides where "back" goes. The screen's own
+                handler calls nav.back(), which pops to "searching" (anon-chat
+                is pushed from there, AnoonSearching.tsx:29/35) and that screen
+                immediately re-pushes anon-chat on its match state — a loop the
+                user can't escape. Leaving the match has to be go("home").
+                Sized to the header's own 44x44 box so it no longer clips the
+                left edge of the peer avatar (which starts at x=46).
+
+                This is also why `anon-chat` has no desktop nav rail (see
+                SIDE_NAV_TAB): every way out of a match has to pass through
+                closeAnon(), and a rail tab would be a way out that doesn't.
+              */}
+              {current === "anon-chat" && (
                 <button
                   type="button"
-                  onClick={dismissError}
-                  className="max-w-full cursor-pointer rounded-2xl bg-destructive px-4 py-2.5 text-center text-xs font-medium text-white shadow-lg transition-transform active:scale-95"
-                >
-                  {uiError}
-                </button>
-              </div>
-            )}
+                  onClick={() => {
+                    // The real "leave the match" point — closeAnon() is no
+                    // longer tied to AnoonAnonChat's own unmount (see its
+                    // comment) so it must fire explicitly here.
+                    closeAnon();
+                    go("home");
+                  }}
+                  aria-label="Назад"
+                  className="absolute left-0 top-0 z-30 size-11"
+                />
+              )}
 
-            {/* Global fullscreen media viewer — real chat media, above all screens. */}
-            {mediaViewerOpen && <AnoonMediaViewer />}
+              {/* Friends: floating entry to the friend-requests screen.
+                  `bottom-[72px]` clears the 57px bottom nav — at bottom-16 the
+                  pill's lower edge sat 7px above it and read as overlapping.
+                  On desktop that bar is gone (it's a rail), so the pill drops
+                  back down to the normal corner inset. */}
+              {current === "friends" && (
+                <button
+                  type="button"
+                  onClick={() => push("friend-requests")}
+                  className="absolute bottom-[72px] right-4 z-30 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg transition-transform active:scale-95 lg:bottom-4"
+                >
+                  Заявки
+                </button>
+              )}
+
+              {/* Global connectivity banner — overlays whatever screen is active. */}
+              {offline && (
+                <div className="absolute inset-0 z-40">
+                  <AnoonOffline />
+                </div>
+              )}
+
+              {/* Global call overlay — ringing / outgoing / in-call, above everything else. */}
+              {call?.status === "incoming" && (
+                <IncomingCall
+                  peerName={call.peerName}
+                  peerId={call.peerHashId}
+                  media={call.media}
+                  onAccept={acceptIncoming}
+                  onDecline={declineIncoming}
+                />
+              )}
+              {(call?.status === "outgoing" || call?.status === "active") && (
+                <CallScreen
+                  key={call.callId}
+                  callId={call.callId}
+                  peerId={call.peerHashId}
+                  peerName={call.peerName}
+                  media={call.media}
+                  role={call.incomingOffer ? "callee" : "caller"}
+                  initialOffer={call.incomingOffer}
+                  onEnded={endCall}
+                />
+              )}
+              {callToast && (
+                <div className="pointer-events-none absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 flex justify-center">
+                  <div className="rounded-full bg-black/80 px-4 py-2 text-center text-xs text-white shadow-lg">
+                    {callToast}
+                  </div>
+                </div>
+              )}
+              {uiError && (
+                <div
+                  role="alert"
+                  className="absolute inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 flex justify-center px-4"
+                >
+                  <button
+                    type="button"
+                    onClick={dismissError}
+                    className="max-w-full cursor-pointer rounded-2xl bg-destructive px-4 py-2.5 text-center text-xs font-medium text-white shadow-lg transition-transform active:scale-95"
+                  >
+                    {uiError}
+                  </button>
+                </div>
+              )}
+
+              {/* Global fullscreen media viewer — real chat media, above all screens. */}
+              {mediaViewerOpen && <AnoonMediaViewer />}
+            </div>
           </div>
         </div>
       </PhoneFrame>

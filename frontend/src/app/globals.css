@@ -192,6 +192,40 @@
   .anoon-screen-in, .anoon-msg-in { animation: none; }
 }
 
+/* ===== Десктопная раскладка — единственное место, где живут брейкпоинты =====
+   Подробности и правила для тех, кто верстает экраны: docs/DESKTOP-LAYOUT.md.
+
+   Одна точка переключения — 1024px (Tailwind `lg`), и только внутри
+   `.anoon-desktop` (корень AnoonApp). Витрина `src/app/page.tsx` показывает те
+   же самые экраны в фиксированных 390px-фреймах на широком мониторе, поэтому
+   голый `@media (min-width: 1024px)` в ОБЩИХ компонентах (`_shared.tsx`)
+   переключил бы и её — всё общее привязано к этому классу. Внутри AnoonApp.tsx
+   (витриной не переиспользуется) можно писать обычные варианты `lg:`. */
+:root {
+  --anoon-nav-w: 15rem;        /* ширина сайдбара навигации на десктопе */
+  --anoon-content-max: 60rem;  /* макс. ширина рабочей области (строки не тянутся на 4K) */
+}
+
+/* Сайдбар всегда в DOM, показывается только десктопной веткой ниже. */
+.anoon-side-nav { display: none; }
+
+@media (min-width: 1024px) {
+  /* Гуттер страницы `/anoon` (`p-2`) заложен под телефонный фрейм; на десктопе
+     приложение занимает вьюпорт целиком. Если разметка той страницы изменится,
+     селектор просто перестанет совпадать — останется рамка 8px, не поломка. */
+  main:has(> .anoon-desktop) { padding: 0; }
+  /* Та же страница центрирует фрейм флексом: без явной ширины оболочка — это
+     flex-item с auto-шириной, и `width: 100%` ниже считался бы от ужатого по
+     содержимому блока (сайдбар прижимался к центру экрана). */
+  .anoon-desktop { width: 100%; }
+  /* Фрейм телефона перестаёт масштабироваться и разворачивается во весь экран. */
+  .anoon-desktop .anoon-frame-fit { --anoon-fs: 1; width: 100%; height: 100dvh; }
+  .anoon-desktop .anoon-frame-scale { width: 100%; height: 100%; transform: none; }
+  /* Нижняя панель ↔ сайдбар. */
+  .anoon-desktop .anoon-side-nav { display: flex; }
+  .anoon-desktop .anoon-bottom-nav { display: none; }
+}
+
 /* ===== Native-app scrollbars: hide inside phone/desktop frames, no stray x-scroll ===== */
 .anoon-noscroll, .anoon-noscroll * { scrollbar-width: none; -ms-overflow-style: none; }
 .anoon-noscroll::-webkit-scrollbar, .anoon-noscroll *::-webkit-scrollbar { width: 0; height: 0; display: none; }
