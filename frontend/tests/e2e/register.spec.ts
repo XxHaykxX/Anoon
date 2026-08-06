@@ -31,6 +31,10 @@ test("onboarding → register → mock onboarding chain → home", async ({ page
 
   // Mock chain: verify-email → gender → profile-setup → home.
   await expect(page.getByRole("heading", { name: "Подтвердите почту" })).toBeVisible();
+  // Экран теперь просит КОД из письма, и кнопка отключена, пока поле пусто
+  // (AnoonVerifyEmail: `disabled={!token.trim() || confirming}`). В мок-режиме
+  // код никем не проверяется — важно лишь, что он введён.
+  await page.getByPlaceholder("Вставьте код из письма").fill("mock-token");
   await page.getByRole("button", { name: "Я подтвердил — продолжить" }).click();
 
   await expect(page.getByRole("heading", { name: "Выберите пол" })).toBeVisible();

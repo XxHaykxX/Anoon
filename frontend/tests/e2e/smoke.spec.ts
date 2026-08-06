@@ -74,19 +74,24 @@ test.describe("smoke", () => {
     await expectHome(page);
 
     // Friends → Requests (via the floating «Заявки» button) → back.
-    await switchTab(page, "Чаты");
-    await expect(page.getByRole("heading", { name: "Чаты" })).toBeVisible();
+    // BUG-36 split the old single tab in two: «Чаты» lists active conversations,
+    // «Контакты» is the contact list — and the floating «Заявки» pill renders
+    // only on the latter (`current === "friends"` in AnoonApp). Walking to
+    // «Чаты» here left the spec waiting 60s for a button that is one tab over.
+    await switchTab(page, "Контакты");
+    await expect(page.getByRole("heading", { name: "Контакты" })).toBeVisible();
     await page.getByRole("button", { name: "Заявки", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Заявки в друзья" }).first()).toBeVisible();
     await page.getByRole("button", { name: "Назад" }).click();
-    await expect(page.getByRole("heading", { name: "Чаты" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Контакты" })).toBeVisible();
 
     // Friends → Invite → back. The trigger is an <svg> with aria-label
     // «Пригласить друга» (not a <button>), so match by accessible label.
     await page.getByLabel("Пригласить друга").click();
     await expect(page.getByRole("heading", { name: "Пригласить друга" })).toBeVisible();
     await page.getByRole("button", { name: "Назад" }).click();
-    await expect(page.getByRole("heading", { name: "Чаты" })).toBeVisible();
+    // Возврат — на тот же экран «Контакты», с которого ушли (см. BUG-36 выше).
+    await expect(page.getByRole("heading", { name: "Контакты" })).toBeVisible();
 
     // Notifications tab.
     await switchTab(page, "Уведомления");

@@ -25,7 +25,9 @@ test("home → searching → anon chat → send → reveal → friends", async (
 
   // Anonymous chat header is present and identity is masked.
   await expect(page.getByText("Собеседник", { exact: false }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Раскрыть профиль" })).toBeVisible();
+  // Кнопка называется «Раскрыть» (не «Раскрыть профиль») с волны H2 — тогда же
+  // хендл собеседника в анон-фазе стал алиасом, и подпись сократили.
+  await expect(page.getByRole("button", { name: "Раскрыть", exact: true })).toBeVisible();
 
   // Send a message — the send button only appears once the draft is non-empty.
   const draft = "Привет, это автотест";

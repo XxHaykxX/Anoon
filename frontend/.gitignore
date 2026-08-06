@@ -5,6 +5,9 @@ node_modules/
 
 # Build
 .next/
+# Параллельная сборка в мок-режиме (NEXT_DIST_DIR, см. next.config.ts) — нужна,
+# чтобы набор tests/e2e/* можно было гонять, не затирая боевую сборку стенда.
+.next-mock/
 out/
 build/
 dist/

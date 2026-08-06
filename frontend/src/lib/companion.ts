@@ -44,6 +44,7 @@
  * URL changes every restart — nothing is hard-coded to a host. Flag off (default)
  * keeps the classic absolute `http://localhost:6062` behavior for local dev.
  */
+import { USE_TINODE } from "@/lib/tinode";
 import type {
   CompanionEvent,
   Friend,
@@ -251,8 +252,21 @@ export class CompanionClient {
   /** Backoff step for the next scheduled reconnect: delay is `min(1000 * 2^n, 30000)`ms. */
   private reconnectAttempt = 0;
 
-  /** True once any REST/WS attempt failed → we simulate events locally. */
-  private mock = false;
+  /**
+   * True → every call is simulated locally instead of going to companion.
+   *
+   * Set at construction from the app's mode flag, not only after a failure.
+   * Mock is a MODE: a build made with `NEXT_PUBLIC_USE_TINODE` off has no
+   * business touching a backend at all. It used to start `false` even there, so
+   * the standalone demo hit `http://localhost:6062` on the first report/friend
+   * action and only fell into mock after the request failed — which on a
+   * developer machine with companion running meant real network calls (and a
+   * CORS error in the console) from a build that is supposed to be offline.
+   *
+   * In real mode it still flips to true when the backend proves unreachable —
+   * but never on a backend that answered and refused (see CompanionHttpError).
+   */
+  private mock = !USE_TINODE;
   /** Pending mock timers, so cancel()/end() can clear them. */
   private readonly mockTimers = new Set<ReturnType<typeof setTimeout>>();
   /** The peer's mock #ID, revealed only when the mock reveal completes. */
@@ -280,6 +294,15 @@ export class CompanionClient {
 
   /** Internal JSON fetch helper with auth header. Throws on network/HTTP error. */
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    // Mock MODE never touches the network. Every caller already handles "the
+    // backend is unreachable" by simulating locally, so refusing here routes a
+    // mock build down exactly that path — instead of firing a real request at
+    // whatever happens to be listening on the developer's machine. That is not
+    // hypothetical: with companion up on :6062, the standalone demo's report
+    // button reached it and only fell back after the browser blocked the reply
+    // on CORS, leaving a red error in the console of a build that is supposed
+    // to be offline.
+    if (!USE_TINODE) throw new Error(`companion: mock mode, no request for ${path}`);
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
@@ -349,6 +372,8 @@ export class CompanionClient {
    * {@link requestPasswordReset}. Rethrows on failure.
    */
   async requestEmailVerify(): Promise<{ queued: boolean }> {
+    // Мок-режим: письма слать некому и незачем — «отправлено».
+    if (this.mock) return { queued: true };
     return (await this.post("/auth/verify-email/send")) as { queued: boolean };
   }
 
@@ -358,6 +383,10 @@ export class CompanionClient {
    * Rethrows on failure.
    */
   async confirmEmailVerify(token: string): Promise<void> {
+    // Мок-режим: код проверять нечем и не о чем — считаем подтверждённым.
+    // Без этой ветки экран «Подтвердите почту» становится тупиком в сборке без
+    // бэкенда: кнопка отключена, пока поле пусто, а любой введённый код падает.
+    if (this.mock) return;
     await this.post("/auth/verify-email/confirm", { token });
   }
 
