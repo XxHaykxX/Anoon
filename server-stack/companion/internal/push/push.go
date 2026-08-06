@@ -166,6 +166,12 @@ func (s *Service) sendOne(ctx context.Context, body []byte, sub store.PushSub) e
 		return fmt.Errorf("push: subscription gone (%d)", resp.StatusCode)
 	}
 	if resp.StatusCode >= 400 {
+		// Logged, not just returned: SendPush discards this error by design, so
+		// without a log a rejected delivery (403 = VAPID key mismatch, 400 =
+		// malformed payload) is invisible everywhere except an admin broadcast's
+		// failed count — which reads as "push silently does nothing" instead of
+		// "the push service is rejecting us".
+		log.Printf("push: delivery to %s rejected (%d)", sub.Endpoint, resp.StatusCode)
 		return fmt.Errorf("push: delivery failed (%d)", resp.StatusCode)
 	}
 	return nil
