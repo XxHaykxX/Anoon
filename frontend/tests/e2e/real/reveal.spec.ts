@@ -76,7 +76,13 @@ test.describe.serial("anon roulette: match, reveal proposal → friends", () => 
     const draft = `Аноним-привет ${Date.now()}`;
     await pageA.getByPlaceholder("Сообщение").fill(draft);
     await pageA.getByRole("button", { name: "Отправить" }).click();
-    await expect(pageB.getByText(draft, { exact: true })).toBeVisible({ timeout: 15_000 });
+    // Counts, not visibility: the anon chat has its own de-duplication layer
+    // (separate from the friend chat's), and the risk after the own-messages
+    // fix is a message drawn twice, which `toBeVisible` is blind to. Peer side
+    // first — once the server echo has travelled that far, A's optimistic
+    // bubble has had its chance to be duplicated by the echo coming back.
+    await expect(pageB.getByText(draft, { exact: true })).toHaveCount(1, { timeout: 15_000 });
+    await expect(pageA.getByText(draft, { exact: true })).toHaveCount(1);
   });
 
   test("reveal proposal → accept → both sides become friends", async () => {

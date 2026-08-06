@@ -157,11 +157,17 @@ export async function ensureFriends(pageA: Page, pageB: Page): Promise<void> {
 
 /**
  * From the Friends tab, open the (only) friend's private chat by row order.
- * NOTE: do NOT `page.reload()` here — session/auth state lives in an
- * in-memory zustand store with no persistence, so a reload silently logs the
- * page out back to onboarding (confirmed: caused every caller's beforeAll to
- * time out waiting for the bottom nav). Waits for the composer as proof the
- * chat actually subscribed, not just that the row was clickable.
+ *
+ * STALE NOTE, CORRECTED 2026-08-06: this used to warn that `page.reload()`
+ * silently logs the page out, because the session lived only in an in-memory
+ * zustand store. It is persisted now — a Tinode auth token under localStorage
+ * `anoon:session` — and a reload comes back signed in (verified live, and
+ * asserted by persistence-and-viewer.spec.ts, which reloads on purpose). What
+ * a reload does still cost is time: re-auth plus a re-subscribe, so wait for
+ * real content afterwards rather than assuming the screen is ready.
+ *
+ * Waits for the composer as proof the chat actually subscribed, not just that
+ * the row was clickable.
  */
 /**
  * Land on whichever tab currently holds the friend rows and return their
