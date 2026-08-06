@@ -47,7 +47,12 @@ export default function AnoonReport({ onClose }: AnoonReportProps) {
     : { hashId: activeChat?.hashId, topic: activeChat?.topic, name: activeChat?.displayName };
 
   const peerHashId = (target.hashId ?? "").replace(/^#/, "");
-  const peerLabel = target.name ?? (peerHashId ? `Собеседник #${peerHashId}` : "Собеседник ~SAMPLE");
+  // Последний фолбэк — просто «Собеседник», без хендла. Раньше здесь стоял
+  // «Собеседник ~SAMPLE»: демонстрационный алиас из витрины, который на живом
+  // экране жалобы читается как настоящий хендл того, на кого жалуются. Этот
+  // путь достижим (перезагрузка в анон-чате до ответа `/roulette/status`), а
+  // ошибиться в том, НА КОГО жалоба, — худшее, что может сказать этот экран.
+  const peerLabel = target.name ?? (peerHashId ? `Собеседник #${peerHashId}` : "Собеседник");
 
   // Awaited, not fire-and-forget: the success sheet must mean the report was
   // actually filed. It used to render unconditionally, so a rejected report
