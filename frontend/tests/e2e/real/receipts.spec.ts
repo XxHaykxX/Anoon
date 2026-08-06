@@ -57,9 +57,15 @@ test.describe.serial("friend chat: delivered/read receipts", () => {
 
     // B's chat is already open/subscribed, so the read receipt round-trips
     // back to A automatically. `text-read-tick` is only ever applied to the
-    // DoubleCheckIcon in the "read" branch of StatusTicks — no other status
-    // uses that class, so it's a safe anchor without needing per-message ids.
-    await expect(pageA.locator("svg.text-read-tick")).toBeVisible({ timeout: 15_000 });
+    // DoubleCheckIcon in the "read" branch of StatusTicks — but that class
+    // alone is NOT a usable anchor: these are persistent seeded accounts, so
+    // every earlier run's message is still in the thread wearing the same
+    // class, and a bare `svg.text-read-tick` resolved to 26 elements (strict
+    // mode violation) rather than "no read tick yet". Scope it to THIS
+    // message's own bubble — `anoon-msg-in` is the bubble div that holds both
+    // the text span and the status ticks (AnoonPrivateChat.tsx's PrivateBubble).
+    const bubble = pageA.locator("div.anoon-msg-in").filter({ hasText: draft });
+    await expect(bubble.locator("svg.text-read-tick")).toBeVisible({ timeout: 15_000 });
   });
 
   test.skip(

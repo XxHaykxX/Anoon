@@ -14,16 +14,27 @@ import (
 )
 
 // defaultDevCORSOrigins is the CORS allowlist used when CORS_ALLOWED_ORIGINS is
-// unset and ENV is exactly "dev". It covers the frontend dev server and the
-// Cloudflare quick tunnels used for phone testing (see README "test on phone").
+// unset and ENV is exactly "dev". It covers the frontend dev server, the Caddy
+// port the local stack actually serves the app on, and the Cloudflare quick
+// tunnels used for phone testing (see README "test on phone").
 // The "*.trycloudflare.com" wildcard is a dev convenience only — ENV is one of
 // exactly "dev" or "prod" and defaults to "prod", so no configuration mistake
 // can reach this list; prod must name its origins explicitly.
+//
+// Port 8088 is not optional here: everything but a bare `next dev` reaches the
+// companion THROUGH Caddy (docs/SESSION-2026-08-06.md §5 — the app lives at
+// http://localhost:8088/anoon), so the browser's Origin on that stack is
+// :8088, not :3000/:3001. Leaving it out only broke `/ws` — REST is same-origin
+// behind Caddy, so CORS never applies to it, while the WebSocket handshake
+// checks Origin regardless. That asymmetry is what made the whole realtime
+// layer fail silently on the local stack while every REST call kept working.
 var defaultDevCORSOrigins = []string{
 	"http://localhost:3000",
 	"http://localhost:3001",
+	"http://localhost:8088",
 	"http://127.0.0.1:3000",
 	"http://127.0.0.1:3001",
+	"http://127.0.0.1:8088",
 	"*.trycloudflare.com",
 }
 

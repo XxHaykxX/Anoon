@@ -62,6 +62,33 @@ func TestDevEnvKeepsDevCORSDefaults(t *testing.T) {
 	}
 }
 
+// The local stack serves the app through Caddy on :8088, and /ws checks Origin
+// even though REST behind that same Caddy is same-origin and never triggers
+// CORS. Dropping :8088 from the dev default therefore breaks only the realtime
+// layer — silently, and only on the stack the team actually runs. It did:
+// every socket 403'd, which put the client into mock mode and hung both users
+// on «Ищем собеседника…» with their match already in the database.
+func TestDevCORSDefaultsCoverTheCaddyStack(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ENV", "dev")
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, want := range []string{"http://localhost:8088", "http://127.0.0.1:8088"} {
+		var found bool
+		for _, o := range c.CORSAllowedOrigins {
+			if o == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("dev CORS default is missing %q (the Caddy stack origin), got %v", want, c.CORSAllowedOrigins)
+		}
+	}
+}
+
 func TestAdminTokenSecret(t *testing.T) {
 	const valid = "0123456789abcdef" // exactly minAdminTokenSecretLen
 

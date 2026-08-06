@@ -723,7 +723,7 @@ export class CompanionClient {
       }`;
       sock = new WebSocket(url);
     } catch {
-      this.mock = true;
+      // Deliberately does NOT flip to mock — see sock.onerror below.
       this.scheduleReconnect();
       return;
     }
@@ -745,8 +745,22 @@ export class CompanionClient {
       this.flushOutbox();
     };
     sock.onerror = () => {
-      // Backend not reachable — fall back to the mock driver for the demo.
-      this.mock = true;
+      // Deliberately does NOT flip to mock, even though a dead socket looks
+      // like a dead backend. A WebSocket error carries no status: a refused
+      // handshake (companion answering 403 because this origin is not on its
+      // allowlist) is indistinguishable here from "nothing is listening" — and
+      // the first case means the backend is very much alive. REST is the
+      // honest signal, and `request()` already flips the flag both ways.
+      //
+      // This cost a full QA wave: with the local stack served through Caddy on
+      // :8088 (an origin missing from companion's dev CORS default), every
+      // socket 403'd, this line put a fully-working client into mock, and mock
+      // makes `rouletteStatus()` return null without a request — killing the
+      // very REST poll that exists to recover a dropped `matched` event. Both
+      // users sat on «Ищем собеседника…» forever while their match sat in the
+      // database, and 4.5s later the mock seeded them a friend request from a
+      // person who does not exist. A socket that cannot connect only means no
+      // realtime: reconnect (onclose does) and let REST speak for the backend.
     };
     sock.onclose = () => {
       // Ignore closes from a socket we've already superseded (a deliberate

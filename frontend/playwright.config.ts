@@ -24,6 +24,14 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 7_000 },
   fullyParallel: true,
+  // The mock suite is stateless (no backend), so it parallelises freely. The
+  // real/ suite is NOT: every file drives the SAME two seeded accounts
+  // (admin1/admin2) against one live backend, so parallel files fight over the
+  // shared state — the roulette queue, the active match, the p2p topic, the
+  // friends list. A full parallel run produced six spurious "Target page,
+  // context or browser has been closed" failures that all vanished at
+  // --workers=1; do not lift this without giving each file its own accounts.
+  workers: process.env.E2E_REAL === "1" ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
