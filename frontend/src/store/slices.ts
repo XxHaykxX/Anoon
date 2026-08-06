@@ -1721,6 +1721,31 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
       // already past the point a missed `matched` event could hurt.
       if (get().queue.status !== "searching") return;
       const status = await fetchRouletteStatus();
+      // Not matched AND not in the queue, while this client believes it is
+      // searching: re-enqueue. The companion's queue is in memory (see
+      // internal/matchmaker — persisting it is part of the multi-instance work),
+      // so a restart empties it silently and every searcher waits forever for a
+      // `matched` that nobody will ever produce. The poll already runs; asking
+      // it to notice "the server does not think I am in line" costs one extra
+      // branch and turns a permanent hang into a ≤2s gap.
+      //
+      // Guarded on `status` being non-null: a failed poll returns null, and
+      // "could not read" is not "you are not queued" — re-enqueueing on that
+      // would hammer a struggling backend.
+      if (status && !status.match && !status.queued) {
+        const prefs = getCompanionClient().getLastPrefs();
+        if (!prefs) return;
+        try {
+          await getCompanionClient().enqueue(prefs);
+        } catch {
+          // Refused (banned, rate-limited): there is no queue to wait in and no
+          // event coming, so leave the search rather than spin — same reasoning
+          // as joinQueue's own catch.
+          set({ queue: { status: "idle" } });
+          get().showError("Поиск прерван. Попробуйте начать заново");
+        }
+        return;
+      }
       if (!status?.match) return;
       // DO NOT REMOVE — branch on `reveal`, never on `match != null`.
       //

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { AnoonAvatar } from "@/components/anoon/_shared";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
 import { USE_TINODE } from "@/lib/tinode";
@@ -22,6 +22,8 @@ export default function AnoonSearching() {
   const queueStatus = useAnoonStore((s) => s.queue.status);
   const leaveQueue = useAnoonStore((s) => s.leaveQueue);
   const resyncMatch = useAnoonStore((s) => s.resyncRouletteMatch);
+  /** True once this screen itself is leaving, so the idle-watch effect stands down. */
+  const leaving = useRef(false);
 
   // Mock mode: auto-match after a short search, opening the chat.
   useEffect(() => {
@@ -48,7 +50,20 @@ export default function AnoonSearching() {
     return () => clearInterval(id);
   }, [queueStatus, resyncMatch]);
 
+  // Real mode: the store can drop us out of the queue without this screen
+  // asking — a re-enqueue that the backend refused (banned, rate-limited) after
+  // the companion restarted and lost its in-memory queue. The error is already
+  // on screen as a toast; what is left is not to strand the user on a spinner
+  // that is no longer searching for anything.
+  useEffect(() => {
+    if (!USE_TINODE || leaving.current) return;
+    if (queueStatus === "idle") nav.back();
+  }, [nav, queueStatus]);
+
   const cancel = () => {
+    // Mark our own leave so the effect above does not fire a second nav.back()
+    // when `leaveQueue` flips the status to idle.
+    leaving.current = true;
     if (USE_TINODE) void leaveQueue();
     nav.back();
   };
