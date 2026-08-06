@@ -70,7 +70,20 @@ function mockFiles(rows: typeof mediaFixtures, f: MediaFilter) {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const sp = url.searchParams;
-  const profileId = sp.get("profileId");
+  // Два разных вызывающих с двумя разными контрактами на одном URL:
+  //
+  //  - страницы «Файлы»/«Галерея» ходят сюда сами и ждут {folders} / {files,total};
+  //  - Refine (`useList({resource:"media"})` на карточке пользователя и в
+  //    жалобах) идёт через общий dataProvider, шлёт фильтр как `f_ownerProfileId`
+  //    и ждёт {data,total}.
+  //
+  // Второго тут не было вовсе: Refine получал {folders}, читал из ответа
+  // несуществующее `data`, и блок «Медиа пользователя» на карточке был ПУСТ у
+  // любого пользователя — при 69 файлах в companion (проверено живьём).
+  // `profileId` (свой формат) и `f_ownerProfileId` (формат dataProvider) — это
+  // один и тот же фильтр, различается только тем, кто спрашивает.
+  const refineStyle = sp.has("f_ownerProfileId") || sp.has("ids");
+  const profileId = sp.get("profileId") ?? sp.get("f_ownerProfileId");
   const all = sp.get("all");
   const { fromISO, toISO } = dateRange(sp);
   const page = Math.max(1, Number(sp.get("page")) || 1);
@@ -79,6 +92,11 @@ export async function GET(req: Request) {
 
   if (MOCK) {
     const f: MediaFilter = { fromISO, toISO, kind, page, pageSize };
+    if (refineStyle) {
+      const rows = profileId ? mediaFixtures.filter((m) => m.ownerProfileId === profileId) : mediaFixtures;
+      const { page: rowsPage, total } = filterMedia(rows, f);
+      return NextResponse.json({ data: rowsPage, total });
+    }
     if (all) return mockFiles(mediaFixtures, f);
     if (!profileId) return mockFolders();
     return mockFiles(mediaFixtures.filter((m) => m.ownerProfileId === profileId), f);
@@ -86,6 +104,17 @@ export async function GET(req: Request) {
 
   if (companionEnabled()) {
     try {
+      if (refineStyle) {
+        const { data, total } = await companionMediaFiles({
+          ownerId: profileId ?? undefined,
+          kind,
+          from: fromISO,
+          to: toISO,
+          page,
+          pageSize,
+        });
+        return NextResponse.json({ data, total });
+      }
       if (all) {
         const { data, total } = await companionMediaFiles({ kind, from: fromISO, to: toISO, page, pageSize });
         return NextResponse.json({ files: data, total, page, pageSize });
@@ -212,6 +241,8 @@ export async function GET(req: Request) {
       escalated: false,
       createdAt: m.createdAt,
     }));
+    // Same two contracts as the companion branch above — Refine wants {data,total}.
+    if (refineStyle) return NextResponse.json({ data: files, total: count ?? files.length });
     return NextResponse.json({ files, total: count ?? files.length, page, pageSize });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });

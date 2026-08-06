@@ -85,6 +85,18 @@ test.describe("admin panel: session gate, role gate, live companion data", () =>
       timeout: 15_000,
     });
     await expect(page.getByText("Пользователь не найден")).toHaveCount(0);
+
+    // «Медиа пользователя» is fed by Refine's useList, which speaks a different
+    // contract to the same /api/admin/media route than the Files/Gallery pages
+    // do — it wants {data,total} and sends its filter as `f_ownerProfileId`.
+    // The route only answered the pages' shape, so this block rendered «Медиа
+    // нет» for everyone, including an account with 69 files in companion.
+    const media = (await (
+      await ctx.request.get(`/api/admin/media?f_ownerProfileId=${u.id}&pageSize=5`)
+    ).json()) as { data?: unknown[] };
+    if ((media.data ?? []).length > 0) {
+      await expect(page.getByText("Медиа нет")).toHaveCount(0);
+    }
     await ctx.close();
   });
 
