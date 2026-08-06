@@ -119,34 +119,64 @@ func (s *Store) CreateAuthToken(ctx context.Context, userID int64, purpose, toke
 
 // ConsumeAuthToken atomically validates and spends a token: it must exist, be of
 // the given purpose, be unused, and be unexpired. On success it stamps used_at
-// and returns the owning user id. Returns ErrTokenInvalid otherwise. The
+// and returns the owning user id plus the address the token was issued to (may
+// be "" for tokens stored without one). Returns ErrTokenInvalid otherwise. The
 // single-statement UPDATE...WHERE...RETURNING makes redemption race-safe (two
 // concurrent redemptions: only one matches the unused row).
-func (s *Store) ConsumeAuthToken(ctx context.Context, purpose, token string) (int64, error) {
+//
+// The email is returned, not just the user id, because a token authorises one
+// ADDRESS — see SetEmailVerified, which will not mark an address confirmed that
+// the token was never sent to.
+func (s *Store) ConsumeAuthToken(ctx context.Context, purpose, token string) (int64, string, error) {
 	var userID sql.NullInt64
+	var email sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		UPDATE auth_tokens
 		SET used_at = now()
 		WHERE token = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
-		RETURNING user_id`, token, purpose).Scan(&userID)
+		RETURNING user_id, email`, token, purpose).Scan(&userID, &email)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, ErrTokenInvalid
+		return 0, "", ErrTokenInvalid
 	}
 	if err != nil {
-		return 0, fmt.Errorf("store: consume auth token: %w", err)
+		return 0, "", fmt.Errorf("store: consume auth token: %w", err)
 	}
 	if !userID.Valid {
-		return 0, ErrTokenInvalid
+		return 0, "", ErrTokenInvalid
 	}
-	return userID.Int64, nil
+	return userID.Int64, email.String, nil
 }
 
-// SetEmailVerified marks a user's email confirmed (email verification flow).
-func (s *Store) SetEmailVerified(ctx context.Context, userID int64) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET email_verified = true, updated_at = now() WHERE id = $1`, userID)
-	if err != nil {
-		return fmt.Errorf("store: set email verified: %w", err)
+// SetEmailVerified marks a user's email confirmed, but only while the address on
+// file is still the one the token was mailed to. ok is false when it is not.
+//
+// A verification token proves control of ONE address; the flag it sets describes
+// whatever address the account currently holds. Marking the user verified
+// without re-checking would let someone verify an address they never controlled:
+// request a link for their own, change the account's email to a victim's, then
+// redeem. There is no email-change endpoint today, so this is a door being
+// closed before it opens rather than a live hole.
+//
+// The comparison mirrors EmailForUser — users.email when set, else the linked
+// OAuth identity's — because that is where the token's address came from, and a
+// Google account with no users.email row must still be able to verify.
+func (s *Store) SetEmailVerified(ctx context.Context, userID int64, email string) (bool, error) {
+	if email == "" {
+		return false, nil
 	}
-	return nil
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE users u
+		SET email_verified = true, updated_at = now()
+		WHERE u.id = $1
+		  AND lower($2) = lower(COALESCE(NULLIF(u.email, ''), (
+		        SELECT oi.email FROM oauth_identities oi WHERE oi.user_id = u.id LIMIT 1
+		      )))`, userID, email)
+	if err != nil {
+		return false, fmt.Errorf("store: set email verified: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store: set email verified rows: %w", err)
+	}
+	return n > 0, nil
 }

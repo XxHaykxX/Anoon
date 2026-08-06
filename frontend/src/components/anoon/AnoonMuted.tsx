@@ -36,9 +36,9 @@ export default function AnoonMuted() {
         >
           <ChevronLeftIcon className="size-6" />
         </button>
-        <AnoonAvatar initials="04" tone={4} size={40} />
+        <AnoonAvatar initials="SA" tone={4} size={40} />
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold">Собеседник #04821</p>
+          <p className="truncate font-semibold">Собеседник ~SAMPLE</p>
           <p className="truncate text-xs text-muted-foreground">был(а) недавно</p>
         </div>
       </div>

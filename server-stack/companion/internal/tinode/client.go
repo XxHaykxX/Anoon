@@ -484,6 +484,37 @@ func (c *Client) CreateAnonTopic(ctx context.Context, uidA, uidB string) (string
 	return topic, nil
 }
 
+// DeleteTopic deletes a group topic as ROOT ({del topic:<name> what:TOPIC}),
+// removing it and both subscriptions.
+//
+// It compensates for a half-created anon chat, mirroring what DeleteAccount does
+// for a half-completed registration. By the time companion tries to persist the
+// roulette_matches row, CreateAnonTopic has already made the topic and
+// subscribed both members; if that insert fails, the pair is re-queued and
+// nobody is ever told the topic exists. Left behind it is an empty chat sitting
+// in two people's contact lists that companion has no record of — nothing can
+// end it, reveal it or moderate it, and no later code path can even find it,
+// because every sweep companion has starts from roulette_matches.
+//
+// ROOT owns every anon topic (see CreateAnonTopic — deliberately, so neither
+// member holds owner rights) and is still attached to one it created on this
+// connection, so it may delete it.
+func (c *Client) DeleteTopic(ctx context.Context, topic string) error {
+	id := c.nextID()
+	ctrl, err := c.request(ctx, id, &pbx.ClientMsg{Message: &pbx.ClientMsg_Del{Del: &pbx.ClientDel{
+		Id:    id,
+		Topic: topic,
+		What:  pbx.ClientDel_TOPIC,
+	}}})
+	if err != nil {
+		return fmt.Errorf("tinode: delete topic %s: %w", topic, err)
+	}
+	if ctrl.Code < 200 || ctrl.Code >= 300 {
+		return fmt.Errorf("tinode: delete topic %s rejected: %d %s", topic, ctrl.Code, ctrl.Text)
+	}
+	return nil
+}
+
 // addMember gives uid membership (modeGiven = memberMode) in topic, as ROOT.
 func (c *Client) addMember(ctx context.Context, topic, uid string) error {
 	id := c.nextID()

@@ -78,7 +78,9 @@ services:
         condition: service_started
     environment:
       # dev|prod. In prod, config.Load refuses to start if COMPANION_DEV_AUTH
-      # is on, and requires CORS_ALLOWED_ORIGINS to be set explicitly.
+      # is on, and requires CORS_ALLOWED_ORIGINS to be set explicitly. The
+      # companion itself defaults to "prod" when ENV is unset (fail closed), so
+      # this local stack has to ask for dev mode explicitly — do not drop it.
       ENV: ${ENV:-dev}
       COMPANION_ADDR: ":8080"
       COMPANION_DB_DSN: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/anoon?sslmode=disable&connect_timeout=10"
@@ -89,6 +91,15 @@ services:
       # the service refuses to start if this is "1"/"true" while ENV=prod.
       COMPANION_DEV_AUTH: ${COMPANION_DEV_AUTH:-0}
       COMPANION_ADMIN_SECRET: ${COMPANION_ADMIN_SECRET:-}
+      # Optional HMAC key for per-operator admin tokens (X-Admin-Token); must
+      # equal the admin UI's ADMIN_SESSION_SECRET. Empty = legacy mode (the
+      # default): operator id/role come from headers and are not attested.
+      COMPANION_ADMIN_TOKEN_SECRET: ${COMPANION_ADMIN_TOKEN_SECRET:-}
+      # Shared secret Tinode presents on the /auth/rest hook (Google sign-in
+      # callback). Empty disables the hook entirely (503), which is the right
+      # default locally: nothing calls it until the Tinode rest auth block is
+      # configured. See companion/internal/api/rest.go (restOnly).
+      COMPANION_REST_SECRET: ${COMPANION_REST_SECRET:-}
       # Comma-separated CORS allowlist (exact origins or "*.suffix" wildcards,
       # e.g. "*.trycloudflare.com"). Unset in dev falls back to localhost +
       # *.trycloudflare.com (phone-testing tunnels); required in prod.

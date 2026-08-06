@@ -79,7 +79,7 @@ func run() error {
 	}
 
 	// --- HTTP + WebSocket server ------------------------------------------
-	apiSrv := api.NewServer(database, tn, google, cfg.DevAuth, cfg.AdminSecret, cfg.RouletteRecentWindow,
+	apiSrv := api.NewServer(database, tn, google, cfg.DevAuth, cfg.AdminSecret, cfg.RestSecret, cfg.AdminTokenSecret, cfg.RouletteRecentWindow,
 		cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject, cfg.CORSAllowedOrigins,
 		cfg.RateLimitRPS, cfg.RateLimitBurst, mailer)
 	if cfg.RouletteRecentWindow <= 0 {
@@ -95,6 +95,16 @@ func run() error {
 		log.Printf("admin API enabled (X-Companion-Admin-Secret)")
 	} else {
 		log.Printf("admin API disabled (COMPANION_ADMIN_SECRET unset)")
+	}
+	if cfg.AdminTokenSecret != "" {
+		log.Printf("admin operator identity: attested (X-Admin-Token verified against COMPANION_ADMIN_TOKEN_SECRET)")
+	} else {
+		log.Printf("admin operator identity: legacy headers (COMPANION_ADMIN_TOKEN_SECRET unset) — X-Admin-Id/X-Admin-Role are asserted, not attested")
+	}
+	if cfg.RestSecret != "" {
+		log.Printf("tinode rest-auth hook enabled (POST /auth/rest)")
+	} else {
+		log.Printf("tinode rest-auth hook disabled (COMPANION_REST_SECRET unset) — Google sign-in via Tinode will not work")
 	}
 	if apiSrv.Push.Enabled() {
 		log.Printf("web push enabled (VAPID keypair configured)")

@@ -6,7 +6,7 @@
  * call into `@/lib/companion` and `@/lib/tinode`.
  */
 import type { StateCreator } from "zustand";
-import { getCompanionClient, type RegisterResult } from "@/lib/companion";
+import { CompanionHttpError, getCompanionClient, type RegisterResult } from "@/lib/companion";
 import {
   buildMediaDraft,
   getTinodeClient,
@@ -24,7 +24,13 @@ import {
   type UploadedMedia,
 } from "@/lib/tinode";
 import { notifyOnce } from "@/lib/notify";
-import type { Friend, MatchedEvent, RouletteMatch, User } from "@/types/companion";
+import type {
+  Friend,
+  MatchedEvent,
+  RouletteMatch,
+  RouletteRevealStatus,
+  User,
+} from "@/types/companion";
 import type { TinodeMessageLite } from "./sliceModels";
 import type {
   AnonChatSlice,
@@ -142,6 +148,17 @@ declare module "./types" {
 interface RouletteStatusResponse {
   queued: boolean;
   match: MatchedEvent | null;
+  /** Reveal handshake state; absent when there is no match. */
+  reveal?: RouletteRevealStatus;
+  /**
+   * How many more times the CALLER may ask to reveal in this match (2/1/0).
+   * Absent — not 0 — when there is no match, so "no match" and "exhausted" stay
+   * distinguishable. Answers "can I ask?"; `reveal` answers "what happened
+   * last?". They diverge on purpose: a fresh request clears the refusal, so
+   * right after re-asking `reveal` reads `we_requested` while this has already
+   * decremented and stays decremented.
+   */
+  revealAsksLeft?: number;
 }
 
 /**
@@ -1225,6 +1242,7 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
     anonPeerActivity: null,
     anonRevealState: "none",
     anonRevealPending: false,
+    anonRevealAsksLeft: null,
     anonViewed: {},
 
     setAnonPeerActivity,
@@ -1243,6 +1261,7 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
         peerTyping: false,
         anonRevealState: "none",
         anonRevealPending: false,
+        anonRevealAsksLeft: null,
       }),
     appendMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
     setPeerTyping: (peerTyping) => set({ peerTyping }),
@@ -1260,6 +1279,7 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
         peerTyping: false,
         anonRevealState: "none",
         anonRevealPending: false,
+        anonRevealAsksLeft: null,
         anonViewed: {},
         anonPeerLeft: false,
       });
@@ -1451,16 +1471,50 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
     requestReveal: async () => {
       const match = get().activeMatch;
       if (!match) return;
-      set({ anonRevealPending: true });
-      await getCompanionClient().reveal(match.topic);
+      // Asking again clears a previous decline: that notice describes the last
+      // answer, and there is now a newer question outstanding.
+      set(
+        get().anonRevealState === "declined"
+          ? { anonRevealPending: true, anonRevealState: "none" }
+          : { anonRevealPending: true },
+      );
+      try {
+        await getCompanionClient().reveal(match.topic);
+      } catch (err) {
+        // Nothing was recorded server-side, so drop the optimistic "waiting"
+        // state. Left set, the button stays on «Ожидание…» for the rest of the
+        // match with no request actually pending — and nothing else clears it,
+        // since only a match transition does.
+        set({ anonRevealPending: false });
+        // 409 on this route is `reveal_asks_exhausted`: both asks in this match
+        // have been used and declined, so further requests are refused for the
+        // rest of the chat. That is a SETTLED answer — record it and swallow,
+        // rather than rethrowing into the screen's «Попробуйте ещё раз», which
+        // would invite a retry that can never succeed.
+        if (err instanceof CompanionHttpError && err.status === 409) {
+          set({ anonRevealAsksLeft: 0 });
+          return;
+        }
+        // Rethrown so the screen can surface a genuinely retryable failure.
+        throw err;
+      }
     },
 
     respondReveal: async (accept) => {
       const match = get().activeMatch;
       if (!match) return;
+      const prev = get().anonRevealState;
       // Clear the prompt; on accept the `revealed` event flips the chat.
       set({ anonRevealState: "none" });
-      await getCompanionClient().revealRespond(match.topic, accept);
+      try {
+        await getCompanionClient().revealRespond(match.topic, accept);
+      } catch (err) {
+        // The answer never landed, so put the peer's request back instead of
+        // swallowing it: the card is the only place that request is shown, and
+        // dismissing it here would lose it for good while the peer keeps waiting.
+        set({ anonRevealState: prev });
+        throw err;
+      }
     },
 
     rateMatch: async (rating) => {
@@ -1502,12 +1556,62 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
         peerTyping: false,
         anonRevealState: "none",
         anonRevealPending: false,
+        anonRevealAsksLeft: null,
         anonPeerLeft: false,
         queue: { status: "idle" },
       });
     },
 
     setPeerRequestedReveal: () => set({ anonRevealState: "peer_requested" }),
+
+    resyncAnonReveal: async () => {
+      const match = get().activeMatch;
+      if (!match || getCompanionClient().isMock()) return;
+      const status = await fetchRouletteStatus();
+      const reveal = status?.reveal;
+      if (!reveal) return;
+      // The chat may have moved on while the request was in flight.
+      const now = get();
+      if (now.activeMatch?.topic !== match.topic) return;
+      // Independent of `reveal` — see the field's doc comment for why the two
+      // deliberately disagree right after a re-ask.
+      if (typeof status?.revealAsksLeft === "number") {
+        set({ anonRevealAsksLeft: status.revealAsksLeft });
+      }
+      // Never walk back a completed reveal — and never apply `revealed` FROM the
+      // poll. That payload carries no #ID and no display name (correctly: those
+      // are exactly what the anon phase withholds), so honouring it would flip
+      // the chat to «Профили открыты» with nothing to render and no friend row —
+      // the same fabrication this wave has been removing, just sourced from a
+      // poll instead of a catch block. The `revealed` frame stays the only
+      // source of identity.
+      if (now.anonRevealState === "revealed" || reveal === "revealed") return;
+      switch (reveal) {
+        case "none":
+          set({ anonRevealState: "none", anonRevealPending: false });
+          break;
+        case "we_requested":
+          set({ anonRevealState: "none", anonRevealPending: true });
+          break;
+        case "peer_requested":
+          set({ anonRevealState: "peer_requested", anonRevealPending: false });
+          break;
+        case "declined":
+          set({ anonRevealState: "declined", anonRevealPending: false });
+          break;
+      }
+    },
+
+    applyRevealDeclined: (topic) => {
+      const s = get();
+      // Ignore a decline for anything but the chat we are actually in — a late
+      // frame from a previous match must not disturb this one.
+      if (s.activeMatch?.topic !== topic) return;
+      // Never let a decline undo a completed reveal. If `revealed` and a stale
+      // `reveal_declined` cross on the wire, the reveal is the one that happened.
+      if (s.anonRevealState === "revealed") return;
+      set({ anonRevealState: "declined", anonRevealPending: false });
+    },
 
     applyRevealed: (peerHashId, peerDisplayName) => {
       const match = get().activeMatch;
@@ -1554,7 +1658,10 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
       topic: ev.topic,
       peerGender: "female",
       peerAgeRange: ev.peerAgeRange,
-      peerHashId: ev.peerHashId,
+      // Anon phase: the peer has an alias and no #ID. peerHashId stays undefined
+      // until applyRevealed fills it in, which is what keeps add-friend / block
+      // by #ID / call-a-friend from being reachable before a mutual reveal.
+      peerAlias: ev.peerAlias,
       peerOnline: true,
       startedAt: Date.now(),
     };
@@ -1568,8 +1675,16 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
 
     joinQueue: async (prefs) => {
       set({ queue: { status: "searching", since: Date.now() } });
-      await getCompanionClient().enqueue(prefs);
-      // The `matched` event (real or mock) drives the transition to "matched".
+      try {
+        await getCompanionClient().enqueue(prefs);
+        // The `matched` event (real or mock) drives the transition to "matched".
+      } catch (err) {
+        // Refused (suspended account, rate limit): we are not in the queue, so
+        // do not leave the UI believing we are searching — no `matched` event is
+        // ever coming. Rethrown so the screen can bail out of the search.
+        set({ queue: { status: "idle" } });
+        throw err;
+      }
     },
 
     leaveQueue: async () => {
@@ -1583,6 +1698,15 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
       if (get().queue.status !== "searching") return;
       const status = await fetchRouletteStatus();
       if (!status?.match) return;
+      // `match != null` no longer means "a new anonymous pairing". The endpoint
+      // stopped filtering to status='active', so a REVEALED pair now polls as a
+      // non-null match where it used to poll as null. Without this guard:
+      // reveal → leave the chat → start a fresh search, and this resync would
+      // pick up the OLD revealed match and reopen it as an anon chat —
+      // re-anonymising someone already revealed and hijacking the new search.
+      // applyMatched's own guards miss it: activeMatch is null after leaving and
+      // the queue reads "searching", not "matched".
+      if (status.reveal === "revealed") return;
       // The WS event may have landed while the request was in flight —
       // applyMatched is idempotent, but re-check so we don't clobber a state
       // that moved on (e.g. the user cancelled).
@@ -1602,6 +1726,9 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
             break;
           case "reveal_request":
             get().setPeerRequestedReveal();
+            break;
+          case "reveal_declined":
+            get().applyRevealDeclined(e.topic);
             break;
           case "revealed":
             get().applyRevealed(e.peerHashId, e.peerDisplayName);

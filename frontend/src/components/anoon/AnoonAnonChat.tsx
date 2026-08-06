@@ -41,7 +41,7 @@ import {
   UserCircleIcon,
 } from "@/components/icons";
 
-const PARTNER_ID = "#04217";
+const PARTNER_ID = "~SAMPLE";
 
 /**
  * Placeholder message text sent per attach type. Real media upload is Phase F;
@@ -362,6 +362,11 @@ export default function AnoonAnonChat() {
   const notifyAnonTyping = useAnoonStore((s) => s.notifyAnonTyping);
   const requestReveal = useAnoonStore((s) => s.requestReveal);
   const respondReveal = useAnoonStore((s) => s.respondReveal);
+  const resyncAnonReveal = useAnoonStore((s) => s.resyncAnonReveal);
+  const anonRevealAsksLeft = useAnoonStore((s) => s.anonRevealAsksLeft);
+  // Both asks used and declined: the server refuses any further request in this
+  // match, so disable before the tap rather than explaining after it.
+  const revealAsksExhausted = real && anonRevealAsksLeft === 0;
   const rateMatch = useAnoonStore((s) => s.rateMatch);
   const endMatch = useAnoonStore((s) => s.endMatch);
   const closeAnon = useAnoonStore((s) => s.closeAnon);
@@ -412,12 +417,36 @@ export default function AnoonAnonChat() {
     }
   }, [real, anonRevealState]);
 
-  // Derived peer identity: anonymous «Собеседник #id» until a mutual reveal.
+  // Heal the reveal handshake when the tab comes back to the foreground.
+  //
+  // reveal_request / reveal_declined ride the same best-effort socket as
+  // everything else, so a backgrounded tab can miss one and then sit on a stale
+  // «Ожидание…» that nothing clears — the exact stuck state #23 exists to
+  // remove, just reached through a dropped frame instead of a missing event.
+  // Visibility regain is when that can have happened, so we resync precisely
+  // then rather than polling on a timer: it fires when it can help and stays
+  // quiet when it cannot.
+  useEffect(() => {
+    if (!real) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void resyncAnonReveal();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [real, resyncAnonReveal]);
+
+  // Derived peer identity: anonymous «Собеседник ~K7X2QM» until a mutual reveal.
+  //
+  // Two different handles, deliberately spelled differently. Before the reveal
+  // companion sends only a per-match pseudonym («~K7X2QM») — it used to send the
+  // peer's real permanent #ID here, which let either side add/block/report/find
+  // the other with no consent. The «#00012» form appears only once peerHashId
+  // exists, i.e. after applyRevealed.
   const revealed = real && anonRevealState === "revealed";
   const partnerId = real
     ? activeMatch?.peerHashId
       ? `#${activeMatch.peerHashId.replace(/^#/, "")}`
-      : "#—"
+      : activeMatch?.peerAlias ?? ""
     : PARTNER_ID;
   const headerName = revealed ? activeMatch?.peerDisplayName ?? "Собеседник" : "Собеседник";
   const peerInitials = (activeMatch?.peerDisplayName?.trim()[0] ?? "?").toUpperCase();
@@ -598,9 +627,18 @@ export default function AnoonAnonChat() {
   };
 
   // Tap "Раскрыть профиль": ask the peer to reveal (real) or preview the card.
+  //
+  // A rejected request surfaces instead of passing for sent: the client used to
+  // fabricate a `revealed` event on failure, so the chat claimed the profiles
+  // were open while the match was still anonymous server-side.
   const onRevealClick = () => {
-    if (real) void requestReveal();
-    else setShowReveal(true);
+    if (!real) {
+      setShowReveal(true);
+      return;
+    }
+    void requestReveal().catch(() => {
+      flash("Не удалось отправить запрос. Попробуйте ещё раз.");
+    });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -611,8 +649,16 @@ export default function AnoonAnonChat() {
   };
 
   const startCall = (media: "audio" | "video") => {
-    if (!real || !activeMatch?.peerHashId) return;
-    useCallStore.getState().startCall(`#${activeMatch.peerHashId.replace(/^#/, "")}`, headerName, media);
+    if (!real) return;
+    // Address the peer by whichever handle we legitimately hold: the real #ID
+    // once revealed, the per-match alias while anonymous. Companion resolves an
+    // alias only inside the match that minted it, so an anonymous call needs no
+    // #ID — and neither side's #ID rides the signaling frames.
+    const to = activeMatch?.peerHashId
+      ? `#${activeMatch.peerHashId.replace(/^#/, "")}`
+      : activeMatch?.peerAlias;
+    if (!to) return;
+    useCallStore.getState().startCall(to, headerName, media);
   };
 
   // ── Message-action callbacks (stable) ────────────────────────────────────
@@ -701,17 +747,33 @@ export default function AnoonAnonChat() {
   };
 
   // Block the anonymous peer, then end the match and leave.
-  const blockPeer = () => {
+  //
+  // Awaited, and we only leave once the block actually landed. A block is a
+  // safety action: if it silently failed and we walked out anyway, the user
+  // would believe they were protected while the matcher could still pair them
+  // with that person again. On failure we stay put with the menu closed and a
+  // banner, so the action can simply be repeated.
+  const blockPeer = async () => {
     setMenuOpen(false);
-    if (real) {
-      const peer = activeMatch?.peerHashId?.replace(/^#/, "");
-      if (peer) void getCompanionClient().block(peer);
-      void endMatch();
-      closeAnon();
-      nav.go("home");
+    if (!real) {
+      flash("Собеседник заблокирован");
       return;
     }
-    flash("Собеседник заблокирован");
+    // Keyed by topic, not #ID: the anon phase withholds the peer's #ID, so
+    // companion resolves the match itself and treats membership in it as the
+    // authorization. Lands in the same blacklist as a block by #ID.
+    const topic = activeMatch?.topic;
+    if (topic) {
+      try {
+        await getCompanionClient().blockAnonPeer(topic);
+      } catch {
+        flash("Не удалось заблокировать. Попробуйте ещё раз.");
+        return;
+      }
+    }
+    void endMatch();
+    closeAnon();
+    nav.go("home");
   };
 
   // Upload a picked file and drop it into the thread as a media message.
@@ -849,7 +911,20 @@ export default function AnoonAnonChat() {
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-sm font-semibold">{headerName}</span>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="tabular-nums">{partnerId}</span>
+            {/*
+              No tabular-nums: this is «~K7X2QM» for the whole anonymous phase
+              and only becomes an all-digit «#00012» after a reveal. Fixed-width
+              figures on an almost letters-only string buy no alignment (it is a
+              single inline handle, not a column) and just widen the digits that
+              do appear.
+            */}
+            {/*
+              Nothing at all until the handle is known (page reload in an anon
+              chat, before /roulette/status answers). A bare «—» read as the
+              person being called that, where an absent line just reads as
+              loading — which is what it is.
+            */}
+            {partnerId && <span>{partnerId}</span>}
             <StatusDot online />
             {peerActivity && <span className="truncate text-online">{peerActivityText}</span>}
           </span>
@@ -881,7 +956,7 @@ export default function AnoonAnonChat() {
           <button
             type="button"
             onClick={onRevealClick}
-            disabled={anonRevealPending}
+            disabled={anonRevealPending || revealAsksExhausted}
             className={`shrink-0 rounded-full bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60 ${PRESS_FX}`}
           >
             {anonRevealPending ? "Ожидание…" : "Раскрыть"}
@@ -931,7 +1006,7 @@ export default function AnoonAnonChat() {
               </button>
               <button
                 type="button"
-                onClick={blockPeer}
+                onClick={() => void blockPeer()}
                 className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-destructive hover:bg-muted ${PRESS_FX}`}
               >
                 <BlockIcon className="size-4.5" />
@@ -957,7 +1032,11 @@ export default function AnoonAnonChat() {
         onClick={() => setActionFor(null)}
       >
         <div className="mx-auto rounded-full bg-muted px-3 py-1 text-[11px] text-muted-foreground">
-          {revealed ? "Профили открыты — вы теперь друзья" : `Вы общаетесь анонимно · ${partnerId}`}
+          {revealed
+            ? "Профили открыты — вы теперь друзья"
+            : partnerId
+              ? `Вы общаетесь анонимно · ${partnerId}`
+              : "Вы общаетесь анонимно"}
         </div>
 
         {view.map((m) => (
@@ -1044,6 +1123,36 @@ export default function AnoonAnonChat() {
         )}
 
         {/*
+          Peer declined our reveal request. Neutral and non-final by design: a
+          decline can be reconsidered, the «Раскрыть» button is usable again
+          (anonRevealPending was cleared), and nothing here names or blames
+          either side. Asking again clears this line.
+        */}
+        {real && anonRevealState === "declined" && !revealAsksExhausted && (
+          <div className="anoon-msg-in flex w-full justify-center py-1">
+            <p className="max-w-[320px] rounded-2xl bg-muted px-3 py-2 text-center text-xs text-muted-foreground">
+              Собеседник пока не готов открыть профиль. Можно предложить позже.
+            </p>
+          </div>
+        )}
+
+        {/*
+          Both asks spent. This replaces the «можно предложить позже» line rather
+          than sitting next to it — that line would now be untrue. Says plainly
+          that the door is not shut, only that it is no longer ours to open:
+          the peer's own ability to propose is a separate budget, and being
+          exhausted never blocks accepting.
+        */}
+        {revealAsksExhausted && (
+          <div className="anoon-msg-in flex w-full justify-center py-1">
+            <p className="max-w-[320px] rounded-2xl bg-muted px-3 py-2 text-center text-xs text-muted-foreground">
+              Вы уже дважды предлагали раскрыть профиль. Больше предложить нельзя — но собеседник
+              всё ещё может предложить сам.
+            </p>
+          </div>
+        )}
+
+        {/*
           Reveal-profile proposal as an inline system card.
           Mock: shown on demand (local state). Real: shown when the peer asks
           (anonRevealState === "peer_requested"); actions hit the companion.
@@ -1053,17 +1162,28 @@ export default function AnoonAnonChat() {
             partnerId={partnerId}
             onOpen={() => {
               setShowReveal(false);
-              if (real) void respondReveal(true);
+              if (real)
+                void respondReveal(true).catch(() => {
+                  flash("Не удалось раскрыть профиль. Попробуйте ещё раз.");
+                });
               else flash("Профили открыты — вы теперь друзья");
             }}
             onDecline={() => {
               setShowReveal(false);
-              if (real) void respondReveal(false);
+              if (real)
+                void respondReveal(false).catch(() => {
+                  flash("Не удалось отправить ответ. Попробуйте ещё раз.");
+                });
             }}
+            // «Заблокировать» now actually blocks. It used to send a plain
+            // decline and flash «Собеседник заблокирован» — the card said the
+            // peer was blocked while nothing was, so the matcher could pair them
+            // again and the user had been told not to worry. Blocking ends the
+            // match, which answers the reveal request more definitively than a
+            // decline would, so there is nothing to send first.
             onBlock={() => {
               setShowReveal(false);
-              if (real) void respondReveal(false);
-              flash("Собеседник заблокирован");
+              void blockPeer();
             }}
           />
         )}

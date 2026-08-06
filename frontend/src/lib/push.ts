@@ -7,6 +7,7 @@
  * Browser-only and SSR-safe: every export guards `typeof window`.
  */
 import {
+  CompanionHttpError,
   getVapidPublicKey,
   removePushSubscription,
   savePushSubscription,
@@ -44,12 +45,32 @@ export async function subscribePush(): Promise<boolean> {
   try {
     const registration = await navigator.serviceWorker.ready;
     const publicKey = await getVapidPublicKey();
+    const applicationServerKey = urlBase64ToUint8Array(publicKey) as BufferSource;
+
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+      applicationServerKey,
     });
-    await savePushSubscription(subscription.toJSON());
-    return true;
+    try {
+      await savePushSubscription(subscription.toJSON());
+      return true;
+    } catch (err) {
+      // 409 `endpoint_taken` — this push endpoint is already registered to a
+      // different account (a shared browser, or a reinstall that handed back the
+      // same endpoint). Dropping the browser subscription mints a brand-new
+      // endpoint, which then inserts cleanly, so retry ONCE and the user simply
+      // ends up with working notifications and never sees an error. Deliberately
+      // not a loop: if the second attempt fails too, something else is wrong and
+      // we fail closed like any other error.
+      if (!(err instanceof CompanionHttpError) || err.status !== 409) throw err;
+      await subscription.unsubscribe();
+      const fresh = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey,
+      });
+      await savePushSubscription(fresh.toJSON());
+      return true;
+    }
   } catch {
     // NotAllowedError (permission denied), backend down, etc. — just fail
     // closed so the caller can show a "notifications unavailable" state.

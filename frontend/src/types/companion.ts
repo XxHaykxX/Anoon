@@ -99,8 +99,15 @@ export interface FriendSearchResult {
 
 /**
  * A roulette match. Both peers are subscribed to the anon `topic` on Tinode; the
- * anonymity patch blanks identity until reveal. `peerHashId` becomes known only
- * after a mutual profile reveal.
+ * anonymity patch blanks identity until reveal.
+ *
+ * Two different handles live here and they are not interchangeable. `peerAlias`
+ * is a throwaway pseudonym minted by companion for this match only; `peerHashId`
+ * is the peer's real, permanent, public #ID and exists only after a mutual
+ * reveal. Anything that identifies a real account — friend request, block by
+ * #ID, report, search, call to a friend — takes `peerHashId`, so it is simply
+ * absent while the chat is anonymous and the type stops those paths at compile
+ * time.
  */
 export interface RouletteMatch {
   /** Companion match id. */
@@ -113,9 +120,13 @@ export interface RouletteMatch {
   /** Coarse peer age bucket from the match event (e.g. "22–25"). */
   peerAgeRange?: string;
   /**
-   * The peer's anonymous handle for this match — shown as «Собеседник #peerHashId».
-   * Known at match time; the server anonymity patch keeps the real identity hidden.
+   * The peer's per-match pseudonym («~K7X2QM») — shown as «Собеседник ~K7X2QM»
+   * and used to address them in call signaling. Random, scoped to this match,
+   * and not resolvable to an account: the same person is a different alias next
+   * time. Known from the moment of matching.
    */
+  peerAlias?: string;
+  /** The peer's real #ID. Populated only after a mutual reveal. */
   peerHashId?: string;
   /** Populated only after a mutual reveal. */
   peerDisplayName?: string;
@@ -169,24 +180,63 @@ export interface Notification {
 /* the backend agent implements. JSON frames of shape `{ type, ... }`.  */
 /* ------------------------------------------------------------------ */
 
-/** A match was found: both peers join the anon Tinode `topic`. */
+/**
+ * A match was found: both peers join the anon Tinode `topic`.
+ *
+ * Carries `peerAlias`, never a #ID. The field was called `peerHashId` and
+ * really did hold the peer's permanent public #ID, which made the anon phase
+ * anonymous in name only — either side could add, block, report or search the
+ * other before any reveal. Renamed along with the wire field so nothing can go
+ * on reading it as an account identifier.
+ */
 export interface MatchedEvent {
   type: "matched";
   /** Anonymous Tinode topic both peers subscribe to. */
   topic: string;
-  /** Peer's anonymous handle for this match («Собеседник #peerHashId»). */
-  peerHashId: string;
+  /** Peer's per-match pseudonym («Собеседник ~K7X2QM»). */
+  peerAlias: string;
   /** Coarse peer age bucket, if the server shares it. */
   peerAgeRange?: string;
 }
 
-/** The peer asked to reveal profiles in the current anon chat. */
+/**
+ * The peer asked to reveal profiles in the current anon chat. The request can
+ * still be declined, so the asker is named by their per-match alias only.
+ */
 export interface RevealRequestEvent {
   type: "reveal_request";
   topic: string;
-  /** Anonymous handle of the peer who asked to reveal. */
-  fromHashId: string;
+  /** Per-match pseudonym of the peer who asked to reveal. */
+  fromAlias: string;
 }
+
+/**
+ * The peer declined the reveal request we sent. Carries no identity at all,
+ * deliberately: the match is still anonymous when a decline happens, so the
+ * event must not leak anything the per-match alias does not already carry.
+ *
+ * A decline is not final — the peer may be asked again later.
+ */
+export interface RevealDeclinedEvent {
+  type: "reveal_declined";
+  topic: string;
+}
+
+/**
+ * Reveal handshake state as reported by `GET /roulette/status`, from the
+ * CALLER's side. Absent from the response when there is no match.
+ *
+ * The socket frames that drive this handshake are best-effort, so a backgrounded
+ * client can miss one; this is the REST mirror it heals from. Values overlap
+ * {@link AnonRevealState} where they can — `we_requested` is wire-only, because
+ * locally "we asked and are waiting" is a pending flag rather than a state.
+ */
+export type RouletteRevealStatus =
+  | "none"
+  | "we_requested"
+  | "peer_requested"
+  | "declined"
+  | "revealed";
 
 /** Both sides revealed → the chat becomes a normal friend chat. */
 export interface RevealedEvent {
@@ -224,6 +274,7 @@ export interface FriendAcceptedEvent {
 export type CompanionEvent =
   | MatchedEvent
   | RevealRequestEvent
+  | RevealDeclinedEvent
   | RevealedEvent
   | FriendRequestEvent
   | FriendAcceptedEvent;

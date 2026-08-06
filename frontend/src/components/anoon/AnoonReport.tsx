@@ -27,29 +27,56 @@ export default function AnoonReport({ onClose }: AnoonReportProps) {
   const [reason, setReason] = useState<Reason | null>(null);
   const [comment, setComment] = useState("");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   // The peer being reported: the anon roulette match if one is active, else the
-  // open private chat. `peerHashId` is what the /reports endpoint keys off.
+  // open private chat. The two are picked apart up front rather than falling
+  // through `??` field by field — an un-revealed roulette peer has no #ID at
+  // all, and a per-field fallback would silently borrow the open chat's #ID and
+  // file the report against the wrong person.
   const activeMatch = useAnoonStore((s) => s.activeMatch);
   const activeChat = useAnoonStore((s) => s.activeChat);
-  const peerHashId = (activeMatch?.peerHashId ?? activeChat?.hashId ?? "").replace(/^#/, "");
-  const peerTopic = activeMatch?.topic ?? activeChat?.topic;
-  const peerLabel = activeMatch?.peerDisplayName
-    ?? activeChat?.displayName
-    ?? (peerHashId ? `Собеседник #${peerHashId}` : "Собеседник #04821");
+  const target = activeMatch
+    ? {
+        hashId: activeMatch.peerHashId,
+        topic: activeMatch.topic,
+        name: activeMatch.peerDisplayName
+          ?? (activeMatch.peerAlias ? `Собеседник ${activeMatch.peerAlias}` : undefined),
+      }
+    : { hashId: activeChat?.hashId, topic: activeChat?.topic, name: activeChat?.displayName };
 
-  const handleSend = () => {
-    if (!reason) return;
+  const peerHashId = (target.hashId ?? "").replace(/^#/, "");
+  const peerLabel = target.name ?? (peerHashId ? `Собеседник #${peerHashId}` : "Собеседник ~SAMPLE");
+
+  // Awaited, not fire-and-forget: the success sheet must mean the report was
+  // actually filed. It used to render unconditionally, so a rejected report
+  // still told the user «жалоба отправлена» — and someone who believes they
+  // have reported an abuser does not report them again, so moderation never
+  // hears about it. companion.report only resolves synthetically when the
+  // backend is unreachable (the no-backend showcase); a real rejection throws.
+  //
+  // In the anon phase there is no #ID to send — companion resolves the target
+  // from `topic` (match → the other member), which is also what proves the
+  // reporter was in that conversation.
+  const handleSend = async () => {
+    if (!reason || sending) return;
     const category = REASONS.find((r) => r.label === reason)?.category ?? "other";
-    // Fire-and-forget: companion.report has its own mock fallback that always
-    // resolves, so the success UI shows whether or not the backend is reachable.
-    void getCompanionClient().report({
-      reportedHashId: peerHashId,
-      category,
-      topic: peerTopic,
-      details: comment.trim() || undefined,
-    });
-    setSent(true);
+    setSending(true);
+    setFailed(false);
+    try {
+      await getCompanionClient().report({
+        reportedHashId: peerHashId || undefined,
+        category,
+        topic: target.topic,
+        details: comment.trim() || undefined,
+      });
+      setSent(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleClose = () => {
@@ -61,6 +88,7 @@ export default function AnoonReport({ onClose }: AnoonReportProps) {
     setReason(null);
     setComment("");
     setSent(false);
+    setFailed(false);
     setOpen(true);
   };
 
@@ -159,17 +187,28 @@ export default function AnoonReport({ onClose }: AnoonReportProps) {
                   className="w-full resize-none rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
                 />
 
+                {/*
+                  A failed report is stated plainly and the sheet stays open with
+                  the reason and comment intact, so «Отправить ещё раз» is one tap
+                  and nothing has to be retyped.
+                */}
+                {failed && (
+                  <p role="alert" className="mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    Не удалось отправить жалобу. Проверьте соединение и попробуйте ещё раз.
+                  </p>
+                )}
+
                 <button
                   type="button"
-                  onClick={handleSend}
-                  disabled={!reason}
-                  className={`mt-4 w-full cursor-pointer select-none rounded-full py-3.5 text-sm font-semibold transition-transform active:scale-95 ${
-                    reason
-                      ? "bg-primary text-primary-foreground"
+                  onClick={() => void handleSend()}
+                  disabled={!reason || sending}
+                  className={`mt-4 w-full select-none rounded-full py-3.5 text-sm font-semibold transition-transform active:scale-95 ${
+                    reason && !sending
+                      ? "cursor-pointer bg-primary text-primary-foreground"
                       : "cursor-not-allowed bg-muted text-muted-foreground"
                   }`}
                 >
-                  Отправить
+                  {sending ? "Отправляем…" : failed ? "Отправить ещё раз" : "Отправить"}
                 </button>
               </div>
             )}

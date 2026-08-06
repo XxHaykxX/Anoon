@@ -69,6 +69,17 @@ type Server struct {
 	// disables the admin surface (routes return 503).
 	AdminSecret string
 
+	// RestSecret gates POST /auth/rest, the server-to-server hook Tinode's
+	// `rest` auth scheme calls back into. Empty disables the hook (503). See
+	// restOnly in rest.go for how the secret is presented.
+	RestSecret string
+
+	// AdminTokenSecret is the HMAC key per-operator admin tokens
+	// (X-Admin-Token) are verified with. Empty selects legacy mode, where the
+	// operator id/role come from headers — a supported default, not a
+	// misconfiguration. See adminIdentity in admin.go.
+	AdminTokenSecret []byte
+
 	// CORSAllowedOrigins is the allowlist withCORS checks incoming Origin
 	// headers against (config.Config.CORSAllowedOrigins; see its doc comment
 	// for the "*.suffix" wildcard and bare "*" semantics).
@@ -94,8 +105,10 @@ type Server struct {
 // config.Config.RouletteRecentWindow in production. vapidPublicKey/
 // vapidPrivateKey/vapidSubject configure Push; pass empty strings to disable
 // push notifications entirely. corsAllowedOrigins seeds CORSAllowedOrigins;
-// pass config.Config.CORSAllowedOrigins in production.
-func NewServer(database *db.DB, tn *tinode.Client, google *oauth.GoogleVerifier, devAuth bool, adminSecret string, recentMatchWindow time.Duration, vapidPublicKey, vapidPrivateKey, vapidSubject string, corsAllowedOrigins []string, rateLimitRPS float64, rateLimitBurst int, mailer *mail.Mailer) *Server {
+// pass config.Config.CORSAllowedOrigins in production. restSecret seeds
+// RestSecret; empty disables the Tinode rest-auth hook. adminTokenSecret seeds
+// AdminTokenSecret; empty keeps the legacy header-based operator identity.
+func NewServer(database *db.DB, tn *tinode.Client, google *oauth.GoogleVerifier, devAuth bool, adminSecret, restSecret, adminTokenSecret string, recentMatchWindow time.Duration, vapidPublicKey, vapidPrivateKey, vapidSubject string, corsAllowedOrigins []string, rateLimitRPS float64, rateLimitBurst int, mailer *mail.Mailer) *Server {
 	st := store.New(database)
 	var limiter *rateLimiter
 	if rateLimitRPS > 0 {
@@ -114,6 +127,8 @@ func NewServer(database *db.DB, tn *tinode.Client, google *oauth.GoogleVerifier,
 		Mail:               mailer,
 		DevAuth:            devAuth,
 		AdminSecret:        adminSecret,
+		RestSecret:         restSecret,
+		AdminTokenSecret:   []byte(adminTokenSecret),
 		RecentMatchWindow:  recentMatchWindow,
 		CORSAllowedOrigins: corsAllowedOrigins,
 		presenceLast:       make(map[int64]time.Time),
@@ -133,14 +148,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /health", s.handleHealth)
 
 	// Auth: OAuth broker + email/password, plus the Tinode `rest` auth hook.
-	// The user-facing auth entrypoints are rate-limited (abuse guard, #120); the
-	// `rest` hook is NOT — it is a trusted server-to-server call from Tinode and
-	// throttling it would throttle every login under load.
+	// The whole auth surface is rate-limited (abuse guard, #120).
 	mux.HandleFunc("POST /auth/login", s.rateLimited(s.stub("auth.login")))
 	mux.HandleFunc("POST /auth/register", s.rateLimited(s.handleRegister))
 	mux.HandleFunc("POST /auth/oauth/google", s.rateLimited(s.handleOAuthGoogle))
-	// Endpoint Tinode's `rest` auth scheme calls back into (server-to-server).
-	mux.HandleFunc("POST /auth/rest", s.handleAuthRest)
+	// Endpoint Tinode's `rest` auth scheme calls back into (server-to-server;
+	// never proxied publicly — see Caddyfile.prod). Gated by the shared secret
+	// (restOnly) and rate-limited like the rest of auth: every auth/link/
+	// checkunique costs an outbound Google verification, so leaving it open is
+	// an amplification vector. Tinode's authenticator appends a trailing slash
+	// to the configured server_url (auth_rest.go Init), so both spellings of
+	// the path are registered.
+	restAuth := s.rateLimited(s.restOnly(s.handleAuthRest))
+	mux.HandleFunc("POST /auth/rest", restAuth)
+	mux.HandleFunc("POST /auth/rest/{$}", restAuth)
 	// Account recovery / email verification (#116). Rate-limited like the rest of
 	// the auth surface (token-guessing + email-bombing guard). Email send is
 	// SMTP-stubbed for now — see internal/mail.
@@ -156,8 +177,16 @@ func (s *Server) Handler() http.Handler {
 	// (read-only; see handleRouletteStatus).
 	mux.HandleFunc("GET /roulette/status", s.handleRouletteStatus)
 	mux.HandleFunc("POST /roulette/end", s.handleEnd)
-	mux.HandleFunc("POST /roulette/rate", s.handleRate)
-	mux.HandleFunc("POST /roulette/reveal", s.handleReveal)
+	// Rate-limited: the rating itself is now idempotent per (match, rater), so a
+	// replay revises one row instead of accumulating — but each call still costs
+	// a transaction plus a per-user recompute, and nothing else bounds how often
+	// it can be sent.
+	mux.HandleFunc("POST /roulette/rate", s.rateLimited(s.handleRate))
+	// Rate-limited: a decline is deliberately not final, so the requester may
+	// ask again — which makes re-asking in a loop the way to pester someone.
+	// Each request pushes a WS frame at the peer. The limiter bounds the loop;
+	// see the note in handleReveal on what it does not bound.
+	mux.HandleFunc("POST /roulette/reveal", s.rateLimited(s.handleReveal))
 	mux.HandleFunc("POST /roulette/reveal/respond", s.handleRevealRespond)
 	mux.HandleFunc("POST /roulette/block", s.handleBlock)
 
@@ -190,7 +219,11 @@ func (s *Server) Handler() http.Handler {
 	// Media: companion tracks refs to files uploaded straight to Tinode (see
 	// media.go). Powers the admin Files/Gallery API + view-once/report
 	// escalation lifecycle (COMPANION-ADMIN-API.md §4).
-	mux.HandleFunc("POST /media", s.handleCreateMediaAsset)
+	// Rate-limited (L2): the handler now validates the URL against the Tinode
+	// file-ref allowlist and rejects topics the caller is not in, so what is left
+	// to bound is volume — one legitimate call per uploaded photo/video/voice
+	// message. Being authenticated, it lands on the per-credential bucket too.
+	mux.HandleFunc("POST /media", s.rateLimited(s.handleCreateMediaAsset))
 
 	// Admin API (server-to-server; gated by X-Companion-Admin-Secret). See
 	// COMPANION-ADMIN-API.md §1/§2 and internal/api/admin.go.
@@ -230,7 +263,10 @@ func withCORS(h http.Handler, allowedOrigins []string) http.Handler {
 			w.Header().Add("Vary", "Origin")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Anoon-Uid, X-Anoon-Hash-Id, X-Companion-Admin-Secret, X-Admin-Id, X-Admin-Role")
+		// X-Admin-Token is listed for completeness: admin calls are server-side
+		// fetch from the admin service today, so they never preflight. It only
+		// starts mattering if the admin UI ever calls companion from the browser.
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Anoon-Uid, X-Anoon-Hash-Id, X-Companion-Admin-Secret, X-Admin-Id, X-Admin-Role, X-Admin-Token")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

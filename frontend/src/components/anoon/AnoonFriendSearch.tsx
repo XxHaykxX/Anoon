@@ -102,7 +102,10 @@ export default function AnoonFriendSearch() {
     const t = setTimeout(() => {
       void getCompanionClient()
         .friendsSearch(q)
-        .then((rows) => setRealRows(rows));
+        .then((rows) => setRealRows(rows))
+        // A refused search (rate limit) shows nothing rather than the offline
+        // mock directory, which would list people who do not exist.
+        .catch(() => setRealRows([]));
     }, 300);
     return () => clearTimeout(t);
   }, [query]);

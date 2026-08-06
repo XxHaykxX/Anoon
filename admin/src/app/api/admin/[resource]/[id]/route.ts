@@ -6,8 +6,15 @@ import { ADMIN_COOKIE, verifySession } from "@/lib/admin-session";
 
 export const runtime = "nodejs";
 
+// Чтение одной записи гейтится так же, как PATCH ниже, и по той же причине, что и список
+// в ../route.ts: proxy.ts закрывает /api/* только при NEXT_PUBLIC_DATA_MODE=api, а getOne
+// ходит в реальные данные независимо от режима.
 export async function GET(_req: Request, { params }: { params: Promise<{ resource: string; id: string }> }) {
   const { resource, id } = await params;
+  const jar = await cookies();
+  const session = await verifySession(jar.get(ADMIN_COOKIE)?.value);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   try {
     const data = await getOne(resource, id);
     return NextResponse.json({ data });

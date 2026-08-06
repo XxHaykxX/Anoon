@@ -159,7 +159,14 @@ export default function AnoonHome() {
             // Real mode: enqueue via companion; the `matched` event opens the
             // chat. Mock mode: the searching screen auto-advances on a timer.
             if (USE_TINODE) {
-              void joinQueue({ ownAgeRange, peerAgeRanges: partnerAges });
+              // A refused enqueue (suspended account, rate limit) used to be
+              // answered with a fabricated match. Now it rejects, and there is
+              // no queue to wait in — so leave the search screen instead of
+              // spinning on a `matched` event that will never arrive.
+              void joinQueue({ ownAgeRange, peerAgeRanges: partnerAges }).catch(() => {
+                setSearching(false);
+                nav.go("home");
+              });
             }
             nav.push("searching");
           }}

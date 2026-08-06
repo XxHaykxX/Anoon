@@ -5,6 +5,7 @@
 # come from the container environment (DOMAIN, ACME_EMAIL — set in prod .env).
 #
 # One public origin, three backends (same routing model as Caddyfile.phone):
+#   /api/auth/rest*  → 404     server-to-server only, never exposed
 #   /api/*  → companion:8080   REST + /ws event socket ( /api prefix stripped )
 #   /v0/*   → tinode:6060      Tinode WS /v0/channels + media /v0/file/*
 #   else    → frontend:3000    frontend Next.js PWA
@@ -34,6 +35,19 @@
 	# is UNLIMITED, so an explicit cap is safer. Raise if bigger files needed.
 	request_body {
 		max_size 128MB
+	}
+
+	# --- Tinode rest-auth hook: never public --------------------------------
+	# /auth/rest is a server-to-server hook: Tinode calls companion directly at
+	# companion:8080 over the internal docker network, so this path has no
+	# reason to be reachable from the internet. It can unlink a user's Google
+	# identity by uid alone, and a uid is not a secret (a p2p topic name IS the
+	# peer's uid). companion also requires a shared secret on it, but the
+	# surface should not exist out here at all. 404, not 403 — do not advertise.
+	# MUST stay above the handle_path /api/* block: handle blocks are evaluated
+	# in the order written and the first match wins.
+	handle /api/auth/rest* {
+		respond 404
 	}
 
 	# --- Companion (anoon business logic) -----------------------------------

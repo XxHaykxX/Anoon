@@ -8,16 +8,25 @@ import (
 	"anoon/companion/internal/store"
 )
 
-// blockRequest is the body of POST /roulette/block: the #ID of the peer to
-// block (the frontend sends the hashId of a just-matched roulette partner).
+// blockRequest is the body of POST /roulette/block and POST /friends/block.
+//
+// Topic is the anon roulette path and takes precedence: during the anon phase
+// the caller does not know — and must not learn (H2) — the peer's real #ID, so
+// the target is resolved from the match instead. HashID is the #ID path, used by
+// the Settings blacklist and by a revealed/friend chat, where the #ID is public
+// to the caller anyway.
 type blockRequest struct {
 	HashID string `json:"hashId"`
+	Topic  string `json:"topic"`
 }
 
-// handleBlock records that the caller has blocked the peer identified by hashId.
+// handleBlock records that the caller has blocked the peer of a roulette chat.
 // The block is persisted as a friendships row with status='blocked' (blocker ->
 // blocked) and is honoured by matchmaking: BlockedUserIDs feeds handleEnqueue's
 // Exclude set so the two are never re-paired. Idempotent; self-block is refused.
+//
+// The caller identifies the peer by `topic` (anon phase — membership in the
+// match is the authorization) or by `hashId` (after a reveal).
 func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
@@ -28,21 +37,41 @@ func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", "malformed request body")
 		return
 	}
-	n, err := parseHashID(req.HashID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_hash_id", "hashId must be a #ID")
+
+	ctx := r.Context()
+	var targetID int64
+	switch {
+	case req.Topic != "":
+		m, err := s.Store.MatchByTopic(ctx, req.Topic)
+		if err != nil || !m.Has(u.ID) {
+			// Unknown topic, or the caller isn't in that chat — the same
+			// anti-spoof rule the relay and reveal paths use.
+			writeError(w, http.StatusNotFound, "no_match", "no such match")
+			return
+		}
+		targetID = m.Peer(u.ID)
+	case req.HashID != "":
+		n, err := parseHashID(req.HashID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_hash_id", "hashId must be a #ID")
+			return
+		}
+		target, err := s.Store.UserByHashID(ctx, n)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "user_not_found", "no user with that #ID")
+			return
+		}
+		targetID = target.ID
+	default:
+		writeError(w, http.StatusBadRequest, "missing_target", "topic or hashId is required")
 		return
 	}
-	target, err := s.Store.UserByHashID(r.Context(), n)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "user_not_found", "no user with that #ID")
-		return
-	}
-	if target.ID == u.ID {
+
+	if targetID == u.ID {
 		writeError(w, http.StatusBadRequest, "self_block", "cannot block yourself")
 		return
 	}
-	if err := s.Store.BlockUser(r.Context(), u.ID, target.ID); err != nil {
+	if err := s.Store.BlockUser(ctx, u.ID, targetID); err != nil {
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not block user")
 		return
 	}

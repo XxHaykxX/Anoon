@@ -90,7 +90,7 @@ func TestRegisterEndToEnd(t *testing.T) {
 
 	// Registration does not require the ROOT bot; the client self-dials for {acc}.
 	client := tinode.New(grpcAddr(), "", "")
-	ts := httptest.NewServer(api.NewServer(database, client, nil, false, "", 2*time.Hour, "", "", "", nil, 0, 0, nil).Handler())
+	ts := httptest.NewServer(api.NewServer(database, client, nil, false, "", "", "", 2*time.Hour, "", "", "", nil, 0, 0, nil).Handler())
 	defer ts.Close()
 
 	body := fmt.Sprintf(`{"login":%q,"password":"userPass123","gender":"male","age":27}`, uniqueLogin("ituser"))

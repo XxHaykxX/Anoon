@@ -8,12 +8,35 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// upgrader upgrades /ws requests to WebSocket. CheckOrigin is permissive for
-// now (dev); tighten to the anoon frontend origin before prod.
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+// wsUpgrader builds the /ws upgrader for this server. CheckOrigin enforces the
+// same allowlist as CORS (config.CORSAllowedOrigins): in prod the single
+// Caddy-served origin, in dev localhost plus the *.trycloudflare.com tunnels
+// used for phone testing. The upgrader is cheap to build and only constructed
+// once per socket, which is what lets the closure see the per-server allowlist.
+func (s *Server) wsUpgrader() websocket.Upgrader {
+	allowed := s.CORSAllowedOrigins
+	return websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return wsOriginAllowed(r.Header.Get("Origin"), allowed)
+		},
+	}
+}
+
+// wsOriginAllowed is the /ws origin gate: the CORS allowlist (see
+// originAllowed) plus the no-Origin case. Browsers always send Origin on a
+// WebSocket handshake, so an absent one means a non-browser client (the native
+// app, curl, a probe) — a caller the header could never have protected against
+// anyway, since it is under that client's own control. Rejecting it would break
+// the native app for no gain; /ws stays authenticated by Tinode token either
+// way, and the origin check is the layer that stops a foreign *page* from
+// riding a browser's ambient credentials.
+func wsOriginAllowed(origin string, allowed []string) bool {
+	if origin == "" {
+		return true
+	}
+	return originAllowed(origin, allowed)
 }
 
 // wsClient is one live socket. The hub pushes marshalled events onto send; the
@@ -41,9 +64,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	up := s.wsUpgrader()
+	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ws: upgrade failed: %v", err)
+		// Includes a rejected Origin, which Upgrade answers with 403 itself.
+		log.Printf("ws: upgrade failed (origin=%q): %v", r.Header.Get("Origin"), err)
 		return
 	}
 

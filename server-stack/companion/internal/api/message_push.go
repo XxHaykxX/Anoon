@@ -93,9 +93,21 @@ func (s *Server) onTinodeData(ev tinode.DataEvent) {
 
 	s.Push.SendPush(ctx, recipientID, push.PushPayload{
 		Title: "anoon",
-		Body:  store.FormatHashID(sender.HashID) + ": " + messagePreview(ev.Content),
+		Body:  messagePushBody(sender, m, ev.Content),
 		Tag:   "msg:" + ev.Topic, // per-topic tag: newer messages replace older
 	})
+}
+
+// messagePushBody renders the notification body for an observed chat message:
+// who sent it, then a preview of what they said.
+//
+// The sender is named by peerFacingHandle, so an anon roulette peer appears as
+// their per-match alias. This body lands on a lock screen, and it used to read
+// "#00012: привет" mid-anon chat — companion handing over the permanent public
+// #ID that the anon phase exists to withhold (H2), through a channel nobody was
+// watching. After a mutual reveal the real #ID is correct and appears again.
+func messagePushBody(sender store.User, m store.Match, content []byte) string {
+	return peerFacingHandle(sender, m) + ": " + messagePreview(content)
 }
 
 // messagePreview renders a short, safe body preview from a Tinode message

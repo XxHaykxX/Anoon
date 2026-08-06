@@ -133,7 +133,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	userID, err := s.Store.ConsumeAuthToken(ctx, "reset", req.Token)
+	userID, _, err := s.Store.ConsumeAuthToken(ctx, "reset", req.Token)
 	if errors.Is(err, store.ErrTokenInvalid) {
 		writeError(w, http.StatusBadRequest, "invalid_token", "reset link is invalid or expired")
 		return
@@ -214,7 +214,7 @@ func (s *Server) handleVerifyEmailConfirm(w http.ResponseWriter, r *http.Request
 		return
 	}
 	ctx := r.Context()
-	userID, err := s.Store.ConsumeAuthToken(ctx, "verify", req.Token)
+	userID, tokenEmail, err := s.Store.ConsumeAuthToken(ctx, "verify", req.Token)
 	if errors.Is(err, store.ErrTokenInvalid) {
 		writeError(w, http.StatusBadRequest, "invalid_token", "verification link is invalid or expired")
 		return
@@ -223,8 +223,19 @@ func (s *Server) handleVerifyEmailConfirm(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not validate token")
 		return
 	}
-	if err := s.Store.SetEmailVerified(ctx, userID); err != nil {
+	// The token proves control of the address it was mailed to, so it only
+	// verifies that address — not whatever the account holds now.
+	ok, err := s.Store.SetEmailVerified(ctx, userID, tokenEmail)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not mark email verified")
+		return
+	}
+	if !ok {
+		// The address moved between issue and redemption. The token is already
+		// spent (single-use, deliberately not un-spent), so the way forward is a
+		// fresh link for the address now on file.
+		writeError(w, http.StatusConflict, "email_changed",
+			"this link was issued for a different address; request a new verification email")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

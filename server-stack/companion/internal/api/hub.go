@@ -77,19 +77,43 @@ func (h *Hub) Send(userID int64, event any) {
 // --- event payloads (companion -> client). Field names are frozen: the
 // frontend decodes these exactly. See PLAN.md "API contract". ---
 
+// matchedEvent announces a new anonymous pairing. PeerAlias is the per-match
+// pseudonym ("~K7X2QM"), NOT the peer's real #ID: this frame is sent before any
+// reveal, and everything in it is readable by the client and shown on screen.
+// Sending the real #ID here was H2 — it let either side add/block/report/look up
+// the other with no reveal and no consent. The real identity arrives only in
+// revealedEvent. Renamed from PeerHashID so no consumer can keep treating it as
+// a #ID by accident.
 type matchedEvent struct {
 	Type         string `json:"type"` // "matched"
 	Topic        string `json:"topic"`
-	PeerHashID   string `json:"peerHashId"`
+	PeerAlias    string `json:"peerAlias"`
 	PeerAgeRange string `json:"peerAgeRange"`
 }
 
+// revealRequestEvent tells a user their peer asked to reveal. The request may be
+// declined, so it still identifies the asker by their per-match alias only.
 type revealRequestEvent struct {
-	Type       string `json:"type"` // "reveal_request"
-	Topic      string `json:"topic"`
-	FromHashID string `json:"fromHashId"`
+	Type      string `json:"type"` // "reveal_request"
+	Topic     string `json:"topic"`
+	FromAlias string `json:"fromAlias"`
 }
 
+// revealDeclinedEvent tells the requester their peer turned the reveal down, so
+// the asking side can stop waiting. A decline is not final — either party may
+// ask again — so this is a neutral signal, not a terminal one.
+//
+// Topic is the whole payload, deliberately. The pair is still anonymous at this
+// point: nothing about who declined, or any handle for them, belongs in a frame
+// the peer did not consent to be identified in. The recipient already knows
+// which chat they asked in, which is all they need to render the line.
+type revealDeclinedEvent struct {
+	Type  string `json:"type"` // "reveal_declined"
+	Topic string `json:"topic"`
+}
+
+// revealedEvent is the one anon-phase frame that carries real identity — both
+// sides have now consented.
 type revealedEvent struct {
 	Type            string `json:"type"` // "revealed"
 	Topic           string `json:"topic"`

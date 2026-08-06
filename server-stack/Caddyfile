@@ -17,6 +17,14 @@
 # /v0/channels.
 
 :80 {
+	# --- Tinode rest-auth hook: not routable through the proxy ------------
+	# Server-to-server only (Tinode reaches companion directly), and this proxy
+	# is what a Cloudflare tunnel publishes over HTTPS. Must stay above the
+	# handle_path /api/* block — the first matching handle block wins.
+	handle /api/auth/rest* {
+		respond 404
+	}
+
 	# --- Companion backend (Go): REST + event WebSocket -------------------
 	# External /api/*  →  companion :6062, with the /api prefix STRIPPED, so the
 	# companion still sees its own normal paths (/auth/register, /roulette/...,

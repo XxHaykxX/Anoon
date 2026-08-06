@@ -1,11 +1,25 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { listResource } from "@/lib/admin-repo";
+import { ADMIN_COOKIE, verifySession } from "@/lib/admin-session";
 
 export const runtime = "nodejs";
 
+// Чтение списка требует залогиненного оператора — ровно как мутации в [id]/route.ts.
+// Одного proxy.ts тут мало: он default-deny только при NEXT_PUBLIC_DATA_MODE=api, а при
+// любом другом значении пропускает всё, тогда как listResource всё равно идёт в РЕАЛЬНЫЕ
+// данные (companion при ADMIN_BACKEND=companion, иначе Supabase). Сочетание
+// «ADMIN_BACKEND=companion + режим не api» отдавало бы жалобы/юзеров/баны анониму.
+// Проверка здесь не зависит от env и закрывает оба бэкенда сразу.
+// Мок-режим сюда не заходит вовсе: там UI работает на mockDataProvider, который не делает
+// ни одного fetch — так что dev-цикл на фикстурах не задет.
 export async function GET(req: Request, { params }: { params: Promise<{ resource: string }> }) {
   const { resource } = await params;
+  const jar = await cookies();
+  const session = await verifySession(jar.get(ADMIN_COOKIE)?.value);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const url = new URL(req.url);
   const sp = url.searchParams;
   const filters: Record<string, string> = {};

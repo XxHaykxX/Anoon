@@ -14,8 +14,11 @@ import (
 )
 
 // defaultDevCORSOrigins is the CORS allowlist used when CORS_ALLOWED_ORIGINS is
-// unset and ENV is not "prod". It covers the frontend dev server and the
+// unset and ENV is exactly "dev". It covers the frontend dev server and the
 // Cloudflare quick tunnels used for phone testing (see README "test on phone").
+// The "*.trycloudflare.com" wildcard is a dev convenience only — ENV is one of
+// exactly "dev" or "prod" and defaults to "prod", so no configuration mistake
+// can reach this list; prod must name its origins explicitly.
 var defaultDevCORSOrigins = []string{
 	"http://localhost:3000",
 	"http://localhost:3001",
@@ -24,13 +27,25 @@ var defaultDevCORSOrigins = []string{
 	"*.trycloudflare.com",
 }
 
+// minAdminTokenSecretLen is the shortest COMPANION_ADMIN_TOKEN_SECRET Load will
+// accept when the key is set at all. It mirrors the admin service, which
+// refuses to start below the same bound (admin/src/lib/admin-session.ts:
+// `if (!s || s.length < 16) throw`) — the two must hold the identical key, so a
+// value one side would reject is never a working configuration.
+const minAdminTokenSecretLen = 16
+
 // Config holds all runtime settings for the companion service.
 type Config struct {
-	// Env selects the deployment environment: "dev" (default) or "prod". It
+	// Env selects the deployment environment: "dev" or "prod" (default). It
 	// gates production-unsafe behavior — currently the DevAuth bypass (refused
 	// outright when Env is "prod") and the CORS default (permissive in dev,
 	// must be explicitly configured in prod).
-	// Env: ENV ("dev" or "prod", default "dev").
+	//
+	// The default is "prod" on purpose: every protection here keys on it, so a
+	// process started without ENV (a hand-run binary, a new compose file) must
+	// fail closed — "too strict, fix the config" — rather than quietly come up
+	// with the dev auth bypass reachable. Local dev sets ENV=dev explicitly.
+	// Env: ENV ("dev" or "prod", default "prod").
 	Env string
 
 	// Addr is the host:port the HTTP + WebSocket server binds to.
@@ -81,6 +96,39 @@ type Config struct {
 	// side of admin's COMPANION_ADMIN_SECRET.
 	// Env: COMPANION_ADMIN_SECRET.
 	AdminSecret string
+
+	// AdminTokenSecret is the HMAC key companion verifies per-operator admin
+	// tokens (X-Admin-Token) with. It must equal the admin service's
+	// ADMIN_SESSION_SECRET — the same HS256 key that service already signs its
+	// operator sessions with.
+	//
+	// OPTIONAL, and empty is a fully supported mode, not a misconfiguration:
+	// empty selects legacy mode (the shipped default), where the acting
+	// operator's id and role come from the X-Admin-Id / X-Admin-Role headers.
+	// Those are asserted by the caller, so the super_admin gate is a guardrail
+	// against operator mistakes rather than a privilege boundary. Setting this
+	// makes both attested. See api.adminIdentity.
+	//
+	// Whitespace is trimmed, and a set-but-too-short key is refused at startup
+	// (minAdminTokenSecretLen): a key that cannot verify anything is worse than
+	// no key at all, because it still selects attested mode — header identity is
+	// then ignored and every admin request 401s, taking the whole panel down at
+	// once. A typo must fail loudly at boot, not silently at runtime.
+	// Env: COMPANION_ADMIN_TOKEN_SECRET.
+	AdminTokenSecret string
+
+	// RestSecret is the shared secret Tinode must present to reach
+	// POST /auth/rest, the server-to-server hook its `rest` auth scheme calls
+	// back into (Google sign-in). When empty the hook is disabled entirely
+	// (503) — the same fail-closed convention as AdminSecret, because the hook
+	// can unlink a user's OAuth identity and must never be open.
+	//
+	// Tinode's rest authenticator cannot set request headers, but it does carry
+	// the userinfo of its configured server_url as HTTP basic auth, so the
+	// secret is accepted from either position (see api.restOnly). Use a value
+	// with no URL-reserved characters so it survives being embedded in a URL.
+	// Env: COMPANION_REST_SECRET.
+	RestSecret string
 
 	// RouletteRecentWindow is how long a just-matched peer stays on a user's
 	// roulette exclude list, so the matcher does not re-pair the same two
@@ -140,7 +188,8 @@ type Config struct {
 // Load reads configuration from the environment, applying defaults and
 // validating that required values are present.
 func Load() (*Config, error) {
-	env := strings.ToLower(envOr("ENV", "dev"))
+	// Defaults to "prod" so a missing ENV fails closed (see Config.Env).
+	env := strings.ToLower(envOr("ENV", "prod"))
 	if env != "dev" && env != "prod" {
 		return nil, fmt.Errorf("config: ENV must be \"dev\" or \"prod\" (got %q)", env)
 	}
@@ -156,6 +205,8 @@ func Load() (*Config, error) {
 		GoogleClientID:       os.Getenv("COMPANION_GOOGLE_CLIENT_ID"),
 		DevAuth:              os.Getenv("COMPANION_DEV_AUTH") == "1" || os.Getenv("COMPANION_DEV_AUTH") == "true",
 		AdminSecret:          os.Getenv("COMPANION_ADMIN_SECRET"),
+		AdminTokenSecret:     strings.TrimSpace(os.Getenv("COMPANION_ADMIN_TOKEN_SECRET")),
+		RestSecret:           strings.TrimSpace(os.Getenv("COMPANION_REST_SECRET")),
 		RouletteRecentWindow: durationOr("ROULETTE_RECENT_WINDOW", 2*time.Hour),
 		VAPIDPublicKey:       os.Getenv("VAPID_PUBLIC_KEY"),
 		VAPIDPrivateKey:      os.Getenv("VAPID_PRIVATE_KEY"),
@@ -185,6 +236,16 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: COMPANION_DEV_AUTH is enabled but ENV=prod — refusing to start with the auth bypass live in production")
 	}
 
+	// Leaving COMPANION_ADMIN_TOKEN_SECRET unset is legitimate (legacy header
+	// mode), but setting it to something unusable is not: it still selects
+	// attested mode, in which header identity is ignored, so a truncated or
+	// half-pasted key 401s every admin request and darkens the panel entirely.
+	// Fail at boot instead. Whitespace-only values were trimmed to "" above and
+	// so land in legacy mode rather than tripping this.
+	if c.AdminTokenSecret != "" && len(c.AdminTokenSecret) < minAdminTokenSecretLen {
+		return nil, fmt.Errorf("config: COMPANION_ADMIN_TOKEN_SECRET is set but shorter than %d characters — it must be the admin service's ADMIN_SESSION_SECRET verbatim (which enforces the same minimum); unset it entirely for legacy header mode", minAdminTokenSecretLen)
+	}
+
 	origins, err := corsOrigins(isProd)
 	if err != nil {
 		return nil, err
@@ -195,8 +256,9 @@ func Load() (*Config, error) {
 }
 
 // corsOrigins parses CORS_ALLOWED_ORIGINS (comma-separated) into an allowlist.
-// Unset/empty falls back to defaultDevCORSOrigins outside prod; in prod it is
-// mandatory and may not contain the "*" wildcard.
+// Unset/empty falls back to defaultDevCORSOrigins, which is reachable only when
+// ENV is explicitly "dev"; in prod (including the default) it is mandatory and
+// may not contain the "*" wildcard.
 func corsOrigins(isProd bool) ([]string, error) {
 	raw := os.Getenv("CORS_ALLOWED_ORIGINS")
 	var origins []string

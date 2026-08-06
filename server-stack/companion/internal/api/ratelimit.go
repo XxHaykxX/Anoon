@@ -168,19 +168,76 @@ func writeRateLimited(w http.ResponseWriter, retry time.Duration) {
 	writeError(w, http.StatusTooManyRequests, "rate_limited", "too many requests; slow down and retry")
 }
 
-// clientIP extracts the caller's IP for per-IP limiting. Behind the prod reverse
-// proxy (Caddy) the real client is the first hop of X-Forwarded-For; otherwise
-// fall back to the connection's RemoteAddr host.
+// clientIP extracts the caller's IP for per-IP limiting.
+//
+// X-Forwarded-For is honored only when the direct peer is a trusted proxy (see
+// trustedPeer), and the hop taken is the LAST one, never the first. Caddy
+// *appends* its own view of the client to whatever X-Forwarded-For the client
+// sent, so the leading entries are attacker-controlled: keying buckets on the
+// first one hands out a fresh bucket per request and disables per-IP limiting
+// altogether. The last entry is the one our own edge wrote, i.e. the address
+// that actually opened the connection to Caddy.
+//
+// With no proxy in front (plain `go run`, or the port companion publishes in
+// the dev compose) the header is ignored entirely and RemoteAddr's host is
+// used — which is already the real client, so local dev keeps working and
+// cannot be spoofed by sending the header.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		return strings.TrimSpace(first)
+	peer := remoteHost(r)
+	if trustedPeer(peer) {
+		if hop := lastForwardedHop(r.Header.Get("X-Forwarded-For")); hop != "" {
+			return hop
+		}
 	}
+	return peer
+}
+
+// remoteHost is RemoteAddr with the port stripped (RemoteAddr as-is when it
+// does not carry one).
+func remoteHost(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// trustedPeer reports whether the connection's direct peer may speak for the
+// client through X-Forwarded-For. companion is never published to the internet
+// itself: in prod Caddy reaches it over the compose bridge network, in dev the
+// caller is loopback — both private. So "the peer is private" is exactly "our
+// own proxy (or the developer) is in front". A request arriving straight from a
+// public address means companion got exposed by mistake; there is no proxy to
+// have written the header, so we ignore it and limit on the real peer.
+func trustedPeer(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+}
+
+// lastForwardedHop returns the final entry of an X-Forwarded-For header — the
+// one the nearest proxy appended — or "" when the header is absent or that
+// entry is not an IP. Entries a client forged sit to the LEFT of it and are
+// never consulted; a malformed last entry means the proxy misbehaved, and
+// walking further left would step straight into client-controlled values, so we
+// fall back to the peer instead.
+func lastForwardedHop(xff string) string {
+	if xff == "" {
+		return ""
+	}
+	parts := strings.Split(xff, ",")
+	last := strings.TrimSpace(parts[len(parts)-1])
+	// Some proxies append host:port rather than a bare address.
+	if h, _, err := net.SplitHostPort(last); err == nil {
+		last = h
+	}
+	last = strings.Trim(last, "[]")
+	if net.ParseIP(last) == nil {
+		return ""
+	}
+	return last
 }
 
 // credentialKey returns a stable per-caller key from the request's credential

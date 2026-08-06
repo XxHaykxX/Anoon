@@ -1,0 +1,23 @@
+-- 0012_reveal_declined.sql — remember that a reveal was turned down (#23).
+--
+-- Declining now clears reveal_by (see store.DeclineReveal: leaving it set wedged
+-- the pairing, because RequestReveal only writes `WHERE reveal_by IS NULL`). But
+-- once cleared, a declined match is indistinguishable from one nobody ever asked
+-- in — so the answer lives ONLY in the reveal_declined WebSocket frame, and that
+-- socket is best-effort. A requester whose app is backgrounded when the decline
+-- is sent misses the frame with no way to recover it: GET /roulette/status, the
+-- resync path that already heals a dropped `matched` event, had nothing to say
+-- about reveals. They would sit on «Ожидание…» until the match ended, which is
+-- the exact stuck state #23 exists to remove, reached by a different route.
+--
+-- This column is what lets the poll answer "you asked and were turned down".
+-- It records WHO declined, not who was declined, so each member's own view is
+-- derivable from it symmetrically (see Match.RevealStateFor): the other member
+-- having declined means you were refused; you having declined means there is
+-- simply nothing outstanding.
+--
+-- Cleared whenever a fresh request claims the slot, so it only ever describes
+-- the most recent exchange — a decline is not final, and a new ask supersedes
+-- the old answer rather than accumulating history. There is no audit trail here
+-- by design: the pair is anonymous and nobody needs a record of who refused whom.
+ALTER TABLE roulette_matches ADD COLUMN reveal_declined_by BIGINT REFERENCES users(id);

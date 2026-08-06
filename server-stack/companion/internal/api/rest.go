@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log"
@@ -61,6 +62,54 @@ type restResponse struct {
 }
 
 const oauthProvider = "google"
+
+// restSecretHeader is the header a caller that can set headers should use to
+// present COMPANION_REST_SECRET. Tinode cannot (see restOnly), so it is not the
+// only accepted position — but it is the documented one.
+const restSecretHeader = "X-Companion-Rest-Secret"
+
+// restOnly wraps the rest-auth hook with the shared-secret gate, the same way
+// adminOnly (admin.go) gates /admin/*: no secret configured disables the whole
+// surface (503) rather than letting callers through, a wrong/absent secret is
+// 401, and the comparison is constant time.
+//
+// This hook is NOT public. It is called server-to-server by Tinode over the
+// internal docker network, and `del` unlinks a user's OAuth identity by uid
+// alone — a uid every chat partner already knows, since a p2p topic name is
+// the peer's uid. Without this gate an anonymous caller can permanently lock
+// someone out of Google sign-in.
+//
+// Where the secret travels: Tinode's rest authenticator cannot set request
+// headers — it POSTs with net/http's default client and its config carries only
+// server_url/allow_new_accounts/use_separate_endpoints (see
+// server/server/auth/rest/auth_rest.go). It does carry the URL's userinfo,
+// which net/http turns into an `Authorization: Basic` header, so the secret is
+// accepted from the basic-auth password as well as from restSecretHeader.
+func (s *Server) restOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.RestSecret == "" {
+			writeError(w, http.StatusServiceUnavailable, "rest_auth_disabled", "rest auth hook is disabled")
+			return
+		}
+		got := presentedRestSecret(r)
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.RestSecret)) != 1 {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid rest auth secret")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// presentedRestSecret returns the secret the request carries, preferring the
+// explicit header and falling back to the basic-auth password Tinode delivers
+// via its server_url userinfo. Returns "" when neither is present.
+func presentedRestSecret(r *http.Request) string {
+	if got := r.Header.Get(restSecretHeader); got != "" {
+		return got
+	}
+	_, pass, _ := r.BasicAuth()
+	return pass
+}
 
 // handleAuthRest dispatches the rest-auth JSON-RPC by its endpoint field.
 // All responses are HTTP 200 with a JSON body (logical errors travel in `err`);

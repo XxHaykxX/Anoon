@@ -147,6 +147,16 @@ services:
       COMPANION_GOOGLE_CLIENT_ID: ${COMPANION_GOOGLE_CLIENT_ID:-}
       # Shared secret for the admin panel's /admin/* API. Empty disables it.
       COMPANION_ADMIN_SECRET: ${COMPANION_ADMIN_SECRET:-}
+      # Optional HMAC key for per-operator admin tokens (X-Admin-Token); set it
+      # to the admin UI's ADMIN_SESSION_SECRET. Empty = legacy mode (the shipped
+      # default): the operator id/role headers are asserted, not attested, so
+      # super_admin is a UI guardrail rather than a privilege boundary.
+      COMPANION_ADMIN_TOKEN_SECRET: ${COMPANION_ADMIN_TOKEN_SECRET:-}
+      # Shared secret Tinode must present on the /auth/rest hook (Google
+      # sign-in). Empty disables the hook (503) — which also disables Google
+      # sign-in through Tinode. Must match the secret embedded in the Tinode
+      # config's rest auth server_url. Caddy never proxies this path.
+      COMPANION_REST_SECRET: ${COMPANION_REST_SECRET:-}
       # Roulette anti-repeat window (prod default 2h; dev used 0).
       ROULETTE_RECENT_WINDOW: ${ROULETTE_RECENT_WINDOW:-2h}
       # Web Push (VAPID) — generate a PROD keypair; empty disables push.
@@ -155,6 +165,13 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@anoon.app}
       # Temp-ban expiry sweep; <=0 disables the background job.
       BAN_SWEEP_INTERVAL: ${BAN_SWEEP_INTERVAL:-60s}
+      # Abuse guard on the public endpoints (registration, friend search,
+      # reports, roulette enqueue, auth), per user AND per client IP. The code
+      # default is 0 = OFF, which is the wrong posture for a public deployment,
+      # so prod pins a value here: 5 rps sustained with a burst of 20 is far
+      # above what the UI ever produces and far below a useful flood.
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-5}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-20}
     # NO ports: — Caddy reaches companion:8080 by service name.
     restart: unless-stopped
     logging: *default-logging

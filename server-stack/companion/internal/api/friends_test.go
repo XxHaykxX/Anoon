@@ -101,3 +101,32 @@ func TestFriendSearchItemJSON(t *testing.T) {
 		}
 	}
 }
+
+// TestFriendRequestAllowed pins the block gate on POST /friends/request. Until
+// this existed, a block only fed the roulette's exclude set, so someone you
+// blocked could still put a notification on your phone whenever they liked.
+func TestFriendRequestAllowed(t *testing.T) {
+	tests := []struct {
+		rel  store.Relation
+		want bool
+	}{
+		{store.RelationNone, true},
+		{store.RelationFriends, true},
+		{store.RelationRequestSent, true},     // re-sending is an idempotent no-op
+		{store.RelationRequestReceived, true}, // requesting back is how you accept
+		{store.RelationSelf, true},            // refused earlier, by the self_request check
+		{store.RelationBlocked, false},
+	}
+	for _, tc := range tests {
+		t.Run(string(tc.rel), func(t *testing.T) {
+			if got := friendRequestAllowed(tc.rel); got != tc.want {
+				t.Errorf("friendRequestAllowed(%q) = %v, want %v", tc.rel, got, tc.want)
+			}
+		})
+	}
+}
+
+// The property this gate leans on — that store.Relations reports RelationBlocked
+// whoever set the block, so the request is stopped in either direction — is
+// pinned next to its implementation, in TestApplyRelationRow (store package).
+// Making Relations directional would fail there, not here.

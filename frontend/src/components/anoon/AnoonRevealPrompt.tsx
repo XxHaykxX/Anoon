@@ -7,7 +7,11 @@ import { PRESS_FX } from "@/components/anoon/_shared";
 type Resolution = "pending" | "opened" | "declined" | "blocked";
 
 export interface AnoonRevealPromptProps {
-  /** Partner short id shown in the prompt, e.g. "#04217". */
+  /**
+   * Partner handle shown in the prompt. In the anon phase this is the per-match
+   * alias («~K7X2QM»), which is all this screen ever legitimately holds — the
+   * real «#00012» only exists after both sides have revealed.
+   */
   partnerId?: string;
   /** Render as a centered modal overlay instead of an inline system card. */
   asModal?: boolean;
@@ -21,7 +25,7 @@ export interface AnoonRevealPromptProps {
  * Works standalone (self-contained state) or embedded inside a chat thread.
  */
 export default function AnoonRevealPrompt({
-  partnerId = "#04217",
+  partnerId = "~SAMPLE",
   asModal = false,
   onOpen,
   onDecline,

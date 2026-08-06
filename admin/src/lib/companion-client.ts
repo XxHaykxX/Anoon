@@ -8,7 +8,9 @@ import { ADMIN_COOKIE, verifySession } from "@/lib/admin-session";
 // Тонкий серверный fetch-клиент к companion admin-API (Go, dev :6062).
 // Заменяет supabaseAdmin() как источник данных для админки, когда ADMIN_BACKEND=companion.
 // Auth: shared-secret заголовок + личность админа берётся ТОЛЬКО из проверенной
-// httpOnly-сессии (verifySession по cookie), а не из клиентского ввода. См.
+// httpOnly-сессии (verifySession по cookie), а не из клиентского ввода. Плюс сырой
+// JWT той же сессии в X-Admin-Token, чтобы companion мог проверить личность
+// оператора сам, а не верить нам на слово — см. authHeaders. См.
 // COMPANION-ADMIN-API.md §0/§6.
 // ---------------------------------------------------------------------------
 
@@ -25,7 +27,14 @@ export type CompanionListParams = {
 };
 
 // ADMIN_BACKEND=companion → ходим в companion; иначе (по умолчанию) остаёмся на Supabase.
+// Дополнительно требуем NEXT_PUBLIC_DATA_MODE=api: «companion + не-api режим» — несвязная
+// комбинация (UI рисует фикстуры через mockDataProvider и живых данных не показывает,
+// а API при этом ходил бы в реальный companion), и раньше она тихо полуработала.
+// Ровно это условие три роута — broadcast/overview/media — уже проверяют у себя MOCK-гардом;
+// здесь оно переезжает в общий хелпер, а не заводится заново. В связных конфигурациях
+// (api+companion, mock+фикстуры) значение не меняется.
 export function companionEnabled(): boolean {
+  if (process.env.NEXT_PUBLIC_DATA_MODE !== "api") return false;
   return (process.env.ADMIN_BACKEND ?? "supabase").toLowerCase() === "companion";
 }
 
@@ -33,17 +42,32 @@ function baseUrl(): string {
   return (process.env.COMPANION_ADMIN_URL ?? DEFAULT_URL).replace(/\/+$/, "");
 }
 
-// 3 обязательных заголовка на КАЖДЫЙ admin-запрос. adminId/role — из подписанной сессии
+// Заголовки авторизации на КАЖДЫЙ admin-запрос. adminId/role — из подписанной сессии
 // (или явно переданные из уже-проверенного PATCH-роута), НИКОГДА из тела запроса.
+//
+// X-Admin-Token — сырой (непроверенный нами) JWT сессии оператора. Это личность,
+// которую companion может проверить САМ: когда у него задан COMPANION_ADMIN_TOKEN_SECRET
+// (= наш ADMIN_SESSION_SECRET), он сверяет подпись и срок и берёт оператора из клейма
+// `sub`, а X-Admin-Id/X-Admin-Role полностью игнорирует. Тогда оператор не может ни
+// повысить себе роль, ни записать чужое авторство в журнал модерации.
+//
+// Пока ключ у companion НЕ задан (сегодняшний дефолт) — заголовок просто не читается,
+// личность по-прежнему берётся из X-Admin-Id/X-Admin-Role, поведение не меняется.
+// Порядок включения важен: сначала админка начинает слать токен (этот код), и только
+// потом на companion задаётся ключ — иначе каждый admin-запрос получит 401.
 async function authHeaders(explicit?: { adminId: string; role: string }): Promise<Record<string, string>> {
   const secret = process.env.COMPANION_ADMIN_SECRET;
   if (!secret) throw new Error("COMPANION_ADMIN_SECRET не задан (admin/.env)");
 
+  // Нужен всегда — в т.ч. на explicit-пути, где раньше cookie не читали: companion
+  // ждёт токен на любом /admin/*, а не только на тех вызовах, где мы сами резолвим личность.
+  const jar = await cookies();
+  const token = jar.get(ADMIN_COOKIE)?.value;
+
   let adminId = explicit?.adminId;
   let role = explicit?.role;
   if (!adminId || !role) {
-    const jar = await cookies();
-    const session = await verifySession(jar.get(ADMIN_COOKIE)?.value);
+    const session = await verifySession(token);
     adminId = adminId ?? session?.sub ?? "";
     role = role ?? session?.role ?? "moderator";
   }
@@ -51,6 +75,8 @@ async function authHeaders(explicit?: { adminId: string; role: string }): Promis
     "X-Companion-Admin-Secret": secret,
     "X-Admin-Id": adminId,
     "X-Admin-Role": role,
+    // Пустой заголовок companion трактует ровно как отсутствующий, поэтому не шлём его вовсе.
+    ...(token ? { "X-Admin-Token": token } : {}),
   };
 }
 

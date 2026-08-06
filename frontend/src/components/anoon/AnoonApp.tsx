@@ -346,8 +346,18 @@ export default function AnoonApp() {
           }
           return;
         }
+        // `from` is server-stamped: a real #ID from a friend, or a per-match
+        // anon alias from a roulette peer. The friends lookup misses on an
+        // alias by design — an anonymous caller has no name to show.
+        //
+        // The fallback is a bare «Собеседник» and not `Собеседник ${from}`:
+        // IncomingCall renders the handle on its own line directly underneath
+        // this one, so interpolating it here printed it twice («Собеседник
+        // ~K7X2QM» above «~K7X2QM»). This also matches what the caller's own
+        // side already shows (AnoonAnonChat passes headerName, which is plain
+        // «Собеседник» until a reveal).
         const from = frame.from ?? "";
-        const peerName = friends.find((f) => f.hashId === from)?.displayName ?? `Собеседник ${from}`;
+        const peerName = friends.find((f) => f.hashId === from)?.displayName ?? "Собеседник";
         useCallStore.getState().receiveIncoming({
           status: "incoming",
           peerHashId: from,

@@ -117,8 +117,12 @@ export interface ChatSlice {
   deleteChatMessage: (seq: number, hard: boolean) => Promise<void>;
 }
 
-/** Reveal progress inside an anon chat. */
-export type AnonRevealState = "none" | "peer_requested" | "revealed";
+/**
+ * Reveal progress inside an anon chat. `declined` is requester-side: the peer
+ * turned our request down. It is not terminal — asking again is allowed, and
+ * doing so returns the state to `none`.
+ */
+export type AnonRevealState = "none" | "peer_requested" | "declined" | "revealed";
 
 /** The active anonymous roulette chat, if any. */
 export interface AnonChatSlice {
@@ -130,6 +134,13 @@ export interface AnonChatSlice {
   anonRevealState: AnonRevealState;
   /** True after we asked to reveal and are waiting on the peer. */
   anonRevealPending: boolean;
+  /**
+   * How many more times the local user may ask to reveal in this match (2/1/0),
+   * or null when not yet known. 0 is a SETTLED answer, not a retryable failure:
+   * a further request is refused for the rest of the chat. It never blocks
+   * accepting a request the peer makes, and the peer's own budget is separate.
+   */
+  anonRevealAsksLeft: number | null;
   /** Seqs of anon view-once photos already opened → render them as "просмотрено" (Wave-2 #88). */
   anonViewed: Record<number, true>;
   setActiveMatch: (match: RouletteMatch | null) => void;
@@ -164,6 +175,15 @@ export interface AnonChatSlice {
   closeAnon: () => void;
   /** Bridge setter: the peer asked to reveal. */
   setPeerRequestedReveal: () => void;
+  /** Bridge setter: the peer declined the request we sent (topic-guarded). */
+  applyRevealDeclined: (topic: string) => void;
+  /**
+   * Re-read the reveal handshake from `GET /roulette/status` and heal local
+   * state from it. For when a reveal frame was missed while backgrounded — the
+   * socket is best-effort. Never applies `revealed` (that payload carries no
+   * identity); no-op in mock mode or without an active match.
+   */
+  resyncAnonReveal: () => Promise<void>;
   /** Bridge setter: both sides revealed → flip to a friend chat. */
   applyRevealed: (peerHashId: string, peerDisplayName: string) => void;
 }

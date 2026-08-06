@@ -245,8 +245,12 @@ func (s *Store) ListMediaFolders(ctx context.Context) ([]MediaFolderRow, error) 
 // EscalateMediaByTopic flags every non-deleted media_assets row in topic as
 // escalated, so the view-once/TTL cleanup path never purges it before a
 // moderator has reviewed the report that references it. Called from
-// POST /reports when the report carries a topic. A no-op (not an error) when
-// topic is empty or matches nothing.
+// POST /reports for a roulette (grpXXX) topic — one name, shared by both
+// members and unique to the pairing, so it selects exactly that conversation.
+// A no-op (not an error) when topic is empty or matches nothing.
+//
+// Not for Tinode p2p topics: their names are per-user, so `usrB` is not one
+// conversation but every chat anyone has with B. Use EscalateMediaByTopicOwner.
 func (s *Store) EscalateMediaByTopic(ctx context.Context, topic string) error {
 	if topic == "" {
 		return nil
@@ -255,6 +259,25 @@ func (s *Store) EscalateMediaByTopic(ctx context.Context, topic string) error {
 		UPDATE media_assets SET escalated = true
 		WHERE topic = $1 AND escalated = false`, topic); err != nil {
 		return fmt.Errorf("store: escalate media for topic %q: %w", topic, err)
+	}
+	return nil
+}
+
+// EscalateMediaByTopicOwner is EscalateMediaByTopic narrowed to one owner. It
+// exists for Tinode p2p friend topics, whose names are per-user: the chat A
+// sees as `usrB` is the one B sees as `usrA`, and each side files its own media
+// under the name it uses. Escalating a p2p conversation is therefore two
+// owner-scoped passes — (their uid, my rows) and (my uid, their rows) — rather
+// than one topic-wide pass, which would sweep in every other chat with the same
+// peer while still missing the reported user's own media.
+func (s *Store) EscalateMediaByTopicOwner(ctx context.Context, topic string, ownerID int64) error {
+	if topic == "" || ownerID == 0 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE media_assets SET escalated = true
+		WHERE topic = $1 AND owner_id = $2 AND escalated = false`, topic, ownerID); err != nil {
+		return fmt.Errorf("store: escalate media for topic %q owner %d: %w", topic, ownerID, err)
 	}
 	return nil
 }

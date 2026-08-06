@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { AnoonLogo } from "@/components/anoon/_shared";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
-import { getCompanionClient } from "@/lib/companion";
+import { CompanionHttpError, getCompanionClient } from "@/lib/companion";
 
 function EnvelopeIcon({ className }: { className?: string }) {
   return (
@@ -71,7 +71,20 @@ export default function AnoonVerifyEmail() {
       // meaningless — reset the stack instead of leaving an unreachable entry.
       nav.go("auth-gender");
     } catch (err) {
-      setConfirmError(err instanceof Error ? err.message : "Неверный или истёкший код");
+      // 409 `email_changed`: the address was changed after this letter went out,
+      // so the token is spent and re-entering it can never succeed. A fresh link
+      // is the only way forward — say so, and free the resend button immediately
+      // rather than leaving the user retyping a code that cannot work.
+      if (err instanceof CompanionHttpError && err.status === 409) {
+        setConfirmError("Адрес почты изменился — эта ссылка больше не действует. Запросите новое письмо.");
+        setSeconds(0);
+      } else if (err instanceof CompanionHttpError) {
+        // Any other rejection: the raw message is «companion /auth/…: 400», which
+        // is not something to show a person.
+        setConfirmError("Неверный или истёкший код");
+      } else {
+        setConfirmError(err instanceof Error ? err.message : "Неверный или истёкший код");
+      }
     } finally {
       setConfirming(false);
     }

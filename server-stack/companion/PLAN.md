@@ -223,12 +223,22 @@ REST:
 - `GET  /friends/search?q=<#ID>` → `{ results: [{ hashId, displayName }] }`
 
 WS events (companion → client), JSON `{ type, ... }` on `/ws`:
-- `{ type:"matched", topic, peerHashId, peerAgeRange }`
-- `{ type:"reveal_request", topic, fromHashId }`
+- `{ type:"matched", topic, peerAlias, peerAgeRange }`
+- `{ type:"reveal_request", topic, fromAlias }`
 - `{ type:"revealed", topic, peerHashId, peerDisplayName }`
 - `{ type:"friend_request", fromHashId, displayName }`
 
 Notes: `hashId`/`fromHashId`/`peerHashId` are the display form `"#00042"`.
+
+**Anon-phase handles.** `peerAlias`/`fromAlias` are per-match pseudonyms in the
+form `"~K7X2QM"`, minted per match and stored on `roulette_matches`. They are the
+ONLY handle either side gets before a mutual reveal: the real `#ID` appears only
+in `revealed`. Both fields once carried the real `#ID`, which made the anonymous
+phase anonymous in name only (see `docs/SECURITY-FINDINGS.md` §H2) — either side
+could add, block, report or search the other with no consent. An alias resolves
+to an account only inside the match that minted it, which is how the anon phase
+still supports blocking (`POST /roulette/block {topic}`), reporting
+(`POST /reports {topic}`) and calls (`to: "~K7X2QM"`).
 `displayName` == the `#ID` (no nicknames — search is by #ID only). A friend's
 `topic` is the peer's Tinode UID (the p2p topic). `online` is companion-tracked
 (WS presence), which is the anon-phase online dot. `lastActiveAt` is currently

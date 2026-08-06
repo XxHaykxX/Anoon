@@ -75,6 +75,27 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "self_request", "cannot friend yourself")
 		return
 	}
+
+	// A block has to stop this. Until now it only fed the roulette's exclude set,
+	// so someone you blocked could still send you requests — each one firing a WS
+	// event AND a push at you, which is the harassment the block was meant to
+	// end. The directed block row is the other way round from this request, so
+	// nothing collided and the insert simply succeeded.
+	//
+	// Answered with a plain 200 and no request written: an explicit error would
+	// tell the sender they have been blocked, which is exactly what the person
+	// who blocked them should not have to disclose. From the sender's side this
+	// is indistinguishable from a request that was delivered and ignored.
+	rel, err := s.Store.Relations(r.Context(), u.ID, []int64{target.ID})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "store_failed", "could not resolve relation")
+		return
+	}
+	if !friendRequestAllowed(rel[target.ID]) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+
 	if err := s.Store.CreateFriendRequest(r.Context(), u.ID, target.ID, "search"); err != nil {
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not send request")
 		return
@@ -90,6 +111,22 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		Tag:   "friend_request",
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// friendRequestAllowed reports whether a friend request may actually be
+// delivered, given the sender's relation to the target. A block stops it: the
+// request would otherwise reach the person who blocked the sender as a WS event
+// and a push, which is the contact they blocked to stop.
+//
+// store.Relations reports a block in EITHER direction as RelationBlocked (see
+// applyRelationRow's doc for why that is deliberate and leaks nothing), so this
+// also declines a request to someone the SENDER blocked. That is the wanted
+// behaviour and not merely a side effect: offering to befriend someone you have
+// blacklisted is incoherent, and every other gate in this codebase treats
+// blocking as symmetric — BlockedUserIDs excludes the pair from matchmaking
+// regardless of who blocked whom.
+func friendRequestAllowed(rel store.Relation) bool {
+	return rel != store.RelationBlocked
 }
 
 // handleFriendRespond accepts or declines an incoming friend request. On accept

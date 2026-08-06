@@ -83,6 +83,21 @@ func (s *Store) UserByHashID(ctx context.Context, hashID int64) (User, error) {
 }
 
 // UserByID looks up a user by their internal companion row id.
+//
+// DELIBERATELY DIFFERENT from UserByHashID and UserByTinodeUID: it does NOT
+// exclude soft-deleted accounts, so it still resolves someone who has deleted
+// themselves. That is not an oversight — moderation depends on it. DeleteUser
+// keeps hash_id assigned precisely so reports/bans/moderator_actions retain a
+// valid target, and the admin ban path reaches the account through here
+// (handleAdminPatchUser, uidFor): filtering deleted_at would make a report
+// against someone who deleted their account unactionable.
+//
+// The consequence to keep in mind: this is a lookup by INTERNAL id, never by
+// anything a caller supplies, so it is not an authentication or authorization
+// boundary — the two filtered lookups above are. A caller that needs "a live
+// account" (rather than "the row for this id") must check State/deletion
+// itself; today the only such callers are the roulette paths, which are already
+// covered because DeleteUser ends the user's active matches.
 func (s *Store) UserByID(ctx context.Context, id int64) (User, error) {
 	u := User{ID: id}
 	var uid sql.NullString
@@ -92,6 +107,34 @@ func (s *Store) UserByID(ctx context.Context, id int64) (User, error) {
 	).Scan(&uid, &u.HashID, &u.Gender, &u.Age, &u.State)
 	if err != nil {
 		return User{}, fmt.Errorf("store: user by id %d: %w", id, err)
+	}
+	u.TinodeUID = uid.String
+	return u, nil
+}
+
+// LiveUserByID is UserByID restricted to accounts that still exist: it excludes
+// soft-deleted rows, returning sql.ErrNoRows for them exactly as an unknown id
+// would.
+//
+// Use this wherever a user id is resolved in order to keep TALKING to someone —
+// the roulette status resync, the reveal events, the match announcement. Those
+// paths were safe before only as a side effect of DeleteUser ending the user's
+// active matches, so the peer was already unreachable by the time anything
+// looked them up. That ordering is load-bearing but incidental: it holds by
+// accident of two unrelated pieces of code agreeing, is untested, and would
+// break silently if either changed. Asking for a live user says so directly.
+//
+// UserByID remains the right call for moderation, which must still resolve an
+// account after its owner deletes it — see its doc comment.
+func (s *Store) LiveUserByID(ctx context.Context, id int64) (User, error) {
+	u := User{ID: id}
+	var uid sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT tinode_uid, hash_id, gender, age, state
+		FROM users WHERE id = $1 AND deleted_at IS NULL`, id,
+	).Scan(&uid, &u.HashID, &u.Gender, &u.Age, &u.State)
+	if err != nil {
+		return User{}, fmt.Errorf("store: live user by id %d: %w", id, err)
 	}
 	u.TinodeUID = uid.String
 	return u, nil

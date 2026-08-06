@@ -8,6 +8,14 @@
 }
 
 :8088 {
+	# Tinode's server-to-server rest-auth hook. This proxy gets a public HTTPS
+	# URL via cloudflared, so the hook must not be routable through it — Tinode
+	# reaches companion directly. Must stay above handle_path /api/* (first
+	# matching handle block wins).
+	handle /api/auth/rest* {
+		respond 404
+	}
+
 	# Companion backend (REST + /ws event socket). /api prefix stripped.
 	handle_path /api/* {
 		reverse_proxy localhost:6062

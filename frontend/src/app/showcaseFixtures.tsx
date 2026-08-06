@@ -74,7 +74,7 @@ export function IncomingCallShowcase() {
     <OverlayHost>
       <IncomingCall
         peerName="Собеседник"
-        peerId="#04217"
+        peerId="~SAMPLE"
         media="video"
         onAccept={noop}
         onDecline={noop}

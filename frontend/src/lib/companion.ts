@@ -19,10 +19,13 @@
  *          POST /friends/respond {hashId, accept}
  *          GET  /friends/search?q=
  *          GET  /me                (profile / #ID)
- *   WS   : matched {topic, peerHashId, peerAgeRange}
- *          reveal_request {topic, fromHashId}
+ *   WS   : matched {topic, peerAlias, peerAgeRange}
+ *          reveal_request {topic, fromAlias}
  *          revealed {topic, peerHashId, peerDisplayName}
  *          friend_request {fromHashId, displayName}
+ *
+ * Anon-phase frames carry a per-match pseudonym («~K7X2QM»), never the peer's
+ * real #ID — that arrives only in `revealed`, once both sides have consented.
  *
  * The companion `:6062` is not built yet. Until it is, every call transparently
  * falls back to an in-memory **mock driver** that emits the same contract-shaped
@@ -130,12 +133,19 @@ export interface RegisterResult {
  */
 export type ReportCategory = "spam" | "abuse" | "sexual" | "illegal" | "other";
 
-/** Body of `POST /reports` — a moderation report filed against a peer. */
+/**
+ * Body of `POST /reports` — a moderation report filed against a peer.
+ *
+ * The target is named one of two ways, and reporting from an anonymous roulette
+ * chat can only use the second: the client holds no #ID for an un-revealed peer,
+ * by design. Companion resolves `topic` → match → the other member, which also
+ * proves the reporter was in that conversation.
+ */
 export interface ReportInput {
-  /** #ID / anonymous handle of the reported peer (leading "#" optional). */
-  reportedHashId: string;
+  /** Real #ID of the reported peer (leading "#" optional). Omit in the anon phase. */
+  reportedHashId?: string;
   category: ReportCategory;
-  /** Anon/chat topic the report is filed from, if any. */
+  /** Anon/chat topic the report is filed from. Required when there is no #ID. */
   topic?: string;
   /** Free-text detail from the report form. */
   details?: string;
@@ -165,9 +175,39 @@ function toWireAgeRange(range: string): string {
   return range.replace(/–/g, "-");
 }
 
+/**
+ * The backend answered, and said no. Distinct from a `fetch` rejection, which
+ * means the backend was never reached at all — the difference decides whether a
+ * failed call may quietly fall back to the mock driver (no backend running:
+ * yes) or has to surface to the user (the request was genuinely rejected: no).
+ * Collapsing the two is how a rejected report came to render a success sheet.
+ */
+export class CompanionHttpError extends Error {
+  constructor(
+    readonly path: string,
+    readonly status: number,
+  ) {
+    super(`companion ${path}: ${status}`);
+    this.name = "CompanionHttpError";
+  }
+}
+
 /** A short, opaque anonymous handle for a mock peer (digits only, no identity). */
 function mockHandle(): string {
   return String(10000 + Math.floor(Math.random() * 89999));
+}
+
+/**
+ * A mock per-match alias, in companion's «~K7X2QM» shape (same sigil and
+ * ambiguity-free alphabet), so the demo renders what the real backend sends.
+ */
+const MOCK_ALIAS_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function mockAlias(): string {
+  let out = "~";
+  for (let i = 0; i < 6; i++) {
+    out += MOCK_ALIAS_ALPHABET[Math.floor(Math.random() * MOCK_ALIAS_ALPHABET.length)];
+  }
+  return out;
 }
 
 /** Tiny in-memory directory backing offline friend-search demos. */
@@ -215,8 +255,10 @@ export class CompanionClient {
   private mock = false;
   /** Pending mock timers, so cancel()/end() can clear them. */
   private readonly mockTimers = new Set<ReturnType<typeof setTimeout>>();
-  /** The peer handle of the current mock match, reused across its events. */
+  /** The peer's mock #ID, revealed only when the mock reveal completes. */
   private mockPeer: string | null = null;
+  /** The peer's mock per-match alias — the only handle the anon phase sees. */
+  private mockPeerAlias: string | null = null;
   /** Guard so the demo seeds at most one incoming friend request per session. */
   private mockSeededFriendReq = false;
   /** Filters from the most recent {@link enqueue}, so the searching UI can echo them. */
@@ -246,7 +288,7 @@ export class CompanionClient {
         ...(init?.headers ?? {}),
       },
     });
-    if (!res.ok) throw new Error(`companion ${path}: ${res.status}`);
+    if (!res.ok) throw new CompanionHttpError(path, res.status);
     // A successful call means the backend is live — leave mock mode.
     this.mock = false;
     return (await res.json()) as T;
@@ -326,7 +368,17 @@ export class CompanionClient {
     return this.lastPrefs;
   }
 
-  /** Join the matchmaking queue. A `matched` event follows on the WS. */
+  /**
+   * Join the matchmaking queue. A `matched` event follows on the WS.
+   *
+   * **Rethrows when the backend refuses to enqueue**, same rule as
+   * {@link reveal} and {@link report}. A refusal is not hypothetical: a
+   * suspended account and a rate-limited one are both answered, not dropped.
+   * Falling back to the mock there invented a match with a person who does not
+   * exist — a banned user would be handed a stranger to talk to, which is
+   * precisely what the ban withholds. An unreachable backend still mocks; that
+   * is the no-backend showcase.
+   */
   async enqueue(prefs: RoulettePrefs): Promise<void> {
     // Remember the chosen filters so AnoonSearching can display the real values.
     this.lastPrefs = prefs;
@@ -335,7 +387,8 @@ export class CompanionClient {
         ownAgeRange: toWireAgeRange(prefs.ownAgeRange),
         peerAgeRanges: prefs.peerAgeRanges.map(toWireAgeRange),
       });
-    } catch {
+    } catch (err) {
+      if (err instanceof CompanionHttpError) throw err;
       // Backend down → demo the flow with a simulated match.
       this.mock = true;
       this.mockMatch(prefs);
@@ -346,6 +399,7 @@ export class CompanionClient {
   async cancel(): Promise<void> {
     this.clearMockTimers();
     this.mockPeer = null;
+    this.mockPeerAlias = null;
     try {
       await this.post("/roulette/cancel");
     } catch {
@@ -371,6 +425,7 @@ export class CompanionClient {
   async end(topic: string): Promise<void> {
     this.clearMockTimers();
     this.mockPeer = null;
+    this.mockPeerAlias = null;
     try {
       await this.post("/roulette/end", { topic });
     } catch {
@@ -379,12 +434,28 @@ export class CompanionClient {
   }
 
   /**
-   * @deprecated Alias for {@link blockFriend}, kept for existing call sites
-   * from the roulette flow (blocking a peer mid-match uses the same #ID-based
-   * block list — the backend aliases it in regardless of relation).
+   * Block the peer of an anonymous roulette chat. Contract:
+   * `POST /roulette/block {topic}`.
+   *
+   * Keyed by topic rather than #ID because the anon phase deliberately withholds
+   * the peer's #ID — companion resolves topic → match → the other member, and
+   * membership in that match is the authorization. The block lands in the same
+   * `friendships` rows as {@link blockFriend}, so it shows up in the Settings
+   * blacklist and feeds the matchmaker's exclude set exactly as before.
+   *
+   * **Rethrows when the backend rejects the block**, same rule as {@link report}
+   * and {@link blockFriend}: a block that silently failed leaves the user
+   * believing they are protected while the matcher can still pair them with the
+   * person they blocked. An unreachable backend still falls back to the mock,
+   * which is the no-backend showcase.
    */
-  async block(hashId: string): Promise<void> {
-    return this.blockFriend(hashId);
+  async blockAnonPeer(topic: string): Promise<void> {
+    try {
+      await this.post("/roulette/block", { topic });
+    } catch (err) {
+      if (err instanceof CompanionHttpError) throw err;
+      this.mock = true;
+    }
   }
 
   /** Rate the peer of a finished match (1–5). */
@@ -396,22 +467,43 @@ export class CompanionClient {
     }
   }
 
-  /** Ask to reveal profiles in the current anon chat. */
+  /**
+   * Ask to reveal profiles in the current anon chat.
+   *
+   * **Rethrows when the backend rejects the request**, same rule as
+   * {@link report} and {@link blockAnonPeer}. Falling back to the mock on a
+   * rejection fabricated a `revealed` event carrying a freshly invented #ID: the
+   * chat announced «Профили открыты — вы теперь друзья», a person who does not
+   * exist joined the friends list, and the real match stayed anonymous and live.
+   * That is the mirror image of the leak the anon phase exists to prevent —
+   * here the user is told the peer has seen them when the peer has not, and
+   * behaves accordingly. An unreachable backend still falls back, which is the
+   * no-backend showcase.
+   */
   async reveal(topic: string): Promise<void> {
     try {
       await this.post("/roulette/reveal", { topic });
-    } catch {
+    } catch (err) {
+      if (err instanceof CompanionHttpError) throw err;
       // Mock: simulate the peer accepting shortly after.
       this.mock = true;
       this.mockRevealed(topic);
     }
   }
 
-  /** Accept / decline a peer's reveal request. */
+  /**
+   * Accept / decline a peer's reveal request. Rethrows a rejection for the same
+   * reason as {@link reveal}: on accept, a fabricated `revealed` tells the user
+   * their profiles have been exchanged when the server recorded no consent at
+   * all. A decline that fails matters too — the peer is left waiting on an
+   * answer that was never delivered — so it surfaces rather than passing for
+   * done.
+   */
   async revealRespond(topic: string, accept: boolean): Promise<void> {
     try {
       await this.post("/roulette/reveal/respond", { topic, accept });
-    } catch {
+    } catch (err) {
+      if (err instanceof CompanionHttpError) throw err;
       if (accept) {
         this.mock = true;
         this.mockRevealed(topic);
@@ -474,8 +566,13 @@ export class CompanionClient {
         `/friends/search?q=${query}`,
       );
       return Array.isArray(res) ? res : res?.results ?? [];
-    } catch {
-      // Backend down → a small mock directory so search is demoable offline.
+    } catch (err) {
+      // A refusal must not answer with invented people. `/friends/search` is
+      // rate-limited, so a 429 is reachable by simply typing quickly — and the
+      // mock directory would then fill the results with strangers who do not
+      // exist, offering to befriend them. Backend down is still the offline
+      // showcase.
+      if (err instanceof CompanionHttpError) throw err;
       this.mock = true;
       return mockDirectory(q);
     }
@@ -524,15 +621,25 @@ export class CompanionClient {
 
   /**
    * File a moderation report against a peer. Contract: `POST /reports`
-   * `{ reportedHashId, category, topic?, details? }` → `{ id }`, authed with the
-   * existing Bearer session token. On network/backend failure we flip to mock
-   * mode and resolve with a synthetic id, so the report UI can still show its
-   * success state offline (the report is dropped, matching the other mocks).
+   * `{ reportedHashId?, category, topic?, details? }` → `{ id }`, authed with
+   * the existing Bearer session token.
+   *
+   * **Rethrows when the backend rejects the report.** It used to swallow every
+   * failure and resolve with a synthetic id, so the sheet said «жалоба
+   * отправлена» whether or not one had been filed — which is worse than a lost
+   * report, because the user is told to stop worrying and never re-files, and
+   * moderation never learns the conversation existed.
+   *
+   * An unreachable backend is a different thing and still falls back: that is
+   * the no-backend showcase, where every other call mocks too and a red error
+   * would be noise. A {@link CompanionHttpError} means companion answered and
+   * said no — that always surfaces.
    */
   async report(input: ReportInput): Promise<ReportResult> {
     try {
       return (await this.post("/reports", input)) as ReportResult;
-    } catch {
+    } catch (err) {
+      if (err instanceof CompanionHttpError) throw err;
       this.mock = true;
       return { id: `mock:report:${Date.now()}` };
     }
@@ -807,6 +914,7 @@ export class CompanionClient {
   disconnect(): void {
     this.clearMockTimers();
     this.mockPeer = null;
+    this.mockPeerAlias = null;
     this.clearReconnectTimer();
     this.reconnectAttempt = 0;
     this.socket?.close();
@@ -834,18 +942,24 @@ export class CompanionClient {
     this.mockTimers.clear();
   }
 
-  /** Simulate a match ~1.6s after enqueue, then a peer reveal request ~7s in. */
+  /**
+   * Simulate a match ~1.6s after enqueue, then a peer reveal request ~7s in.
+   * The mock peer has two handles, the same way a real one does: an alias for
+   * the anon phase and a #ID that only appears at reveal (see mockRevealed).
+   */
   private mockMatch(prefs: RoulettePrefs): void {
     const peer = mockHandle();
     this.mockPeer = peer;
+    const alias = mockAlias();
+    this.mockPeerAlias = alias;
     const topic = `mock:anon:${peer}`;
     const peerAgeRange = prefs.peerAgeRanges[0];
     this.after(1600, () => {
-      this.emit({ type: "matched", topic, peerHashId: peer, peerAgeRange });
+      this.emit({ type: "matched", topic, peerAlias: alias, peerAgeRange });
       // Later the "peer" offers to reveal — demoes the incoming prompt path.
       this.after(7000, () => {
         if (this.mockPeer === peer) {
-          this.emit({ type: "reveal_request", topic, fromHashId: peer });
+          this.emit({ type: "reveal_request", topic, fromAlias: alias });
         }
       });
     });

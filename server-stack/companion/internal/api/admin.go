@@ -5,11 +5,13 @@ package api
 // + f_<field> filters, and the reports/users/bans/overview/online handlers.
 //
 // Trust model (see spec §0): these routes are called server-to-server by the
-// admin service, gated by the X-Companion-Admin-Secret shared secret. The admin
-// service has already enforced operator auth; it forwards the acting operator as
-// X-Admin-Id (attribution, written to moderator_actions) and X-Admin-Role
-// (super_admin|moderator). Companion additionally hard-gates the destructive
-// actions — permanent ban and any unban/lift require super_admin.
+// admin service, gated by the X-Companion-Admin-Secret shared secret. That
+// secret is the outer boundary and is unchanged. Inside it, companion needs to
+// know WHICH operator is acting — for the super_admin gate on destructive
+// actions, and for the authorship it writes to moderator_actions — and that
+// identity comes from one of two sources; see adminIdentity for which, and read
+// the WARNING on adminRole before treating either the role or the recorded
+// author as evidence.
 
 import (
 	"context"
@@ -23,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	"anoon/companion/internal/push"
 	"anoon/companion/internal/store"
 )
@@ -32,8 +36,17 @@ import (
 const onlineWindow = 90 * time.Second
 
 // roleSuperAdmin is the operator role permitted to run destructive moderation
-// (permanent ban, unban, lift). roleModerator may do everything else.
-const roleSuperAdmin = "super_admin"
+// (permanent ban, unban, lift). roleModerator may do everything else, and is
+// what any unrecognised role collapses to (see normalizeRole).
+const (
+	roleSuperAdmin = "super_admin"
+	roleModerator  = "moderator"
+)
+
+// adminTokenHeader carries a per-operator token (see adminIdentity). It is
+// separate from X-Companion-Admin-Secret: the secret says "this call really is
+// the admin service", the token says "and this is the human behind it".
+const adminTokenHeader = "X-Admin-Token"
 
 // adminCtxKey namespaces the values the middleware stashes in the request context.
 type adminCtxKey int
@@ -45,8 +58,8 @@ const (
 
 // adminOnly wraps an admin handler with the shared-secret gate. When no secret
 // is configured the whole admin surface is disabled (503). A wrong/absent secret
-// is 401. On success the acting operator id/role are placed in the context for
-// attribution + role gating.
+// is 401. On success the acting operator id/role are resolved (adminIdentity)
+// and placed in the context for attribution + role gating.
 func (s *Server) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.AdminSecret == "" {
@@ -58,25 +71,110 @@ func (s *Server) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid admin secret")
 			return
 		}
-		ctx := context.WithValue(r.Context(), adminIDKey, r.Header.Get("X-Admin-Id"))
-		ctx = context.WithValue(ctx, adminRoleKey, r.Header.Get("X-Admin-Role"))
+		id, role, err := adminIdentity(r, s.AdminTokenSecret)
+		if err != nil {
+			// The secret matched, so this is our own admin service calling with a
+			// bad/expired operator token — worth a line, it is a real misconfiguration.
+			log.Printf("admin: rejected %s %s: %v", r.Method, r.URL.Path, err)
+			writeError(w, http.StatusUnauthorized, "invalid_admin_token", "valid "+adminTokenHeader+" required")
+			return
+		}
+		ctx := context.WithValue(r.Context(), adminIDKey, id)
+		ctx = context.WithValue(ctx, adminRoleKey, role)
 		next(w, r.WithContext(ctx))
 	}
 }
 
-// adminID / adminRole read the operator attribution the middleware stored.
+// adminIdentity resolves the operator acting behind an already-authenticated
+// admin request. There are two modes, chosen by whether secret
+// (Server.AdminTokenSecret, from config.Config.AdminTokenSecret) is configured;
+// main.go logs which posture is live at startup:
+//
+// ATTESTED (COMPANION_ADMIN_TOKEN_SECRET set) — the identity comes from the
+// X-Admin-Token header: the per-operator HS256 JWT the admin service already
+// mints for its own session cookie (admin/src/lib/admin-session.ts, 8h TTL).
+// companion verifies the signature and expiry itself, so `sub` (operator id)
+// and `role` are attested rather than asserted: an operator cannot promote
+// themselves to super_admin, and the authorship written to moderator_actions is
+// real evidence. X-Admin-Id / X-Admin-Role are ignored entirely here, and a
+// missing or bad token fails the request rather than falling back.
+//
+// LEGACY (secret unset — the shipped default) — the identity is whatever the
+// X-Admin-Id / X-Admin-Role headers say. This is how the admin UI talks today,
+// so the default keeps it working; it is NOT a privilege boundary. See the
+// WARNING on adminRole.
+func adminIdentity(r *http.Request, secret []byte) (id, role string, err error) {
+	if len(secret) == 0 {
+		return r.Header.Get("X-Admin-Id"), normalizeRole(r.Header.Get("X-Admin-Role")), nil
+	}
+	id, role, err = verifyAdminToken(r.Header.Get(adminTokenHeader), secret)
+	if err != nil {
+		return "", "", err
+	}
+	return id, normalizeRole(role), nil
+}
+
+// verifyAdminToken checks a per-operator token and returns its subject (the
+// operator id) and claimed role. HS256 only — WithValidMethods pins the
+// algorithm, which is what closes the "alg: none" / algorithm-confusion family
+// — and an expiry is mandatory so a leaked token cannot be replayed forever.
+func verifyAdminToken(token string, secret []byte) (id, role string, err error) {
+	if strings.TrimSpace(token) == "" {
+		return "", "", errors.New("admin token missing")
+	}
+	claims := jwt.MapClaims{}
+	if _, err := jwt.ParseWithClaims(token, claims, func(*jwt.Token) (any, error) { return secret, nil },
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithExpirationRequired(),
+	); err != nil {
+		return "", "", err
+	}
+	sub, err := claims.GetSubject()
+	if err != nil || sub == "" {
+		return "", "", errors.New("admin token carries no subject")
+	}
+	claimed, _ := claims["role"].(string)
+	return sub, claimed, nil
+}
+
+// normalizeRole maps an operator role onto the two roles companion knows,
+// defaulting to the least-privileged one so an absent, unknown or
+// creatively-spelled value can never widen access.
+func normalizeRole(role string) string {
+	if strings.TrimSpace(role) == roleSuperAdmin {
+		return roleSuperAdmin
+	}
+	return roleModerator
+}
+
+// adminID reads the operator attribution the middleware stored — the value
+// written to moderator_actions. In ATTESTED mode it is the verified token
+// subject; in LEGACY mode it is a plain header and therefore advisory only (see
+// the WARNING on adminRole).
 func adminID(ctx context.Context) string {
 	v, _ := ctx.Value(adminIDKey).(string)
 	return v
 }
 
+// adminRole reads the operator role the middleware stored.
+//
+// WARNING — in LEGACY mode (see adminIdentity) this is NOT a security boundary.
+// The role arrives as a plain X-Admin-Role header, so anyone holding the shared
+// admin secret can set it to super_admin and walk through requireSuperAdmin.
+// The super_admin/moderator split is then a guardrail against operator mistakes
+// and a UI affordance — the only real boundary is COMPANION_ADMIN_SECRET, and
+// everyone past it is effectively one privilege level. The same caveat applies
+// to adminID: the authorship recorded in the moderation log is asserted by the
+// caller, so that log cannot be leaned on in a dispute. Set
+// COMPANION_ADMIN_TOKEN_SECRET to make both of them attested.
 func adminRole(ctx context.Context) string {
 	v, _ := ctx.Value(adminRoleKey).(string)
 	return v
 }
 
 // requireSuperAdmin writes a 403 and returns false unless the operator is a
-// super_admin. Used to gate permanent ban / unban / lift.
+// super_admin. Used to gate permanent ban / unban / lift. Read adminRole's
+// WARNING for how much this gate is worth in each mode.
 func requireSuperAdmin(w http.ResponseWriter, ctx context.Context) bool {
 	if adminRole(ctx) != roleSuperAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "action requires super_admin role")

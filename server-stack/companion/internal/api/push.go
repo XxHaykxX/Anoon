@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"anoon/companion/internal/push"
+	"anoon/companion/internal/store"
 )
 
 // handlePushVAPID is public (no auth): it returns the VAPID public key so the
@@ -40,6 +42,14 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.SavePushSubscription(r.Context(), u.ID, req.Endpoint, req.Keys.P256dh, req.Keys.Auth); err != nil {
+		if errors.Is(err, store.ErrSubscriptionOwned) {
+			// Deliberately a visible failure, not a quiet 200: the browser must
+			// not be left believing push is on. Re-subscribing mints a fresh
+			// endpoint, which is the client's way out of this.
+			writeError(w, http.StatusConflict, "endpoint_taken",
+				"this push endpoint is registered to another account; unsubscribe and subscribe again")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not save subscription")
 		return
 	}
@@ -51,12 +61,15 @@ type pushUnsubscribeRequest struct {
 	Endpoint string `json:"endpoint"`
 }
 
-// handlePushUnsubscribe deletes a subscription by endpoint. Not scoped to the
-// caller's own subscriptions by user id: the endpoint itself is the unguessable
-// per-device secret (matches how the browser only ever knows its own), and this
-// keeps unsubscribe working even if the session has expired client-side.
+// handlePushUnsubscribe deletes one of the caller's own subscriptions. Scoped
+// by user id and not by endpoint alone: an endpoint is not a secret we control
+// — it is handed to the push service, quoted in logs and errors, and shared
+// with anything that handles the subscription — so treating possession of one
+// as authority to delete it lets whoever learns it silence that person's
+// notifications.
 func (s *Server) handlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireUser(w, r); !ok {
+	u, ok := s.requireUser(w, r)
+	if !ok {
 		return
 	}
 	var req pushUnsubscribeRequest
@@ -68,7 +81,7 @@ func (s *Server) handlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_endpoint", "endpoint is required")
 		return
 	}
-	if err := s.Store.DeletePushSubscription(r.Context(), req.Endpoint); err != nil {
+	if err := s.Store.DeletePushSubscriptionOf(r.Context(), u.ID, req.Endpoint); err != nil {
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not delete subscription")
 		return
 	}

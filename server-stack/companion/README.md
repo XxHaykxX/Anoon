@@ -65,7 +65,7 @@ companion/
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `ENV` | `dev` | `dev` or `prod`. Gates `COMPANION_DEV_AUTH` (refuses to start if both are set) and `CORS_ALLOWED_ORIGINS` (required, no `*`, when `prod`) |
+| `ENV` | `prod` | `dev` or `prod`. Gates `COMPANION_DEV_AUTH` (refuses to start if both are set) and `CORS_ALLOWED_ORIGINS` (required, no `*`, when `prod`). Defaults to `prod` so a missing value fails closed — **local runs must set `ENV=dev` explicitly** |
 | `COMPANION_ADDR` | `:8080` | HTTP + WS bind address |
 | `COMPANION_DB_DSN` | *(required)* | Postgres DSN for the `anoon` database |
 | `TINODE_GRPC_ADDR` | `tinode:16060` | Tinode Node gRPC endpoint (in-network) |
@@ -73,6 +73,9 @@ companion/
 | `COMPANION_ROOT_SECRET` | | ROOT bot password |
 | `COMPANION_GOOGLE_CLIENT_ID` | *(empty)* | Google OAuth client id (`aud`); empty disables Google sign-in |
 | `COMPANION_DEV_AUTH` | `0` | Enables the `X-Anoon-Uid`/`X-Anoon-Hash-Id` auth bypass. DEV ONLY — `Load` refuses to start if this is on while `ENV=prod` |
+| `COMPANION_ADMIN_SECRET` | *(empty)* | Shared secret for the `/admin/*` API (`X-Companion-Admin-Secret`). Empty disables the admin surface (`503`) |
+| `COMPANION_ADMIN_TOKEN_SECRET` | *(empty)* | **Optional.** HMAC key for per-operator admin tokens (`X-Admin-Token`); must equal the admin UI's `ADMIN_SESSION_SECRET`. Empty = **legacy mode, the shipped default** — operator id/role come from the `X-Admin-Id`/`X-Admin-Role` headers and are asserted by the caller, so `super_admin` is a UI guardrail rather than a privilege boundary. Setting it makes both attested (see `adminIdentity` in `internal/api/admin.go`). Whitespace is trimmed; when set it must be **≥16 characters** or `Load` refuses to start, matching the bound the admin service enforces |
+| `COMPANION_REST_SECRET` | *(empty)* | Shared secret Tinode must present on `POST /auth/rest`, the server-to-server hook its `rest` auth scheme calls for Google sign-in. Empty disables the hook (`503`). Accepted as the `X-Companion-Rest-Secret` header or as the basic-auth password — Tinode cannot set headers, so it carries the secret as userinfo in its configured `server_url`. Use a hex value (it lives inside a URL) |
 | `CORS_ALLOWED_ORIGINS` | *(empty)* | Comma-separated origin allowlist (exact origin or `*.suffix` wildcard). Empty defaults to localhost + `*.trycloudflare.com` outside prod; required (no `*`) when `ENV=prod` |
 | `RATE_LIMIT_RPS` | `0` | Token-bucket refill rate (req/s, per user + per IP) on the public endpoints (auth, roulette enqueue, reports, friend search). `0`/unset disables rate limiting (lenient default); `429` + `Retry-After` when exceeded |
 | `RATE_LIMIT_BURST` | `max(2*RPS,10)` | Token-bucket depth (largest instantaneous burst). Only meaningful when `RATE_LIMIT_RPS>0` |
@@ -84,6 +87,9 @@ companion/
 cd server-stack/companion
 go mod tidy          # generates go.sum, fills indirect deps
 go build ./...
+# ENV is REQUIRED locally: it defaults to "prod", which refuses to start
+# without an explicit CORS_ALLOWED_ORIGINS (and with the dev auth bypass on).
+ENV=dev \
 COMPANION_DB_DSN="postgres://postgres:pass@localhost:5432/anoon?sslmode=disable" \
   ./companion
 ```

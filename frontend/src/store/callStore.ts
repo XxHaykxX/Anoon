@@ -22,7 +22,13 @@ export type CallStatus = "idle" | "outgoing" | "incoming" | "active" | "ended";
 
 export interface CallState {
   status: CallStatus;
-  /** hashId of the other party, e.g. "#00012". */
+  /**
+   * Signaling handle of the other party — whatever companion will resolve back
+   * to them. A real #ID ("#00012") in a friend or revealed chat, a per-match
+   * anon alias ("~K7X2QM") inside a roulette chat, which is all the client has
+   * before a mutual reveal. Opaque here: it is echoed into `to` on outbound
+   * frames and rendered as-is; nothing may treat it as an account id.
+   */
   peerHashId: string;
   peerName: string;
   callId: string;
@@ -43,23 +49,21 @@ export interface CallStore {
   endCall: () => void;
 }
 
-/**
- * Monotonic counter mixed into every generated callId, alongside the peer and
- * a timestamp — belt-and-braces so two calls placed to the same peer within
- * the same millisecond (fast retry after a declined call, etc.) never collide.
- */
-let callSeq = 0;
-
 export const useCallStore = create<CallStore>((set) => ({
   call: null,
   startCall: (peerHashId, peerName, media) => {
-    callSeq += 1;
     set({
       call: {
         status: "outgoing",
         peerHashId,
         peerName,
-        callId: `${peerHashId}:${Date.now()}:${callSeq}`,
+        // Random, not derived. The previous `${peerHashId}:${Date.now()}:${seq}`
+        // was guessable by anyone who had ever been matched with this user: the
+        // #ID is sequential, the millisecond is a narrow window, and the counter
+        // starts at 1 — so a former peer could spray `call:hangup` frames until
+        // one matched and drop a call in progress. Collision-safety was the old
+        // counter's only job, and a UUID covers that too.
+        callId: crypto.randomUUID(),
         media,
       },
     });

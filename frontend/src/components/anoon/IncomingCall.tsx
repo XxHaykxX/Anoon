@@ -60,7 +60,10 @@ export default function IncomingCall({ peerName, peerId, media, onAccept, onDecl
 
         <div className="flex flex-col items-center gap-1.5 text-center">
           <p className="text-xl font-semibold">{peerName}</p>
-          <p className="text-sm tabular-nums text-foreground/50">{peerId}</p>
+          {/* No tabular-nums: peerId is a real «#00012» from a friend but a
+              per-match «~K7X2QM» alias from an anonymous roulette peer, and
+              fixed-width figures do nothing for a single centred handle. */}
+          <p className="text-sm text-foreground/50">{peerId}</p>
           <p className="mt-1 text-sm text-foreground/70">{kindLabel}</p>
         </div>
       </div>
