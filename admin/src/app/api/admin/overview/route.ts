@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { bans, profiles, reports } from "@/data/fixtures";
-import { companionEnabled, companionOnline, companionOverview } from "@/lib/companion-client";
+import { companionEnabled, companionOnline, companionOverview, statusFor } from "@/lib/companion-client";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
     try {
       return NextResponse.json(online ? await companionOnline(gender) : await companionOverview());
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
+      return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
     }
   }
 
@@ -103,6 +103,6 @@ export async function GET(req: Request) {
       bansActive: bansActive ?? 0,
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
   }
 }

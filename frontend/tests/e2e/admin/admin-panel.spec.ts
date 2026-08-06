@@ -168,6 +168,23 @@ test.describe("admin panel: session gate, role gate, live companion data", () =>
     await ctx.close();
   });
 
+  test("a refusal from companion keeps its own status code", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    await loginAs(ctx, "super_admin");
+
+    // A broadcast with no title is refused BY COMPANION (invalid_broadcast).
+    // The panel used to answer 502 for anything thrown on this path — which
+    // reads as "companion is down" and sends whoever is on call to go check
+    // whether the container is up. It is 400 now, because that is what
+    // companion said. Same wiring makes a secret mismatch answer 401 instead of
+    // 400/502 (verified live with a second instance started on a wrong secret;
+    // not automated here — it needs its own server).
+    const res = await ctx.request.post("/api/admin/broadcast", { data: { title: "", body: "" } });
+    expect(res.status(), "companion's own refusal status must survive").toBe(400);
+    expect(res.status()).not.toBe(502);
+    await ctx.close();
+  });
+
   test("broadcast is closed to a moderator and open to a super_admin", async ({ browser }) => {
     const asRole = async (role: "moderator" | "super_admin"): Promise<[BrowserContext, Page]> => {
       const ctx = await browser.newContext();

@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- граница нетипизированного Supabase */
 import { NextResponse } from "next/server";
 
+import { statusFor } from "@/lib/companion-client";
+
 import { profiles } from "@/data/fixtures";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -137,6 +139,6 @@ export async function GET(req: Request) {
     });
     return NextResponse.json({ messages });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
   }
 }

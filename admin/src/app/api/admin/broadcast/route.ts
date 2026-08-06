@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { profiles } from "@/data/fixtures";
 import { ADMIN_COOKIE, verifySession } from "@/lib/admin-session";
-import { companionBroadcast, companionEnabled } from "@/lib/companion-client";
+import { companionBroadcast, companionEnabled, statusFor } from "@/lib/companion-client";
 
 export const runtime = "nodejs";
 
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       const { sent, failed } = await companionBroadcast({ title, body: text, url, gender });
       return NextResponse.json({ sent, total: sent + failed });
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : "companion недоступен" }, { status: 502 });
+      return NextResponse.json({ error: err instanceof Error ? err.message : "companion недоступен" }, { status: statusFor(err, 502) });
     }
   }
 

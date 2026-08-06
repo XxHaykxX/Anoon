@@ -80,6 +80,37 @@ async function authHeaders(explicit?: { adminId: string; role: string }): Promis
   };
 }
 
+/**
+ * Отказ, который companion сформулировал сам: несёт его HTTP-статус, чтобы
+ * роут отдал оператору тот же смысл, а не свой дефолтный.
+ *
+ * Зачем понадобилось: раньше companionFetch бросал безликий `Error`, роуты
+ * ловили его и отвечали своим статусом — списки/overview/детали `400`, а
+ * media-список и broadcast `502`. Оператор при несовпадении секретов видел
+ * «502» и шёл проверять, поднят ли контейнер, тогда как companion был жив и
+ * просто отказал в авторизации. Тело при этом всегда говорило правду
+ * (`{"error":"invalid_admin_token"}`) — теперь и статус тоже.
+ *
+ * Отдельный, худший случай того же: неразобранный ответ (companion вернул не
+ * JSON — например, plain text `Method Not Allowed` от mux) превращался в
+ * `400 {"error":"Unexpected token 'M'…"}`, то есть оператору показывали кусок
+ * JS-исключения. Теперь такой ответ доносит и статус, и первые строки тела.
+ */
+export class CompanionHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CompanionHttpError";
+  }
+}
+
+/** Статус для ответа оператору: свой у отказа companion, иначе — переданный дефолт. */
+export function statusFor(err: unknown, fallback: number): number {
+  return err instanceof CompanionHttpError ? err.status : fallback;
+}
+
 async function companionFetch<T>(
   path: string,
   init?: RequestInit,
@@ -95,11 +126,26 @@ async function companionFetch<T>(
       cache: "no-store",
     });
     const text = await res.text();
-    const body = text ? (JSON.parse(text) as any) : null;
-    if (!res.ok) throw new Error(body?.error ?? `companion ${res.status}`);
+    let body: any = null;
+    try {
+      body = text ? (JSON.parse(text) as any) : null;
+    } catch {
+      // Не-JSON от companion (mux-овский `Method Not Allowed`, прокси, gateway).
+      // Раньше это исключение улетало наружу как есть, и оператор получал
+      // текст парсера вместо ответа сервера.
+      throw new CompanionHttpError(
+        res.ok ? 502 : res.status,
+        `companion ${res.status}: ${text.slice(0, 200).trim()}`,
+      );
+    }
+    if (!res.ok) throw new CompanionHttpError(res.status, body?.error ?? `companion ${res.status}`);
     return body as T;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") throw new Error("companion недоступен (timeout)");
+    // Таймаут — единственный случай, когда companion действительно недоступен,
+    // и единственный, которому здесь честно принадлежит 504.
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new CompanionHttpError(504, "companion недоступен (timeout)");
+    }
     throw err;
   } finally {
     clearTimeout(timer);

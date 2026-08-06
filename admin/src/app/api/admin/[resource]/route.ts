@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { statusFor } from "@/lib/companion-client";
+
 import { listResource } from "@/lib/admin-repo";
 import { ADMIN_COOKIE, verifySession } from "@/lib/admin-session";
 
@@ -36,6 +38,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ resource
     });
     return NextResponse.json(result);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
   }
 }

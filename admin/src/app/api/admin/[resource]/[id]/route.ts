@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { statusFor } from "@/lib/companion-client";
+
 import { getOne, PermissionError, updateResource } from "@/lib/admin-repo";
 import { ADMIN_COOKIE, verifySession } from "@/lib/admin-session";
 
@@ -19,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ resourc
     const data = await getOne(resource, id);
     return NextResponse.json({ data });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
   }
 }
 
@@ -35,6 +37,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     return NextResponse.json({ data });
   } catch (err) {
     if (err instanceof PermissionError) return NextResponse.json({ error: err.message }, { status: 403 });
-    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
   }
 }

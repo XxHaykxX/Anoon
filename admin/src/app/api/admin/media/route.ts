@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { media as mediaFixtures, profiles } from "@/data/fixtures";
-import { companionEnabled, companionMediaFiles, companionMediaFolders } from "@/lib/companion-client";
+import { companionEnabled, companionMediaFiles, companionMediaFolders, statusFor } from "@/lib/companion-client";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -126,7 +126,7 @@ export async function GET(req: Request) {
       const { data, total } = await companionMediaFiles({ ownerId: profileId, kind, from: fromISO, to: toISO, page, pageSize });
       return NextResponse.json({ files: data, total, page, pageSize });
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : "companion недоступен" }, { status: 502 });
+      return NextResponse.json({ error: err instanceof Error ? err.message : "companion недоступен" }, { status: statusFor(err, 502) });
     }
   }
 
@@ -245,6 +245,6 @@ export async function GET(req: Request) {
     if (refineStyle) return NextResponse.json({ data: files, total: count ?? files.length });
     return NextResponse.json({ files, total: count ?? files.length, page, pageSize });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
   }
 }
