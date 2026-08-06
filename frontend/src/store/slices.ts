@@ -1088,6 +1088,10 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
             peerReadSeq,
           ),
         }));
+        // ROOT can't watch a p2p topic, so companion never sees this message —
+        // tell it, so an offline peer still gets a push (#31). After the publish
+        // ack on purpose: a send that failed must not notify anyone.
+        getCompanionClient().notifyMessageSent(friend.hashId, friend.topic, body);
       } catch {
         // Leave it in the "sending" state so the user sees it didn't confirm.
       }
@@ -1130,6 +1134,11 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
             ephemeral: viewOnce || undefined,
           });
         }
+        // Same offline push as a text message (#31) — an attachment is still a
+        // message. No caption is sent: the body would either leak a view-once
+        // photo's content into a lock screen or say nothing useful, so companion
+        // renders its own generic wording.
+        getCompanionClient().notifyMessageSent(friend.hashId, friend.topic, "");
       } catch {
         // Leave it in the "sending" state so the user sees it didn't confirm.
       }

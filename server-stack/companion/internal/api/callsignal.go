@@ -76,6 +76,9 @@ func (s *Server) handleWSFrame(ctx context.Context, u store.User, raw []byte) {
 		s.relayPeerLeave(ctx, u, frame)
 	case typ == activityType:
 		s.relayActivity(ctx, u, frame)
+	case typ == msgSentType:
+		// Not a relay: it pushes to an OFFLINE recipient (see message_push.go).
+		s.onMessageSent(ctx, u, frame)
 	}
 	// Any other frame type is ignored — the socket is otherwise receive-only.
 }

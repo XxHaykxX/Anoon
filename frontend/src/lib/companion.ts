@@ -940,6 +940,25 @@ export class CompanionClient {
     if (!this.socket) this.connectEvents();
   }
 
+  /**
+   * Tell companion we just sent a message in a *p2p* friend chat (#31), so it
+   * can push to the peer if they're offline.
+   *
+   * Only p2p chats need this. Anon and revealed roulette pairs live on a group
+   * topic the ROOT bot watches, so companion already sees those messages itself
+   * and pushes without being told — calling this for one of those would be the
+   * double-notification bug, and companion drops such frames for that reason.
+   *
+   * Fire-and-forget: the peer is addressed by their `#ID` (p2p topics aren't
+   * tracked as matches server-side, same as the `activity` ping), companion
+   * verifies the friendship before pushing anything, and a peer who is online
+   * gets the message natively over Tinode instead.
+   */
+  notifyMessageSent(to: string | null, topic: string, preview: string): void {
+    if (!to || !topic || this.isMock()) return;
+    this.sendRaw({ type: "msg:sent", to, topic, preview });
+  }
+
   /** Drop queued frames past the TTL, then any excess over the cap (oldest first). */
   private pruneOutbox(now: number): void {
     while (this.outbox.length && now - this.outbox[0]!.at > OUTBOX_TTL_MS) this.outbox.shift();

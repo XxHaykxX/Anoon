@@ -15,12 +15,18 @@ package api
 // using that same grpXXX topic, so both anonymous and revealed-friend chats
 // flow through here. Friend chats opened as a Tinode *p2p* topic (friend-by-#ID
 // search / invite → CreateP2P) are NOT observed: ROOT is not a member of a p2p
-// and cannot attach to it by name. Pushing for those would require either
-// subscribing ROOT to each p2p (resolving its internal p2pXXX name via a ROOT
-// {get sub} on one member) or having the frontend notify companion on send —
-// both are out of scope here and left as documented follow-ups. Push toggling is
-// implicit: a user with no push subscription simply receives nothing (SendPush
-// is a no-op), which is exactly what unsubscribing in Settings produces.
+// and cannot attach to it by name.
+//
+// p2p is therefore covered from the other end (#31): the SENDER's client emits a
+// `msg:sent` frame up its own companion socket after a successful p2p publish,
+// and onMessageSent below turns that into the push. Of the three ways to close
+// this gap, that is the one with no side effects: a Tinode plugin FireHose would
+// mean companion running a plugin server that tinode.conf has to point at, and
+// subscribing ROOT to the p2p on_behalf_of a member would make Tinode treat that
+// member as attached — corrupting their presence ("в сети" while they are away)
+// and very likely their delivery receipts. Push toggling is implicit: a user
+// with no push subscription simply receives nothing (SendPush is a no-op), which
+// is exactly what unsubscribing in Settings produces.
 
 import (
 	"context"
@@ -95,6 +101,71 @@ func (s *Server) onTinodeData(ev tinode.DataEvent) {
 		Title: "anoon",
 		Body:  messagePushBody(sender, m, ev.Content),
 		Tag:   "msg:" + ev.Topic, // per-topic tag: newer messages replace older
+	})
+}
+
+// msgSentType is the inbound frame a client emits right after it successfully
+// publishes a message into a *p2p* friend chat (#31). ROOT cannot observe those
+// topics (see the file header), so the sender tells us instead:
+//
+//	{ "type":"msg:sent", "to":"#00012", "topic":"usrXXX", "preview":"привет" }
+//
+// It is a push trigger only — it relays nothing to the peer's socket, because a
+// peer with a live socket gets the message natively over Tinode.
+const msgSentType = "msg:sent"
+
+// onMessageSent pushes to the recipient of a p2p friend-chat message whose
+// sender just told us about it. Three things keep this honest:
+//
+//   - Spoofing: the target is resolved by resolveRelayTarget, so a sender can
+//     only ever reach someone they have an accepted friendship or a live match
+//     with — the same rule the call/activity relays run under. `from` is stamped
+//     server-side from the caller's own row, never taken from the frame.
+//   - Double push: anon and revealed pairs are already covered by the ROOT grp
+//     path above, so anything that resolves to a live match is dropped here.
+//     Belt and braces — the client only emits this from the p2p send path — but
+//     the pair can legitimately be both friends and freshly re-matched, and two
+//     notifications for one message is exactly the bug that would produce.
+//   - Recipient is reading: skipped when they hold a live companion socket, the
+//     same proxy for "the app is open in front of them" that the grp path uses.
+//     Companion tracks no finer per-chat "currently viewing" signal, so this is
+//     as precise as it gets: a push is suppressed while they have the app open
+//     on ANY screen, never delivered twice, and never sent to someone reading.
+func (s *Server) onMessageSent(ctx context.Context, u store.User, frame map[string]any) {
+	to, _ := frame["to"].(string)
+	if to == "" {
+		return
+	}
+	// An alias only ever names a roulette peer, i.e. the grp path's territory.
+	if store.NormalizeAlias(to) != "" {
+		return
+	}
+	link, ok := s.resolveRelayTarget(ctx, u, to)
+	if !ok || link.peerID == 0 {
+		return
+	}
+	if _, err := s.Store.LiveMatchBetween(ctx, u.ID, link.peerID); err == nil {
+		return // live pair: onTinodeData already pushes for it
+	}
+	if s.Hub.Online(link.peerID) {
+		return
+	}
+
+	preview, _ := frame["preview"].(string)
+	body := "New message"
+	if p := truncatePreview(preview, messagePreviewMax); p != "" {
+		body = p
+	}
+	s.Push.SendPush(ctx, link.peerID, push.PushPayload{
+		Title: "anoon",
+		// Named by the caller's own #ID, not the frame: a p2p chat only exists
+		// between friends, who already know each other's real #ID, so there is
+		// no alias to preserve here (H2 covers anon pairs, handled above).
+		Body: store.FormatHashID(u.HashID) + ": " + body,
+		// Same per-topic tag shape as the grp path, addressed from the
+		// recipient's side (their view of this chat is named by OUR uid), so a
+		// burst of messages collapses into one notification instead of stacking.
+		Tag: "msg:" + u.TinodeUID,
 	})
 }
 
