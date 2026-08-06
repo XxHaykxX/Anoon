@@ -357,6 +357,27 @@ func (s *Store) LiveMatchBetween(ctx context.Context, a, b int64) (Match, error)
 // A user can only have one live match at a time (enqueue ends the previous one
 // — see EndActiveMatchesForUser), but ORDER BY id DESC makes the query
 // deterministic even if a stale row ever lingered.
+//
+// KNOWN LIMITATION, and the client MUST allow for it. Nothing ever ends a
+// revealed match: EndMatch and EndActiveMatchesForUser both filter
+// `status = 'active'`, and leaving a revealed chat writes nothing at all — the
+// pair simply keep using that grp topic as friends. So a revealed row stays
+// non-ended for good, and this lookup will keep returning it as the caller's
+// "current" match long after they walked away, until a newer match outranks it
+// by id.
+//
+// The server cannot tell "just revealed, still in the chat" (the narrow window
+// this heals) from "revealed months ago, moved on" — there is no revealed_at,
+// and no signal is written when someone leaves. Hence the payload says which it
+// is: a consumer must branch on reveal == "revealed" rather than treating a
+// non-nil match as "I am in an anonymous chat". Not doing so re-anonymises an
+// already-revealed peer and hijacks whatever the user is doing now — which is a
+// real bug that was caught in review, not a hypothetical.
+//
+// Fixing it properly means recording when a member leaves a revealed chat.
+// Ending the row instead is NOT the fix: Match.Anon() keys off status, so an
+// ended-but-revealed match would start naming two friends by their anon aliases
+// again in every relay.
 func (s *Store) CurrentMatchForUser(ctx context.Context, userID int64) (Match, error) {
 	var m Match
 	var revealBy, declinedBy sql.NullInt64

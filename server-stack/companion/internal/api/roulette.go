@@ -135,7 +135,14 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 type rouletteStatusResponse struct {
 	// Queued reports whether the caller is still waiting in the matcher.
 	Queued bool `json:"queued"`
-	// Match is the caller's live anon chat, or null when they are not in one.
+	// Match is the caller's current chat, or null when they are not in one.
+	//
+	// Non-null does NOT mean "an anonymous chat is open": a revealed pairing is
+	// also reported here (that is what makes the "revealed" reveal-state
+	// reachable at all), and because nothing ever ends a revealed match it can
+	// keep being reported long after both parties moved on — see
+	// store.CurrentMatchForUser's known limitation. Branch on Reveal, not on
+	// this field being present.
 	Match *matchedEvent `json:"match"`
 	// Reveal is where the reveal exchange stands from the CALLER's side —
 	// "none" | "we_requested" | "peer_requested" | "declined" | "revealed" —
