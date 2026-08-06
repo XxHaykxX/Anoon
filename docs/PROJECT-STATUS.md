@@ -84,7 +84,7 @@ Next.js 16 + React 19 + Tailwind v4 + TS. `npm run dev` → **localhost:3001**. 
 | Фронт: **реальная рулетка/анон-чат/раскрытие, профиль+#ID из companion** | ✅ готово, живой 2-user матч подтверждён |
 | Фронт: logout/report/block/notifications/settings подключены к companion | ✅ готово, tsc 0 |
 | Админка (`admin`) — companion-client + `ADMIN_BACKEND` switch | 🟡 reports/users/bans/overview/media/broadcast live (списки + карточки + мутации, покрыто `--project=admin`, 6 тестов); эндпоинта нет только у `chats` — намеренно, юр-вопрос Q7a. Вход в панель под автотестами НЕ ходит: учётка оператора в Supabase, проект из `admin/.env` не резолвится |
-| E2E-тесты (Playwright, mock-mode, 17 тестов) + phone-test инфра (Caddy+cloudflared) | ✅ готово (`frontend/tests/e2e`, `server-stack/PHONE-TEST.md`) |
+| E2E-тесты (Playwright) + phone-test инфра (Caddy+cloudflared) | ✅ три набора: mock **20** (`tests/e2e/*.spec.ts`, сборка в `.next-mock` — см. `SESSION-2026-08-06.md` §4.2), real 2-user **40 passed / 3 skipped** (`tests/e2e/real`, живой стенд), админка **7** (`tests/e2e/admin`, `--project=admin`). Команды — там же, §5 |
 | Реальные пуши (VAPID/FCM) | ⬜ не начато (Phase E) |
 | Прод-деплой — Hetzner CX32 ~€14/мес | 🟡 план готов (`DEPLOY-PLAN.md`), не выполнен |
 | Оплаты Армении + монетизация | 🟡 тех-спека готова (`PAYMENTS-PLAN.md`), код нет |
