@@ -1698,14 +1698,25 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
       if (get().queue.status !== "searching") return;
       const status = await fetchRouletteStatus();
       if (!status?.match) return;
-      // `match != null` no longer means "a new anonymous pairing". The endpoint
-      // stopped filtering to status='active', so a REVEALED pair now polls as a
-      // non-null match where it used to poll as null. Without this guard:
-      // reveal → leave the chat → start a fresh search, and this resync would
-      // pick up the OLD revealed match and reopen it as an anon chat —
-      // re-anonymising someone already revealed and hijacking the new search.
-      // applyMatched's own guards miss it: activeMatch is null after leaving and
-      // the queue reads "searching", not "matched".
+      // DO NOT REMOVE — branch on `reveal`, never on `match != null`.
+      //
+      // `match != null` does not mean "a new anonymous pairing". The endpoint
+      // matches on status <> 'ended', and NOTHING EVER ENDS A REVEALED MATCH:
+      // leaving a revealed chat writes no state at all, the pair simply keep
+      // using that topic as friends. So for anyone who has ever revealed, the
+      // status endpoint reports that old pairing as their "current" match
+      // permanently — until a newer match outranks it by id. This is the steady
+      // state, not a race.
+      //
+      // Without this line, starting a fresh search would resync that stale
+      // revealed pairing and reopen it as an anon chat: re-anonymising someone
+      // already revealed and hijacking the new search. applyMatched's own guards
+      // do not catch it — activeMatch is null after leaving, and the queue reads
+      // "searching", not "matched".
+      //
+      // Skipping costs nothing: while the only thing on offer is the stale
+      // revealed row there is no new match to heal to, and once a real match
+      // exists the endpoint returns that one instead and healing resumes.
       if (status.reveal === "revealed") return;
       // The WS event may have landed while the request was in flight —
       // applyMatched is idempotent, but re-check so we don't clobber a state
