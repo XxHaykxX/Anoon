@@ -1541,7 +1541,24 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
       // Real leave point (see AnoonAnonChat) — tell the peer before we detach so
       // their side ends with the "собеседник покинул" line (BUG-15). Idempotent
       // with endMatch's own signal via `leftSignaled`.
-      signalLeave(get().activeMatch?.topic);
+      const topic = get().activeMatch?.topic;
+      signalLeave(topic);
+      // Tell the SERVER we walked out too, which used to happen only through
+      // endMatch. That gap is why a revealed pairing stayed the caller's
+      // "current match" forever: leaving a revealed chat goes through here, and
+      // here wrote nothing — so GET /roulette/status kept answering with it and
+      // the client needed a guard to ignore its own backend. POST /roulette/end
+      // now records the leave whatever the chat's status (companion #24), while
+      // still refusing to end a revealed pairing's row. Fire-and-forget: this is
+      // a synchronous store action and a failed leave must not block the UI from
+      // closing — the next enqueue records it anyway (EndActiveMatchesForUser).
+      if (topic && !getCompanionClient().isMock()) {
+        void getCompanionClient()
+          .end(topic)
+          .catch(() => {
+            /* best-effort; see above */
+          });
+      }
       if (anonUnsub) {
         anonUnsub();
         anonUnsub = null;
@@ -1700,23 +1717,24 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
       if (!status?.match) return;
       // DO NOT REMOVE — branch on `reveal`, never on `match != null`.
       //
-      // `match != null` does not mean "a new anonymous pairing". The endpoint
-      // matches on status <> 'ended', and NOTHING EVER ENDS A REVEALED MATCH:
-      // leaving a revealed chat writes no state at all, the pair simply keep
-      // using that topic as friends. So for anyone who has ever revealed, the
-      // status endpoint reports that old pairing as their "current" match
-      // permanently — until a newer match outranks it by id. This is the steady
-      // state, not a race.
+      // `match != null` does not mean "a new anonymous pairing". A revealed
+      // pairing's row is never ended (the pair keep using that topic as
+      // friends, and Match.Anon() keys off status), so it stays a candidate for
+      // "current match" — the server now drops it once the caller records a
+      // leave (companion migration 0014: closeAnon and re-enqueueing both write
+      // one), but the row is still what the endpoint answers with in the window
+      // before that, and any client whose leave never reached the backend sees
+      // it for longer.
       //
-      // Without this line, starting a fresh search would resync that stale
-      // revealed pairing and reopen it as an anon chat: re-anonymising someone
-      // already revealed and hijacking the new search. applyMatched's own guards
-      // do not catch it — activeMatch is null after leaving, and the queue reads
+      // Without this line, starting a fresh search could resync that revealed
+      // pairing and reopen it as an anon chat: re-anonymising someone already
+      // revealed and hijacking the new search. applyMatched's own guards do not
+      // catch it — activeMatch is null after leaving, and the queue reads
       // "searching", not "matched".
       //
-      // Skipping costs nothing: while the only thing on offer is the stale
-      // revealed row there is no new match to heal to, and once a real match
-      // exists the endpoint returns that one instead and healing resumes.
+      // Skipping costs nothing: while the only thing on offer is the revealed
+      // row there is no new match to heal to, and once a real match exists the
+      // endpoint returns that one instead and healing resumes.
       if (status.reveal === "revealed") return;
       // The WS event may have landed while the request was in flight —
       // applyMatched is idempotent, but re-check so we don't clobber a state

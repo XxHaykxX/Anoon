@@ -295,7 +295,17 @@ type topicRequest struct {
 	Accept bool   `json:"accept,omitempty"`
 }
 
-// handleEnd ends an anonymous chat (either side may call it).
+// handleEnd ends an anonymous chat (either side may call it), and records the
+// caller's departure whatever the chat's status.
+//
+// The two writes answer different questions and both are needed. EndMatch
+// closes the PAIRING, and only an active one — a revealed match must keep its
+// status because Match.Anon() reads it, so ending the row would name two
+// friends by their anon aliases in every later relay. LeaveMatch records that
+// THIS member is no longer in the room, which is what GET /roulette/status
+// needs in order to stop reporting a revealed pairing as the caller's current
+// match forever (#24, migration 0014). Calling this from a revealed chat is
+// therefore not a no-op any more, and the frontend does exactly that on close.
 func (s *Server) handleEnd(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
@@ -312,6 +322,10 @@ func (s *Server) handleEnd(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Store.EndMatch(r.Context(), req.Topic); err != nil {
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not end match")
+		return
+	}
+	if err := s.Store.LeaveMatch(r.Context(), req.Topic, u.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "store_failed", "could not record leave")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

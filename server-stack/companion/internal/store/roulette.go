@@ -353,31 +353,33 @@ func (s *Store) LiveMatchBetween(ctx context.Context, a, b int64) (Match, error)
 // own, since identity arrives only in that frame.
 //
 // Ended matches stay excluded: that chat is over and there is nothing to resync.
+// So are matches the CALLER has walked out of — see the left_a/left_b filter
+// below and {@link LeaveMatch}.
 //
 // A user can only have one live match at a time (enqueue ends the previous one
 // — see EndActiveMatchesForUser), but ORDER BY id DESC makes the query
 // deterministic even if a stale row ever lingered.
 //
-// KNOWN LIMITATION, and the client MUST allow for it. Nothing ever ends a
-// revealed match: EndMatch and EndActiveMatchesForUser both filter
-// `status = 'active'`, and leaving a revealed chat writes nothing at all — the
-// pair simply keep using that grp topic as friends. So a revealed row stays
-// non-ended for good, and this lookup will keep returning it as the caller's
-// "current" match long after they walked away, until a newer match outranks it
-// by id.
+// FORMER KNOWN LIMITATION (fixed by migration 0014, kept here because the
+// shape of the fix is not obvious). Nothing ever ends a revealed match:
+// EndMatch and EndActiveMatchesForUser both filter `status = 'active'`, and a
+// revealed pair keep using that grp topic as friends, so the row must stay
+// non-ended. That used to mean this lookup reported a months-old revealed
+// pairing as the caller's "current" match forever, and the frontend had to
+// carry a guard (branch on `reveal`, never on `match != null`) to avoid
+// re-anonymising an already-revealed peer.
 //
-// The server cannot tell "just revealed, still in the chat" (the narrow window
-// this heals) from "revealed months ago, moved on" — there is no revealed_at,
-// and no signal is written when someone leaves. Hence the payload says which it
-// is: a consumer must branch on reveal == "revealed" rather than treating a
-// non-nil match as "I am in an anonymous chat". Not doing so re-anonymises an
-// already-revealed peer and hijacks whatever the user is doing now — which is a
-// real bug that was caught in review, not a hypothetical.
+// Ending the row is still NOT the fix — Match.Anon() keys off status, so an
+// ended-but-revealed match would name two friends by their anon aliases in
+// every relay. What was missing was who is still IN the room, which is now
+// recorded per member: leaving writes left_a/left_b (POST /roulette/end, from
+// either an anon or a revealed chat) and this query drops rows the caller has
+// left. The peer's own leave is deliberately not consulted — they may have
+// closed the tab while this user is still sitting in the chat, and that is
+// their state to report, not a reason to hide the match from this one.
 //
-// Fixing it properly means recording when a member leaves a revealed chat.
-// Ending the row instead is NOT the fix: Match.Anon() keys off status, so an
-// ended-but-revealed match would start naming two friends by their anon aliases
-// again in every relay.
+// The frontend's `reveal === "revealed"` guard stays regardless: it is cheap,
+// and a client that missed the `revealed` frame still needs the state named.
 func (s *Store) CurrentMatchForUser(ctx context.Context, userID int64) (Match, error) {
 	var m Match
 	var revealBy, declinedBy sql.NullInt64
@@ -385,6 +387,7 @@ func (s *Store) CurrentMatchForUser(ctx context.Context, userID int64) (Match, e
 		SELECT id, topic, user_a, user_b, status, reveal_by, reveal_declined_by, reveal_declines_a, reveal_declines_b, alias_a, alias_b
 		FROM roulette_matches
 		WHERE (user_a = $1 OR user_b = $1) AND status <> 'ended'
+		  AND (($1 = user_a AND left_a IS NULL) OR ($1 = user_b AND left_b IS NULL))
 		ORDER BY id DESC
 		LIMIT 1`, userID,
 	).Scan(&m.ID, &m.Topic, &m.UserA, &m.UserB, &m.Status, &revealBy, &declinedBy, &m.DeclinesA, &m.DeclinesB, &m.AliasA, &m.AliasB)
@@ -397,6 +400,32 @@ func (s *Store) CurrentMatchForUser(ctx context.Context, userID int64) (Match, e
 	m.RevealBy = revealBy.Int64
 	m.RevealDeclinedBy = declinedBy.Int64
 	return m, nil
+}
+
+// LeaveMatch records that userID has walked out of this chat, without touching
+// its status. Idempotent — the first leave wins, so a client that fires it
+// twice (the chat's own close path plus a later /roulette/end) does not move
+// the timestamp.
+//
+// This is the half of "the chat is over" that EndMatch cannot express. A
+// REVEALED match must keep its status: Match.Anon() reads it, and flipping the
+// row to 'ended' would make every subsequent relay name two friends by their
+// anon aliases. But the pair do eventually walk away, and until 0014 nothing
+// wrote that down at all — so GET /roulette/status kept reporting an old
+// revealed pairing as the caller's current match indefinitely.
+//
+// Per member, not per match, because the two sides leave independently: one
+// closing the chat says nothing about whether the other is still reading it.
+func (s *Store) LeaveMatch(ctx context.Context, topic string, userID int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE roulette_matches
+		SET left_a = CASE WHEN user_a = $2 AND left_a IS NULL THEN now() ELSE left_a END,
+		    left_b = CASE WHEN user_b = $2 AND left_b IS NULL THEN now() ELSE left_b END
+		WHERE topic = $1 AND (user_a = $2 OR user_b = $2)`, topic, userID)
+	if err != nil {
+		return fmt.Errorf("store: leave match: %w", err)
+	}
+	return nil
 }
 
 // EndMatch marks an active match ended (idempotent: ending an ended/revealed
@@ -412,17 +441,28 @@ func (s *Store) EndMatch(ctx context.Context, topic string) error {
 	return nil
 }
 
-// EndActiveMatchesForUser marks every active match involving userID as ended.
+// EndActiveMatchesForUser marks every active match involving userID as ended,
+// and records userID as having left every chat of theirs that is still open —
+// including revealed ones, which must keep their status (see LeaveMatch).
+//
 // Called when the user (re-)enqueues into roulette: entering the queue again
-// means they have necessarily left any previous anon chat, even if they never
+// means they have necessarily left any previous chat, even if they never
 // called POST /roulette/end (e.g. they just closed the app/tab). Without this
 // cleanup, an abandoned chat stays 'active' forever and permanently occupies
 // RecentPartnerIDs's exclude-set lookback for both members.
+//
+// The leave half matters for the window between joining the queue and being
+// paired: without it, GET /roulette/status answers that window with the user's
+// last REVEALED pairing (the row nothing ends), which is exactly the stale
+// "current match" the searching screen must not act on.
 func (s *Store) EndActiveMatchesForUser(ctx context.Context, userID int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE roulette_matches
-		SET status = 'ended', ended_at = now()
-		WHERE (user_a = $1 OR user_b = $1) AND status = 'active'`, userID)
+		SET status = CASE WHEN status = 'active' THEN 'ended' ELSE status END,
+		    ended_at = CASE WHEN status = 'active' THEN now() ELSE ended_at END,
+		    left_a = CASE WHEN user_a = $1 AND left_a IS NULL THEN now() ELSE left_a END,
+		    left_b = CASE WHEN user_b = $1 AND left_b IS NULL THEN now() ELSE left_b END
+		WHERE (user_a = $1 OR user_b = $1) AND status <> 'ended'`, userID)
 	if err != nil {
 		return fmt.Errorf("store: end active matches for user: %w", err)
 	}

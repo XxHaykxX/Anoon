@@ -19,6 +19,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -276,6 +277,98 @@ func TestPriorityBySubscriptionTier(t *testing.T) {
 	if p, err := st.Priority(ctx, lapsed.ID); err != nil || p != 0 {
 		t.Fatalf("lapsed premium user: priority=%d err=%v, want 0/nil (fallback to free)", p, err)
 	}
+}
+
+// TestLeavingARevealedMatchClearsCurrent covers the #24 fix: a revealed match
+// keeps its status forever (Match.Anon() reads it, so ending the row would
+// re-anonymise two friends), which used to make CurrentMatchForUser report that
+// pairing as the caller's "current" match indefinitely — the frontend had to
+// guard against its own backend. Leaving now records left_a/left_b, and this
+// lookup drops rows the caller has left.
+//
+// The peer's view is asserted too: one person walking out must not hide the
+// chat from the other, who may still be sitting in it.
+func TestLeavingARevealedMatchClearsCurrent(t *testing.T) {
+	dsn := os.Getenv("COMPANION_DB_DSN")
+	if dsn == "" {
+		t.Skip("COMPANION_DB_DSN not set; run inside the compose network to reach the db service")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	database, err := db.Open(ctx, dsn)
+	if err != nil {
+		t.Fatalf("db open: %v", err)
+	}
+	defer database.Close()
+	if err := database.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	st := store.New(database)
+
+	age := 25
+	mkUser := func(gender string) store.User {
+		u, err := st.CreateUser(ctx, gender, &age, "usrIT"+strconv.FormatInt(time.Now().UnixNano(), 36))
+		if err != nil {
+			t.Fatalf("create user: %v", err)
+		}
+		return u
+	}
+	a := mkUser("male")
+	b := mkUser("female")
+	topic := "grpIT" + strconv.FormatInt(time.Now().UnixNano(), 36)
+
+	if _, err := st.CreateMatch(ctx, topic, a.ID, b.ID); err != nil {
+		t.Fatalf("create match: %v", err)
+	}
+	if _, err := st.RequestReveal(ctx, topic, a.ID); err != nil {
+		t.Fatalf("request reveal: %v", err)
+	}
+	if _, err := st.AcceptReveal(ctx, topic, b.ID); err != nil {
+		t.Fatalf("accept reveal: %v", err)
+	}
+
+	// Still in the chat: both sides see it as current.
+	for _, u := range []store.User{a, b} {
+		m, err := st.CurrentMatchForUser(ctx, u.ID)
+		if err != nil {
+			t.Fatalf("current match for %d right after reveal: %v", u.ID, err)
+		}
+		if m.Topic != topic {
+			t.Fatalf("current match for %d = %q, want %q", u.ID, m.Topic, topic)
+		}
+	}
+
+	if err := st.LeaveMatch(ctx, topic, a.ID); err != nil {
+		t.Fatalf("leave match: %v", err)
+	}
+
+	// A has walked out — the revealed row must no longer be their current match.
+	if m, err := st.CurrentMatchForUser(ctx, a.ID); !errors.Is(err, store.ErrNoMatch) {
+		t.Fatalf("after leaving, current match for a = (%+v, %v), want ErrNoMatch", m, err)
+	}
+	// The row itself is untouched: status stays 'revealed' so relays keep
+	// naming the pair as friends rather than falling back to anon aliases.
+	m, err := st.MatchByTopic(ctx, topic)
+	if err != nil {
+		t.Fatalf("match by topic after leave: %v", err)
+	}
+	if m.Status != "revealed" {
+		t.Fatalf("status after leave = %q, want revealed (ending it would re-anonymise the pair)", m.Status)
+	}
+	// B never left, so B still sees it.
+	if m, err := st.CurrentMatchForUser(ctx, b.ID); err != nil || m.Topic != topic {
+		t.Fatalf("b should still be in the chat: (%+v, %v)", m, err)
+	}
+
+	// Idempotent: leaving twice keeps the first timestamp and stays cleared.
+	if err := st.LeaveMatch(ctx, topic, a.ID); err != nil {
+		t.Fatalf("second leave: %v", err)
+	}
+	if _, err := st.CurrentMatchForUser(ctx, a.ID); !errors.Is(err, store.ErrNoMatch) {
+		t.Fatalf("after a second leave, a should still have no current match: %v", err)
+	}
+	t.Logf("revealed-match leave OK: a=#%05d b=#%05d topic=%s", a.HashID, b.HashID, topic)
 }
 
 // assertFriend fails unless friend is in user's accepted friends list.
