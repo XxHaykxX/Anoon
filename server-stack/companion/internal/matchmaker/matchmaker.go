@@ -110,10 +110,24 @@ type bucketKey struct {
 
 // Matcher is the concurrent-safe in-memory queue + matching engine.
 type Matcher struct {
-	mu          sync.Mutex
-	entries     map[int64]*Entry       // by UserID
-	buckets     map[bucketKey][]*Entry // (gender, age) -> entries sorted by less
-	seq         int64                  // next insertion sequence
+	mu      sync.Mutex
+	entries map[int64]*Entry       // by UserID
+	buckets map[bucketKey][]*Entry // (gender, age) -> entries sorted by less
+	// pending holds users TryMatch has already taken out of the queue but whose
+	// match the rest of the system cannot see yet — the caller still has to
+	// create the Tinode topic and persist the row, which takes hundreds of
+	// milliseconds of network and database work.
+	//
+	// Without this, that whole window answers "not queued" AND "no match", a
+	// combination that never legitimately happens: a searching client that polls
+	// into it concludes the queue forgot about it and enqueues again, so the
+	// same two people get paired a second time on a second topic while the first
+	// pairing is still being built. That is exactly what happened live —
+	// companion logged `matched #00011 <-> #00012` twice within one second and
+	// the two sides ended up in different topics, each convinced it was in a
+	// chat with the other.
+	pending     map[int64]struct{}
+	seq         int64 // next insertion sequence
 	softenAfter time.Duration
 }
 
@@ -123,6 +137,7 @@ func New(softenAfter time.Duration) *Matcher {
 	return &Matcher{
 		entries:     make(map[int64]*Entry),
 		buckets:     make(map[bucketKey][]*Entry),
+		pending:     make(map[int64]struct{}),
 		softenAfter: softenAfter,
 	}
 }
@@ -135,6 +150,10 @@ func (m *Matcher) Enqueue(e *Entry) error {
 	if _, ok := m.entries[e.UserID]; ok {
 		return ErrAlreadyQueued
 	}
+	// A fresh entry supersedes an in-flight pairing: this is the re-queue path
+	// onMatch takes when the topic could not be created, and the user is now
+	// genuinely waiting in line again.
+	delete(m.pending, e.UserID)
 	e.seq = m.seq
 	m.seq++
 	m.entries[e.UserID] = e
@@ -143,17 +162,39 @@ func (m *Matcher) Enqueue(e *Entry) error {
 }
 
 // Cancel removes a user from the queue. Returns true if they were present.
+// It also drops any in-flight pairing mark: a user who asked to leave is not
+// waiting for anything, whatever the matcher was in the middle of doing.
 func (m *Matcher) Cancel(userID int64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.removeLocked(userID)
+	_, wasPending := m.pending[userID]
+	delete(m.pending, userID)
+	return m.removeLocked(userID) || wasPending
 }
 
-// Contains reports whether the user is currently queued.
+// Release clears the in-flight mark TryMatch set on a pair, once their match is
+// observable elsewhere (persisted and announced) or definitively abandoned.
+// Callers should defer it right after TryMatch so no early return can strand a
+// user as permanently "queued" — see the pending field.
+func (m *Matcher) Release(userIDs ...int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range userIDs {
+		delete(m.pending, id)
+	}
+}
+
+// Contains reports whether the user is somewhere in the matchmaking flow —
+// waiting in the queue, or taken out of it for a pairing that is still being
+// created. Both answers mean the same thing to a caller: do not enqueue them
+// again. See the pending field for why the second case must not read as "no".
 func (m *Matcher) Contains(userID int64) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ok := m.entries[userID]
+	if _, ok := m.entries[userID]; ok {
+		return true
+	}
+	_, ok := m.pending[userID]
 	return ok
 }
 
@@ -208,6 +249,10 @@ func (m *Matcher) TryMatch(now time.Time) (Match, bool) {
 			// about to return, so the cursors above stay valid throughout.
 			m.removeLocked(a.UserID)
 			m.removeLocked(b.UserID)
+			// Out of the queue but not yet in a match anyone can see — hold them
+			// in that state until the caller Releases them.
+			m.pending[a.UserID] = struct{}{}
+			m.pending[b.UserID] = struct{}{}
 			return Match{A: a, B: b}, true
 		}
 	}

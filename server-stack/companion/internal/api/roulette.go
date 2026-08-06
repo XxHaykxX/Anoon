@@ -133,7 +133,11 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 // `matched` WS event byte for byte (same struct), so a client can feed either
 // delivery path into one handler.
 type rouletteStatusResponse struct {
-	// Queued reports whether the caller is still waiting in the matcher.
+	// Queued reports whether the caller is still inside the matchmaking flow —
+	// waiting in line, or already paired by a pass that has not finished
+	// building the chat yet (matchmaker's pending set). Both read as true so a
+	// client polling mid-pairing never concludes it was forgotten and enqueues
+	// a second time, which used to pair the same two people twice.
 	Queued bool `json:"queued"`
 	// Match is the caller's current chat, or null when they are not in one.
 	//
@@ -520,6 +524,12 @@ func (s *Server) nudgeMatch() {
 // onMatch turns a produced pair into a real anonymous Tinode topic and notifies
 // both users. On a Tinode failure the pair is re-queued so they are not lost.
 func (s *Server) onMatch(ctx context.Context, m matchmaker.Match) {
+	// TryMatch left both users marked in-flight so nothing reports them as
+	// "neither queued nor matched" while this function runs. Deferred, not
+	// placed at the end: every early return below (lookup failure, re-queue)
+	// must clear the mark too, or that user reads as queued forever and their
+	// client never re-enters the queue.
+	defer s.Matcher.Release(m.A.UserID, m.B.UserID)
 	// Live lookups. handleDeleteMe evicts the caller from the matcher, so a
 	// deleted account should never reach here — but the queue is in memory and
 	// the delete is a database write, so the two can cross. Pairing someone with

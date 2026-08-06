@@ -1668,6 +1668,24 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
   let eventsUnsub: (() => void) | null = null;
 
   /**
+   * When our own most recent enqueue was ACKNOWLEDGED (epoch ms; 0 = never).
+   *
+   * The searching screen mounts and starts polling the moment the user taps
+   * «Начать чат» — before the enqueue POST it triggered has come back. That
+   * first poll legitimately answers "not queued, no match", because we are
+   * genuinely not in the queue yet, and the self-heal below read it as "the
+   * companion forgot me" and enqueued a second time. Two enqueues for one
+   * search paired the same two people twice, on two topics, and the two sides
+   * ended up in different chats (seen live: companion logged
+   * `matched #00011 <-> #00012` twice inside one second).
+   *
+   * So the self-heal only trusts a status snapshot that was REQUESTED after our
+   * own enqueue was acknowledged — the only snapshots that can distinguish
+   * "forgotten" from "not asked yet".
+   */
+  let enqueueAckedAt = 0;
+
+  /**
    * The single place both match-delivery paths converge on: the `matched` WS
    * event and the REST resync poll (see resyncRouletteMatch). Idempotent — a
    * second arrival for a topic we already hold is dropped, so the poll racing
@@ -1699,8 +1717,12 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
 
     joinQueue: async (prefs) => {
       set({ queue: { status: "searching", since: Date.now() } });
+      // Cleared first: an ack from a PREVIOUS search would let the self-heal act
+      // on a poll that overtook this search's own (slow) enqueue.
+      enqueueAckedAt = 0;
       try {
         await getCompanionClient().enqueue(prefs);
+        enqueueAckedAt = Date.now();
         // The `matched` event (real or mock) drives the transition to "matched".
       } catch (err) {
         // Refused (suspended account, rate limit): we are not in the queue, so
@@ -1720,7 +1742,18 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
       // Only meaningful while we believe we're waiting; anything else is
       // already past the point a missed `matched` event could hurt.
       if (get().queue.status !== "searching") return;
+      // Stamped BEFORE the request: a snapshot is only evidence about a state
+      // that already existed when it was asked for. See enqueueAckedAt.
+      const askedAt = Date.now();
       const status = await fetchRouletteStatus();
+      // A snapshot older than our own enqueue describes a search we had not
+      // started yet — it can only mislead, in BOTH directions: its "not queued"
+      // reads as "the queue forgot me" (→ a second enqueue, → the same two
+      // people paired twice) and its `match` is whatever pairing we were in
+      // BEFORE this search, which enqueue itself is about to end (→ the anon
+      // chat reopens on a dead topic while the peer is in the new one). Wait for
+      // a snapshot that can actually answer the question we are asking.
+      if (enqueueAckedAt === 0 || askedAt < enqueueAckedAt) return;
       // Not matched AND not in the queue, while this client believes it is
       // searching: re-enqueue. The companion's queue is in memory (see
       // internal/matchmaker — persisting it is part of the multi-instance work),
@@ -1737,6 +1770,7 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
         if (!prefs) return;
         try {
           await getCompanionClient().enqueue(prefs);
+          enqueueAckedAt = Date.now();
         } catch {
           // Refused (banned, rate-limited): there is no queue to wait in and no
           // event coming, so leave the search rather than spin — same reasoning

@@ -347,16 +347,15 @@ func (s *Server) resolveRelayTarget(ctx context.Context, u store.User, to string
 // app-wide rather than by the chat screen, so leaving the chat does not end the
 // call, and a hangup that could not be relayed would strand it.
 //
-// What that exemption is NOT justified by: callIds being unguessable. They are
-// built client-side as `<peer handle>:<Date.now()>:<counter>`
-// (frontend/src/store/callStore.ts), so for a friend chat — where the handle is
-// the peer's sequential #ID — the whole value is a small search space around the
-// current millisecond. A former peer whose link resolves but is not live can
-// therefore still spray guessed teardown frames at someone they were once
-// matched with, and drop an in-progress call of theirs. The frame cannot ring a
-// phone or reveal anything, which is why the exemption still stands, but the
-// residual is real and closing it is a client change: mint callIds from
-// crypto.randomUUID() instead. Tracked for whoever owns frontend/.
+// What that exemption is NOT justified by, historically: callIds being
+// unguessable. They used to be built client-side as
+// `<peer handle>:<Date.now()>:<counter>`, so for a friend chat — where the
+// handle is the peer's sequential #ID — the whole value was a small search
+// space around the current millisecond, and a former peer whose link resolved
+// but was not live could spray guessed teardown frames until one dropped a call
+// in progress. That is closed on the client side now (callStore.ts mints
+// crypto.randomUUID()); the exemption above stands on its own reasoning, not on
+// the callId, so it survives regardless.
 func (s *Server) relayCallSignal(ctx context.Context, u store.User, frame map[string]any) {
 	to, _ := frame["to"].(string)
 	callID := frame["callId"]

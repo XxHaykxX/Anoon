@@ -260,3 +260,75 @@ func TestPriorityTieBreakAcrossBuckets(t *testing.T) {
 		t.Fatalf("highest-priority female (4) should win across buckets, got ok=%v %d+%d", ok, got.A.UserID, got.B.UserID)
 	}
 }
+
+// A pair that TryMatch produced is out of the queue, but the caller still has
+// to create the topic and persist the row before anything else can see the
+// match. Until it Releases them, both must still read as "in the matchmaking
+// flow" — the window where they read as neither queued nor matched is what made
+// searching clients enqueue a second time and get paired twice.
+func TestTryMatchKeepsThePairContainedUntilReleased(t *testing.T) {
+	m := New(0)
+	_ = m.Enqueue(male(1, Age22_25))
+	_ = m.Enqueue(female(2, Age22_25))
+
+	got, ok := m.TryMatch(time.Now())
+	if !ok {
+		t.Fatal("expected a match")
+	}
+	if m.Len() != 0 {
+		t.Fatalf("matched pair must leave the queue, len=%d", m.Len())
+	}
+	for _, id := range []int64{got.A.UserID, got.B.UserID} {
+		if !m.Contains(id) {
+			t.Fatalf("user %d must still read as in-flight before Release", id)
+		}
+	}
+	// And they must not be matchable again while in flight.
+	if _, ok := m.TryMatch(time.Now()); ok {
+		t.Fatal("an in-flight pair must not be matched a second time")
+	}
+
+	m.Release(got.A.UserID, got.B.UserID)
+	for _, id := range []int64{got.A.UserID, got.B.UserID} {
+		if m.Contains(id) {
+			t.Fatalf("user %d should be free after Release", id)
+		}
+	}
+}
+
+// The re-queue path (topic creation failed): Enqueue must supersede the
+// in-flight mark, and the Release that onMatch defers must not undo it.
+func TestRequeueOfAnInFlightUserSurvivesRelease(t *testing.T) {
+	m := New(0)
+	_ = m.Enqueue(male(1, Age22_25))
+	_ = m.Enqueue(female(2, Age22_25))
+	got, _ := m.TryMatch(time.Now())
+
+	if err := m.Enqueue(got.A); err != nil {
+		t.Fatalf("re-queueing an in-flight user must work: %v", err)
+	}
+	m.Release(got.A.UserID, got.B.UserID)
+
+	if !m.Contains(got.A.UserID) || m.Len() != 1 {
+		t.Fatalf("re-queued user must still be waiting after Release (len=%d)", m.Len())
+	}
+	if m.Contains(got.B.UserID) {
+		t.Fatal("the un-requeued half must be free")
+	}
+}
+
+// Leaving mid-pairing is a leave: cancel clears the in-flight mark too, so the
+// user is not reported as still searching.
+func TestCancelClearsAnInFlightMark(t *testing.T) {
+	m := New(0)
+	_ = m.Enqueue(male(1, Age22_25))
+	_ = m.Enqueue(female(2, Age22_25))
+	got, _ := m.TryMatch(time.Now())
+
+	if !m.Cancel(got.A.UserID) {
+		t.Fatal("cancel of an in-flight user should report removal")
+	}
+	if m.Contains(got.A.UserID) {
+		t.Fatal("cancelled user must not read as queued")
+	}
+}
