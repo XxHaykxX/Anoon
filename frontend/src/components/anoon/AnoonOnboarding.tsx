@@ -75,7 +75,13 @@ export default function AnoonOnboarding() {
           className="grid size-24 place-items-center rounded-[28px] bg-primary"
           style={{ boxShadow: "0 20px 48px -12px rgba(253,191,45,0.5)" }}
         >
-          <span className="text-5xl font-bold text-primary-foreground">b</span>
+          {/*
+            «a», а не «b»: буква взята из вордмарка, а переименование продукта
+            (badu → anoon, 2026-08-05) до этой плитки не доехало — она нарисована
+            мимо AnoonLogo. Это первый экран, который видит новый пользователь,
+            то есть чужое имя продукта показывалось раньше всего остального.
+          */}
+          <span className="text-5xl font-bold text-primary-foreground">a</span>
         </div>
 
         <div key={activeSlide} className="anoon-screen-in flex flex-col items-center">
