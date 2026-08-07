@@ -25,6 +25,16 @@ const INITIAL_REQUESTS: FriendRequestRow[] = [
   { id: "r3", hashId: "#00317", name: "Мила", initials: "М", tone: 4, when: "вчера" },
 ];
 
+/**
+ * Desktop column — a request card stretched across the 60rem work area puts
+ * «Принять» and «Отклонить» a screen apart. `lg:` is the width test and
+ * `.anoon-desktop` excludes the showcase (which renders this screen in a fixed
+ * 390px frame on a wide monitor) — that class alone is on the app root at every
+ * width, so both halves are needed. See docs/DESKTOP-LAYOUT.md.
+ */
+const DESKTOP_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[36rem]";
+
 /** Coarse "time ago" label from a unix-ms timestamp. */
 function timeAgo(ms: number): string {
   const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
@@ -111,7 +121,7 @@ export default function AnoonFriendRequests() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 pb-3 pt-3">
+      <div className={`flex items-center justify-between px-5 pb-3 pt-3 ${DESKTOP_COL}`}>
         <h1 className="text-2xl font-bold">Заявки в друзья</h1>
         {pendingCount > 0 && (
           <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-2 text-xs font-semibold text-primary-foreground">
@@ -127,7 +137,7 @@ export default function AnoonFriendRequests() {
           </p>
         )}
 
-        <div className="flex flex-col gap-2.5">
+        <div className={`flex flex-col gap-2.5 ${DESKTOP_COL}`}>
           {rows.map((r) => {
             const status = statuses[r.id] ?? "pending";
             return (

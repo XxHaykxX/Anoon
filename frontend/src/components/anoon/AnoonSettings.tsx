@@ -241,7 +241,7 @@ export default function AnoonSettings() {
 
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
-      <header className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-4">
+      <header className="flex shrink-0 items-center gap-1 px-3 pb-2 pt-4 lg:[.anoon-desktop_&]:px-5">
         <button
           type="button"
           onClick={() => nav.back()}
@@ -253,230 +253,248 @@ export default function AnoonSettings() {
         <h1 className="text-2xl font-bold">Настройки</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-6">
-        {/* Change nick */}
-        <section className="mt-2 rounded-2xl border border-border bg-card p-4">
-          <label className="block">
-            <span className="text-xs text-muted-foreground">Сменить ник</span>
-            <input
-              value={nick}
-              onChange={(e) => setNick(e.target.value)}
-              placeholder="Новый ник"
-              className="mt-1 w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={saveNick}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground transition-transform active:scale-95"
-          >
-            {savedNick ? (
-              <>
-                <CheckIcon className="size-5" />
-                Сохранено
-              </>
-            ) : (
-              "Сохранить"
-            )}
-          </button>
-        </section>
+      {/*
+        Desktop (≥1024) lays this out in two columns. The wrappers keep the
+        phone DOM order untouched — credentials first, then notifications /
+        privacy / danger zone — so the phone branch still renders one plain
+        column. Desktop utilities are `lg:[.anoon-desktop_&]:…` and need both
+        halves: a bare `lg:` would fire in the showcase's 390px frames on a wide
+        monitor, and `.anoon-desktop` alone would fire on the phone, since that
+        class is on the AnoonApp root at every width (docs/DESKTOP-LAYOUT.md).
+      */}
+      <div className="flex-1 overflow-y-auto px-5 pb-6 lg:[.anoon-desktop_&]:grid lg:[.anoon-desktop_&]:grid-cols-2 lg:[.anoon-desktop_&]:items-start lg:[.anoon-desktop_&]:gap-x-8 lg:[.anoon-desktop_&]:px-8 lg:[.anoon-desktop_&]:pt-2">
+        {/* Column 1 on desktop: account credentials. */}
+        <div>
+          {/* Change nick */}
+          <section className="mt-2 rounded-2xl border border-border bg-card p-4 lg:[.anoon-desktop_&]:mt-0">
+            <label className="block">
+              <span className="text-xs text-muted-foreground">Сменить ник</span>
+              <input
+                value={nick}
+                onChange={(e) => setNick(e.target.value)}
+                placeholder="Новый ник"
+                className="mt-1 w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={saveNick}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground transition-transform active:scale-95"
+            >
+              {savedNick ? (
+                <>
+                  <CheckIcon className="size-5" />
+                  Сохранено
+                </>
+              ) : (
+                "Сохранить"
+              )}
+            </button>
+          </section>
 
-        {/* Change password */}
-        <section className="mt-4 rounded-2xl border border-border bg-card p-4">
-          <p className="text-sm font-semibold">Сменить пароль</p>
-          <div className="mt-2 flex flex-col gap-2">
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Текущий пароль"
-              autoComplete="current-password"
-              className="w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2"
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Новый пароль (мин. 6 символов)"
-              autoComplete="new-password"
-              className="w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2"
-            />
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Повторите новый пароль"
-              autoComplete="new-password"
-              className={`w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none transition-shadow placeholder:text-muted-foreground/60 ${
-                passwordMismatch
-                  ? "ring-1 ring-destructive"
-                  : "ring-primary/40 focus:border-primary focus:ring-2"
+          {/* Change password */}
+          <section className="mt-4 rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-semibold">Сменить пароль</p>
+            <div className="mt-2 flex flex-col gap-2">
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Текущий пароль"
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2"
+              />
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Новый пароль (мин. 6 символов)"
+                autoComplete="new-password"
+                className="w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Повторите новый пароль"
+                autoComplete="new-password"
+                className={`w-full rounded-xl border border-transparent bg-muted px-3 py-2.5 text-foreground outline-none transition-shadow placeholder:text-muted-foreground/60 ${
+                  passwordMismatch
+                    ? "ring-1 ring-destructive"
+                    : "ring-primary/40 focus:border-primary focus:ring-2"
+                }`}
+              />
+              {passwordMismatch && (
+                <p className="px-1 text-xs text-destructive">Пароли не совпадают</p>
+              )}
+              {passwordError && <p className="px-1 text-xs text-destructive">{passwordError}</p>}
+            </div>
+            <button
+              type="button"
+              disabled={!canSavePassword || passwordBusy}
+              onClick={handleChangePassword}
+              className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground transition-transform active:scale-95 ${
+                !canSavePassword || passwordBusy ? "cursor-not-allowed opacity-50" : ""
               }`}
-            />
-            {passwordMismatch && (
-              <p className="px-1 text-xs text-destructive">Пароли не совпадают</p>
-            )}
-            {passwordError && <p className="px-1 text-xs text-destructive">{passwordError}</p>}
-          </div>
-          <button
-            type="button"
-            disabled={!canSavePassword || passwordBusy}
-            onClick={handleChangePassword}
-            className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground transition-transform active:scale-95 ${
-              !canSavePassword || passwordBusy ? "cursor-not-allowed opacity-50" : ""
-            }`}
-          >
-            {passwordSaved ? (
-              <>
-                <CheckIcon className="size-5" />
-                Сохранено
-              </>
-            ) : passwordBusy ? (
-              "Сохраняем…"
-            ) : (
-              "Сменить пароль"
-            )}
-          </button>
-        </section>
-
-        {/* Notifications toggle */}
-        <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
-          <div className="flex items-center gap-3 px-4 py-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <BellIcon className="size-5 text-primary-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p>Уведомления</p>
-              <p className="text-xs text-muted-foreground">
-                {!pushCapable
-                  ? "Не поддерживается этим браузером"
-                  : pushBusy
-                    ? "Подключаем…"
-                    : push
-                      ? "Пуши включены"
-                      : "Пуши выключены"}
-              </p>
-            </div>
-            {pushCapable && (
-              <Switch checked={push} onChange={(v) => void togglePush(v)} label="Уведомления" />
-            )}
-          </div>
-          <div className="border-t border-border" />
-          <div className="flex items-center gap-3 px-4 py-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <BellIcon className="size-5 text-primary-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p>Звук и вибрация</p>
-              <p className="text-xs text-muted-foreground">
-                Новые сообщения, совпадения, заявки в друзья
-              </p>
-            </div>
-            <Switch checked={soundOn} onChange={toggleSound} label="Звук и вибрация" />
-          </div>
+            >
+              {passwordSaved ? (
+                <>
+                  <CheckIcon className="size-5" />
+                  Сохранено
+                </>
+              ) : passwordBusy ? (
+                "Сохраняем…"
+              ) : (
+                "Сменить пароль"
+              )}
+            </button>
+          </section>
         </div>
 
-        {/* Blocked — expandable */}
-        <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
-          {/* `active:` matters more than `hover:` here — the app is mobile-first
-              and a touch screen has no hover at all, so without it a tap gets no
-              feedback at all. Same pair as AnoonNotifications' feed rows. */}
-          <button
-            type="button"
-            onClick={() => setBlockedOpen((o) => !o)}
-            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted active:bg-muted"
-          >
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <BlockIcon className="size-5 text-primary-foreground" />
-            </div>
-            <span className="min-w-0 flex-1">Заблокированные</span>
-            <span className="text-sm text-muted-foreground">
-              {blocksFailed ? "—" : blocked.length}
-            </span>
-            <ChevronRightIcon
-              className={`size-4 text-muted-foreground transition-transform ${
-                blockedOpen ? "rotate-90" : ""
-              }`}
-            />
-          </button>
-
-          {blockedOpen && (
-            <div className="border-t border-border animate-in slide-in-from-top-2 fade-in-0 duration-200 motion-reduce:animate-none">
-              {blocksFailed ? (
-                <p className="px-4 py-4 text-center text-sm text-destructive">
-                  Не удалось загрузить список. Откройте экран заново
+        {/* Column 2 on desktop: notifications, privacy, danger zone. */}
+        <div>
+          {/* Notifications toggle */}
+          <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card lg:[.anoon-desktop_&]:mt-0">
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+                <BellIcon className="size-5 text-primary-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p>Уведомления</p>
+                <p className="text-xs text-muted-foreground">
+                  {!pushCapable
+                    ? "Не поддерживается этим браузером"
+                    : pushBusy
+                      ? "Подключаем…"
+                      : push
+                        ? "Пуши включены"
+                        : "Пуши выключены"}
                 </p>
-              ) : blocked.length === 0 ? (
-                <p className="px-4 py-4 text-center text-sm text-muted-foreground">
-                  Список пуст
-                </p>
-              ) : (
-                blocked.map((b) => (
-                  <div
-                    key={b.hashId}
-                    className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
-                  >
-                    <AnoonAvatar initials="?" tone={toneFor(b.hashId)} size={32} />
-                    <span className="min-w-0 flex-1 truncate font-mono text-sm">
-                      {b.displayName || `Собеседник #${b.hashId}`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void unblock(b.hashId)}
-                      className="rounded-full bg-muted px-3 py-1.5 text-xs font-medium transition-transform active:scale-95"
-                    >
-                      Разблокировать
-                    </button>
-                  </div>
-                ))
+              </div>
+              {pushCapable && (
+                <Switch checked={push} onChange={(v) => void togglePush(v)} label="Уведомления" />
               )}
             </div>
-          )}
+            <div className="border-t border-border" />
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+                <BellIcon className="size-5 text-primary-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p>Звук и вибрация</p>
+                <p className="text-xs text-muted-foreground">
+                  Новые сообщения, совпадения, заявки в друзья
+                </p>
+              </div>
+              <Switch checked={soundOn} onChange={toggleSound} label="Звук и вибрация" />
+            </div>
+          </div>
+
+          {/* Blocked — expandable */}
+          <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
+            {/* `active:` matters more than `hover:` here — the app is mobile-first
+                and a touch screen has no hover at all, so without it a tap gets no
+                feedback at all. Same pair as AnoonNotifications' feed rows.
+                `focus-visible:` is the desktop half of it: a keyboard is only
+                ever there on desktop, and a hover-only row reads as broken
+                keyboard navigation (docs/DESKTOP-LAYOUT.md, rule 5). */}
+            <button
+              type="button"
+              onClick={() => setBlockedOpen((o) => !o)}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none active:bg-muted"
+            >
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+                <BlockIcon className="size-5 text-primary-foreground" />
+              </div>
+              <span className="min-w-0 flex-1">Заблокированные</span>
+              <span className="text-sm text-muted-foreground">
+                {blocksFailed ? "—" : blocked.length}
+              </span>
+              <ChevronRightIcon
+                className={`size-4 text-muted-foreground transition-transform ${
+                  blockedOpen ? "rotate-90" : ""
+                }`}
+              />
+            </button>
+
+            {blockedOpen && (
+              <div className="border-t border-border animate-in slide-in-from-top-2 fade-in-0 duration-200 motion-reduce:animate-none">
+                {blocksFailed ? (
+                  <p className="px-4 py-4 text-center text-sm text-destructive">
+                    Не удалось загрузить список. Откройте экран заново
+                  </p>
+                ) : blocked.length === 0 ? (
+                  <p className="px-4 py-4 text-center text-sm text-muted-foreground">
+                    Список пуст
+                  </p>
+                ) : (
+                  blocked.map((b) => (
+                    <div
+                      key={b.hashId}
+                      className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0"
+                    >
+                      <AnoonAvatar initials="?" tone={toneFor(b.hashId)} size={32} />
+                      <span className="min-w-0 flex-1 truncate font-mono text-sm">
+                        {b.displayName || `Собеседник #${b.hashId}`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void unblock(b.hashId)}
+                        className="rounded-full bg-muted px-3 py-1.5 text-xs font-medium transition-transform active:scale-95"
+                      >
+                        Разблокировать
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          {/*
+            Moderation states — demo entries. There's no companion ban/mute
+            event yet, so these screens have no real trigger; kept reachable
+            here for QA until that lands.
+          */}
+          <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
+            <Row
+              icon={<ShieldIcon className="size-5 text-primary-foreground" />}
+              label="Экран блокировки (демо)"
+              onClick={() => nav.push("banned")}
+            />
+            <div className="border-t border-border" />
+            <Row
+              icon={<LockIcon className="size-5 text-primary-foreground" />}
+              label="Экран мьюта (демо)"
+              onClick={() => nav.push("muted")}
+            />
+          </div>
+
+          {/* Exit — reset profile */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mt-4 flex w-full items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/10 py-3 font-semibold text-destructive transition-transform active:scale-95"
+          >
+            Выход
+          </button>
+          <p className="mt-2 px-2 text-center text-xs text-muted-foreground">
+            Профиль будет сброшен на этом устройстве.
+          </p>
+
+          {/* Delete account */}
+          <button
+            type="button"
+            onClick={() => setDeleteOpen(true)}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 py-3 font-semibold text-destructive transition-transform active:scale-95"
+          >
+            <TrashIcon className="size-5" />
+            Удалить аккаунт
+          </button>
+          <p className="mt-2 px-2 text-center text-xs text-muted-foreground">
+            Аккаунт и все данные будут удалены без возможности восстановления.
+          </p>
         </div>
-
-        {/*
-          Moderation states — demo entries. There's no companion ban/mute
-          event yet, so these screens have no real trigger; kept reachable
-          here for QA until that lands.
-        */}
-        <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
-          <Row
-            icon={<ShieldIcon className="size-5 text-primary-foreground" />}
-            label="Экран блокировки (демо)"
-            onClick={() => nav.push("banned")}
-          />
-          <div className="border-t border-border" />
-          <Row
-            icon={<LockIcon className="size-5 text-primary-foreground" />}
-            label="Экран мьюта (демо)"
-            onClick={() => nav.push("muted")}
-          />
-        </div>
-
-        {/* Exit — reset profile */}
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="mt-4 flex w-full items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/10 py-3 font-semibold text-destructive transition-transform active:scale-95"
-        >
-          Выход
-        </button>
-        <p className="mt-2 px-2 text-center text-xs text-muted-foreground">
-          Профиль будет сброшен на этом устройстве.
-        </p>
-
-        {/* Delete account */}
-        <button
-          type="button"
-          onClick={() => setDeleteOpen(true)}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 py-3 font-semibold text-destructive transition-transform active:scale-95"
-        >
-          <TrashIcon className="size-5" />
-          Удалить аккаунт
-        </button>
-        <p className="mt-2 px-2 text-center text-xs text-muted-foreground">
-          Аккаунт и все данные будут удалены без возможности восстановления.
-        </p>
       </div>
 
       {deleteOpen && (
@@ -528,7 +546,7 @@ function Row({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted active:bg-muted"
+      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none active:bg-muted"
     >
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
         {icon}

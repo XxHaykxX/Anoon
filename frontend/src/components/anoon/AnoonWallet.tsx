@@ -74,7 +74,7 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
 
   return (
     <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-background text-foreground animate-in fade-in-0 duration-200 motion-reduce:animate-none">
-      <header className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-4">
+      <header className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-4 lg:[.anoon-desktop_&]:px-5">
         <button
           type="button"
           onClick={onClose}
@@ -86,7 +86,14 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
         <h1 className="text-xl font-bold">Монеты и подписка</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-6">
+      {/*
+        Desktop (≥1024) keeps the same single column — this screen is a short
+        list of offers, not a form — but the two card grids below stop being
+        one-per-row. The switch is `lg:[.anoon-desktop_&]:…`: `lg:` alone would
+        fire in the showcase's 390px frame on a wide monitor, `.anoon-desktop`
+        alone would fire on the phone (docs/DESKTOP-LAYOUT.md).
+      */}
+      <div className="flex-1 overflow-y-auto px-5 pb-6 lg:[.anoon-desktop_&]:px-8">
         {/* Balance */}
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
           <CoinIcon className="size-10 shrink-0" />
@@ -109,7 +116,7 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
           <p className="mt-0.5 text-xs text-muted-foreground">
             Монеты — на бусты в очереди, подарки и супер-оценки.
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-2.5">
+          <div className="mt-3 grid grid-cols-2 gap-2.5 lg:[.anoon-desktop_&]:grid-cols-4">
             {COIN_PACKS.map((pack) => (
               <button
                 key={pack.id}
@@ -126,48 +133,54 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
         </section>
 
         {/* Subscription tiers */}
-        <section className="mt-6 space-y-3">
+        <section className="mt-6">
           <h2 className="text-sm font-semibold">Подписка</h2>
-          {(Object.keys(SUBSCRIPTION_PLANS) as (keyof typeof SUBSCRIPTION_PLANS)[]).map((id) => {
-            const plan = SUBSCRIPTION_PLANS[id];
-            const isCurrent = tier === id;
-            return (
-              <div
-                key={id}
-                className={`rounded-2xl border p-4 ${
-                  isCurrent ? "border-primary bg-primary/5" : "border-border bg-card"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">{plan.label}</h3>
-                  {isCurrent ? (
-                    <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
-                      Ваш тариф
-                    </span>
-                  ) : (
-                    <span className="text-sm font-semibold">{plan.priceAmd} ֏/мес</span>
+          {/* The plans stack on the phone and stand side by side on desktop.
+              Side by side the cards stretch to a common height, so the CTA is
+              pinned to the bottom (`mt-auto`) instead of hanging under a short
+              perk list while its neighbour's sits lower. */}
+          <div className="mt-3 space-y-3 lg:[.anoon-desktop_&]:grid lg:[.anoon-desktop_&]:grid-cols-2 lg:[.anoon-desktop_&]:gap-3 lg:[.anoon-desktop_&]:space-y-0">
+            {(Object.keys(SUBSCRIPTION_PLANS) as (keyof typeof SUBSCRIPTION_PLANS)[]).map((id) => {
+              const plan = SUBSCRIPTION_PLANS[id];
+              const isCurrent = tier === id;
+              return (
+                <div
+                  key={id}
+                  className={`rounded-2xl border p-4 lg:[.anoon-desktop_&]:flex lg:[.anoon-desktop_&]:flex-col ${
+                    isCurrent ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">{plan.label}</h3>
+                    {isCurrent ? (
+                      <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground">
+                        Ваш тариф
+                      </span>
+                    ) : (
+                      <span className="text-sm font-semibold">{plan.priceAmd} ֏/мес</span>
+                    )}
+                  </div>
+                  <ul className="mt-2.5 space-y-1.5 lg:[.anoon-desktop_&]:pb-3">
+                    {plan.perks.map((feature) => (
+                      <li key={feature} className="flex items-center gap-2 text-sm text-foreground">
+                        <CheckIcon className="size-4 shrink-0 text-online" />
+                        {FEATURE_LABELS[feature]}
+                      </li>
+                    ))}
+                  </ul>
+                  {!isCurrent && (
+                    <button
+                      type="button"
+                      onClick={() => void subscribe(id).then(showResult)}
+                      className={`mt-3 w-full rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground lg:[.anoon-desktop_&]:mt-auto ${PRESS_FX}`}
+                    >
+                      Оформить {plan.label}
+                    </button>
                   )}
                 </div>
-                <ul className="mt-2.5 space-y-1.5">
-                  {plan.perks.map((feature) => (
-                    <li key={feature} className="flex items-center gap-2 text-sm text-foreground">
-                      <CheckIcon className="size-4 shrink-0 text-online" />
-                      {FEATURE_LABELS[feature]}
-                    </li>
-                  ))}
-                </ul>
-                {!isCurrent && (
-                  <button
-                    type="button"
-                    onClick={() => void subscribe(id).then(showResult)}
-                    className={`mt-3 w-full rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground ${PRESS_FX}`}
-                  >
-                    Оформить {plan.label}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </section>
 
         {/* Free-tier lock hint */}

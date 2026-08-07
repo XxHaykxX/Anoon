@@ -33,6 +33,27 @@ const ATTACH_PLACEHOLDER: Record<string, string> = {
 };
 
 
+/**
+ * Desktop column for the thread and the composer row. The work area is up to
+ * 60rem wide on ≥1024px; a thread that uses all of it turns every line into a
+ * ruler-wide sentence and parks the composer's send button an arm away from its
+ * input. Header and the hairline borders still span the full width — only the
+ * content inside them is centred.
+ *
+ * `lg:[.anoon-desktop_&]:` needs both halves: `lg:` alone would also fire in the
+ * showcase, which renders this screen inside fixed 390px frames on a wide
+ * monitor; `.anoon-desktop` alone is on the app root at every width and would
+ * restyle the phone. See docs/DESKTOP-LAYOUT.md.
+ */
+const DESKTOP_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[48rem]";
+/** The same column as padding — for rows (header, composer) whose hairline must stay full-width. */
+const DESKTOP_COL_PX = "lg:[.anoon-desktop_&]:px-[max(1rem,calc((100%-48rem)/2))]";
+/** Right edge of that column, for the absolutely-positioned overlays hung off the screen root. */
+const DESKTOP_COL_RIGHT = "lg:[.anoon-desktop_&]:right-[max(0.75rem,calc((100%-48rem)/2))]";
+/** Left edge of the same column (emoji picker). */
+const DESKTOP_COL_LEFT = "lg:[.anoon-desktop_&]:left-[max(0.5rem,calc((100%-48rem)/2))]";
+
 /** Distance from the bottom (px) within which the thread still counts as following the newest message. */
 const FOLLOW_SLACK_PX = 160;
 /** Distance from the bottom (px) at which the «к последнему сообщению» button appears. */
@@ -223,7 +244,11 @@ const PrivateBubble = memo(function PrivateBubble({
 
   if (deleted) {
     return (
-      <div className={`flex max-w-[78%] ${own ? "self-end" : "self-start"}`}>
+      <div
+        className={`flex max-w-[78%] lg:[.anoon-desktop_&]:max-w-[32rem] ${
+          own ? "self-end" : "self-start"
+        }`}
+      >
         <span className="rounded-2xl bg-muted px-3.5 py-2 text-sm italic text-muted-foreground">
           сообщение удалено
         </span>
@@ -233,7 +258,7 @@ const PrivateBubble = memo(function PrivateBubble({
 
   return (
     <div
-      className={`relative flex max-w-[78%] flex-col ${
+      className={`relative flex max-w-[78%] flex-col lg:[.anoon-desktop_&]:max-w-[32rem] ${
         own ? "items-end self-end" : "items-start self-start"
       }`}
     >
@@ -813,7 +838,7 @@ export default function AnoonPrivateChat() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
+      <div className={`flex items-center gap-3 border-b border-border px-4 py-2.5 ${DESKTOP_COL_PX}`}>
         <ChevronLeftIcon
           className={`size-6 shrink-0 text-foreground ${PRESS_FX}`}
           aria-label="Назад"
@@ -871,7 +896,7 @@ export default function AnoonPrivateChat() {
               onClick={() => setMenuOpen(false)}
               role="presentation"
             />
-            <div className="absolute right-3 top-14 z-40 w-52 origin-top-right overflow-hidden rounded-2xl border border-border bg-popover py-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150 motion-reduce:animate-none">
+            <div className={`absolute right-3 top-14 z-40 w-52 origin-top-right overflow-hidden rounded-2xl border border-border bg-popover py-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150 motion-reduce:animate-none ${DESKTOP_COL_RIGHT}`}>
               <button
                 type="button"
                 onClick={() => {
@@ -899,11 +924,21 @@ export default function AnoonPrivateChat() {
       <div
         ref={threadRef}
         onScroll={onThreadScroll}
-        className="flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-4 py-3"
+        className={`flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-4 py-3 ${DESKTOP_COL}`}
         onClick={() => {
           setActionFor(null);
         }}
       >
+        {/* Desktop: pin a short thread to the BOTTOM of the work area. A phone
+            viewport is filled by the thread anyway; a 900px-tall desktop one is
+            not, and four messages hanging from the top with 400px of nothing
+            above the composer read as a broken screen.
+            A spacer rather than `justify-end` on purpose: `justify-content:
+            flex-end` on a scroll container makes overflowing content unreachable
+            above the scroll origin, while `margin-top:auto` collapses to 0 the
+            moment the thread overflows. `hidden` keeps it out of the phone's box
+            model entirely (no box, no gap-3 slot). */}
+        <div aria-hidden className="hidden lg:[.anoon-desktop_&]:block lg:[.anoon-desktop_&]:mt-auto" />
         {!real && (
           <span className="my-1 self-center rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
             Профили открыты — вы теперь друзья
@@ -1015,7 +1050,9 @@ export default function AnoonPrivateChat() {
           type="button"
           onClick={() => scrollToBottom()}
           aria-label="К последнему сообщению"
-          className={`absolute bottom-20 right-3 z-20 grid size-9 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg ${PRESS_FX}`}
+          // Desktop: ride the right edge of the thread column, not of the work
+          // area — otherwise the button floats in the empty gutter beside it.
+          className={`absolute bottom-20 right-3 z-20 grid size-9 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg ${DESKTOP_COL_RIGHT} ${PRESS_FX}`}
         >
           <ChevronDownIcon className="size-5" />
         </button>
@@ -1064,8 +1101,10 @@ export default function AnoonPrivateChat() {
         <ReplyPreview text={replyTarget.text} onCancel={() => setReplyTarget(null)} />
       ) : null}
 
-      {/* Composer */}
-      <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+      {/* Composer. On desktop the hairline still spans the whole work area while
+          the controls sit in the thread's column — done with padding rather than
+          a nested wrapper so the phone markup is untouched. */}
+      <div className={`flex items-center gap-2 border-t border-border px-3 py-2.5 ${DESKTOP_COL_PX}`}>
         {/* While recording, hide the text controls so the record bar owns the row (BUG-37). */}
         {!voiceRecording && (
           <>
@@ -1171,7 +1210,7 @@ export default function AnoonPrivateChat() {
       />
 
       {emojiOpen && (
-        <div className="absolute bottom-16 left-2 z-30">
+        <div className={`absolute bottom-16 left-2 z-30 ${DESKTOP_COL_LEFT}`}>
           <EmojiPicker
             onSelect={(emoji) => setDraft((d) => d + emoji)}
             onClose={() => setEmojiOpen(false)}

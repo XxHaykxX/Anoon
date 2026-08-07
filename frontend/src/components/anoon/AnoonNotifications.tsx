@@ -221,6 +221,9 @@ export default function AnoonNotifications() {
     if (item.kind === "friend") nav.go("friends");
   };
 
+  // Desktop only: is there anything to put in the left column next to the feed?
+  const twoColumnDesktop = showPushBanner || requests.length > 0;
+
   const handleEnablePush = () => {
     if (typeof Notification !== "undefined") void Notification.requestPermission();
     setShowPushBanner(false);
@@ -229,7 +232,7 @@ export default function AnoonNotifications() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-4 pb-2">
+      <div className="flex items-center justify-between px-5 pt-4 pb-2 lg:[.anoon-desktop_&]:px-8">
         <h1 className="text-3xl font-bold">Уведомления</h1>
         {unreadCount > 0 ? (
           <button
@@ -242,106 +245,128 @@ export default function AnoonNotifications() {
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-2">
-        {/* Push banner */}
-        {showPushBanner ? (
-          <div className="mx-5 mt-1 mb-3 flex items-center gap-3 rounded-2xl bg-card p-3.5 ring-1 ring-border">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary">
-              <BellIcon className="size-5 text-primary-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">Включите уведомления</p>
-              <p className="truncate text-xs text-muted-foreground">
-                Не пропускайте новые сообщения и заявки
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleEnablePush}
-              className="shrink-0 cursor-pointer select-none rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-transform active:scale-95"
-            >
-              Включить
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowPushBanner(false)}
-              className="shrink-0 cursor-pointer select-none text-muted-foreground transition-transform active:scale-95"
-              aria-label="Закрыть"
-            >
-              <CloseIcon className="size-4" />
-            </button>
-          </div>
-        ) : null}
-
-        {/* Friend requests */}
-        {requests.length > 0 ? (
-          <div className="mb-3">
-            <div className="flex items-center gap-2 px-5 pb-2 pt-1">
-              <PeopleIcon className="size-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-muted-foreground">Заявки в друзья</h2>
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
-                {requests.length}
-              </span>
-            </div>
-            <div className="space-y-2 px-5">
-              {requests.map((req) => (
-                <div
-                  key={req.id}
-                  className="flex items-center gap-3 rounded-2xl bg-card p-3 ring-1 ring-border"
-                >
-                  <AnoonAvatar initials={req.initials} tone={req.tone} size={44} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{req.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{req.meta}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleRequest(req, true)}
-                      className="flex size-9 cursor-pointer select-none items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-95"
-                      aria-label="Принять"
-                    >
-                      <CheckIcon className="size-5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRequest(req, false)}
-                      className="flex size-9 cursor-pointer select-none items-center justify-center rounded-full bg-muted text-muted-foreground transition-transform active:scale-95"
-                      aria-label="Отклонить"
-                    >
-                      <CloseIcon className="size-5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {/* Feed */}
-        <h2 className="px-5 pb-1 pt-1 text-sm font-semibold text-muted-foreground">Лента</h2>
-        <div className="divide-y divide-border">
-          {feed.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleFeedClick(item)}
-              className={`anoon-cv-row flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted active:bg-muted ${
-                item.kind === "friend" ? "cursor-pointer" : "cursor-default"
-              }`}
-            >
-              <FeedIcon item={item} />
-              <div className="min-w-0 flex-1">
-                <p className={`text-sm ${item.unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>
-                  {item.text}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{item.time}</p>
+      {/*
+        Desktop (≥1024) puts the banner + friend requests in one column and the
+        feed in the other, without reordering the phone DOM. It only does so
+        while that first column has something in it: with the banner dismissed
+        and no pending requests it would otherwise be an empty half-screen, so
+        the feed falls back to a single capped column (see the wrapper below).
+        Desktop utilities are `lg:[.anoon-desktop_&]:…` and need both halves:
+        `lg:` alone would fire in the showcase's 390px frame on a wide monitor,
+        `.anoon-desktop` alone would fire on the phone, since that class is on
+        the AnoonApp root at every width (docs/DESKTOP-LAYOUT.md).
+      */}
+      <div
+        className={`flex-1 overflow-y-auto pb-2 ${
+          twoColumnDesktop
+            ? "lg:[.anoon-desktop_&]:grid lg:[.anoon-desktop_&]:grid-cols-2 lg:[.anoon-desktop_&]:items-start lg:[.anoon-desktop_&]:gap-x-4 lg:[.anoon-desktop_&]:px-3 lg:[.anoon-desktop_&]:pt-1"
+            : ""
+        }`}
+      >
+        <div>
+          {/* Push banner */}
+          {showPushBanner ? (
+            <div className="mx-5 mt-1 mb-3 flex items-center gap-3 rounded-2xl bg-card p-3.5 ring-1 ring-border">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary">
+                <BellIcon className="size-5 text-primary-foreground" />
               </div>
-              {item.unread ? (
-                <span className="mt-1 size-2.5 shrink-0 self-start rounded-full bg-primary" />
-              ) : null}
-            </button>
-          ))}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Включите уведомления</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  Не пропускайте новые сообщения и заявки
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleEnablePush}
+                className="shrink-0 cursor-pointer select-none rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-transform active:scale-95"
+              >
+                Включить
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPushBanner(false)}
+                className="shrink-0 cursor-pointer select-none text-muted-foreground transition-transform active:scale-95"
+                aria-label="Закрыть"
+              >
+                <CloseIcon className="size-4" />
+              </button>
+            </div>
+          ) : null}
+
+          {/* Friend requests */}
+          {requests.length > 0 ? (
+            <div className="mb-3">
+              <div className="flex items-center gap-2 px-5 pb-2 pt-1">
+                <PeopleIcon className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold text-muted-foreground">Заявки в друзья</h2>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                  {requests.length}
+                </span>
+              </div>
+              <div className="space-y-2 px-5">
+                {requests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="flex items-center gap-3 rounded-2xl bg-card p-3 ring-1 ring-border"
+                  >
+                    <AnoonAvatar initials={req.initials} tone={req.tone} size={44} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{req.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{req.meta}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRequest(req, true)}
+                        className="flex size-9 cursor-pointer select-none items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform active:scale-95"
+                        aria-label="Принять"
+                      >
+                        <CheckIcon className="size-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRequest(req, false)}
+                        className="flex size-9 cursor-pointer select-none items-center justify-center rounded-full bg-muted text-muted-foreground transition-transform active:scale-95"
+                        aria-label="Отклонить"
+                      >
+                        <CloseIcon className="size-5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Feed. The width cap only bites in the single-column fallback above —
+            in the two-column layout this wrapper is already narrower than it. */}
+        <div className="lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[34rem]">
+          <h2 className="px-5 pb-1 pt-1 text-sm font-semibold text-muted-foreground">Лента</h2>
+          <div className="divide-y divide-border">
+            {feed.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleFeedClick(item)}
+                className={`anoon-cv-row flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none active:bg-muted ${
+                  item.kind === "friend" ? "cursor-pointer" : "cursor-default"
+                }`}
+              >
+                <FeedIcon item={item} />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm ${item.unread ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                    {item.text}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{item.time}</p>
+                </div>
+                {item.unread ? (
+                  <span className="mt-1 size-2.5 shrink-0 self-start rounded-full bg-primary" />
+                ) : null}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

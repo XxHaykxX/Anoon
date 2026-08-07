@@ -125,170 +125,192 @@ export default function AnoonProfile() {
 
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
-      <header className="flex shrink-0 items-center justify-between px-5 pb-2 pt-4">
+      <header className="flex shrink-0 items-center justify-between px-5 pb-2 pt-4 lg:[.anoon-desktop_&]:px-8">
         <h1 className="text-2xl font-bold">Профиль</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {/* Avatar + change photo */}
-        <div className="flex flex-col items-center gap-3 py-4">
-          <div className="relative">
-            {avatarPreview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={avatarPreview}
-                alt="Аватар"
-                className="rounded-full object-cover"
-                style={{ width: 92, height: 92 }}
-              />
-            ) : avatarRef && !avatarBroken ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={authedFileUrl(avatarRef)}
-                alt="Аватар"
-                onError={() => setBrokenAvatarRef(avatarRef)}
-                className="rounded-full object-cover"
-                style={{ width: 92, height: 92 }}
-              />
-            ) : (
-              <AnoonAvatar initials={avatarInitials} tone={real ? user!.avatarTone : 3} size={92} />
-            )}
-            {avatarUploading && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-xs font-medium text-white">
-                Загрузка…
-              </div>
-            )}
+      {/*
+        Desktop (≥1024) splits this screen into two columns WITHOUT reordering
+        the DOM: the wrappers below follow the phone order exactly (form first,
+        then share + links), so the phone branch keeps rendering one plain
+        column. Every desktop utility here is `lg:[.anoon-desktop_&]:…`, and
+        BOTH halves are load-bearing: the showcase draws this same screen in
+        390px frames on a wide monitor (so a bare `lg:` would fire there), while
+        `.anoon-desktop` sits on the AnoonApp root at every width (so the class
+        alone would fire on the phone). See docs/DESKTOP-LAYOUT.md.
+      */}
+      <div className="flex-1 overflow-y-auto px-5 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:[.anoon-desktop_&]:grid lg:[.anoon-desktop_&]:grid-cols-2 lg:[.anoon-desktop_&]:items-start lg:[.anoon-desktop_&]:gap-x-8 lg:[.anoon-desktop_&]:px-8 lg:[.anoon-desktop_&]:pt-2">
+        {/* Column 1 on desktop: identity + editable fields + save. */}
+        <div>
+          {/* Avatar + change photo */}
+          <div className="flex flex-col items-center gap-3 py-4 lg:[.anoon-desktop_&]:pt-0">
+            <div className="relative">
+              {avatarPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarPreview}
+                  alt="Аватар"
+                  className="rounded-full object-cover"
+                  style={{ width: 92, height: 92 }}
+                />
+              ) : avatarRef && !avatarBroken ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={authedFileUrl(avatarRef)}
+                  alt="Аватар"
+                  onError={() => setBrokenAvatarRef(avatarRef)}
+                  className="rounded-full object-cover"
+                  style={{ width: 92, height: 92 }}
+                />
+              ) : (
+                <AnoonAvatar
+                  initials={avatarInitials}
+                  tone={real ? user!.avatarTone : 3}
+                  size={92}
+                />
+              )}
+              {avatarUploading && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-xs font-medium text-white">
+                  Загрузка…
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={openPhotoPicker}
+                className="absolute -bottom-1 -right-1 flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground ring-4 ring-background transition-transform active:scale-95"
+                aria-label="Сменить фото"
+              >
+                <CameraIcon className="size-4" />
+              </button>
+            </div>
             <button
               type="button"
               onClick={openPhotoPicker}
-              className="absolute -bottom-1 -right-1 flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground ring-4 ring-background transition-transform active:scale-95"
-              aria-label="Сменить фото"
+              className="text-sm font-medium text-primary transition-transform active:scale-95"
             >
-              <CameraIcon className="size-4" />
+              Сменить фото
             </button>
+            {avatarError && <p className="text-xs text-destructive">{avatarError}</p>}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onPhotoPicked}
+            />
           </div>
+
+          {/* Fields */}
+          <div className="space-y-3">
+            {/* ID — read only, locked */}
+            <div className="rounded-2xl border border-border bg-card px-4 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">#ID</span>
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <LockIcon className="size-3.5" />
+                  не меняется
+                </span>
+              </div>
+              <p className="mt-0.5 font-mono text-lg font-semibold tracking-wide">
+                #{hashId}
+              </p>
+            </div>
+
+            <Field label="Ник" value={nick} onChange={setNick} placeholder="Придумайте ник" />
+            <Field label="Имя" value={firstName} onChange={setFirstName} placeholder="Имя" />
+            <Field label="Фамилия" value={lastName} onChange={setLastName} placeholder="Фамилия" />
+            <Field
+              label="Возраст"
+              value={age}
+              onChange={(v) => setAge(v.replace(/\D/g, "").slice(0, 3))}
+              placeholder="Возраст"
+              inputMode="numeric"
+            />
+
+            {/* Gender — read only, locked */}
+            <div className="rounded-2xl border border-border bg-card px-4 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Пол</span>
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <LockIcon className="size-3.5" />
+                  нельзя изменить
+                </span>
+              </div>
+              <p className="mt-0.5 text-foreground">{genderLabel}</p>
+            </div>
+          </div>
+
+          {/* Save */}
           <button
             type="button"
-            onClick={openPhotoPicker}
-            className="text-sm font-medium text-primary transition-transform active:scale-95"
+            onClick={handleSave}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 font-semibold text-primary-foreground transition-transform active:scale-95"
           >
-            Сменить фото
+            {saved ? (
+              <>
+                <CheckIcon className="size-5" />
+                Сохранено
+              </>
+            ) : (
+              "Сохранить"
+            )}
           </button>
-          {avatarError && <p className="text-xs text-destructive">{avatarError}</p>}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={onPhotoPicked}
-          />
         </div>
 
-        {/* Fields */}
-        <div className="space-y-3">
-          {/* ID — read only, locked */}
-          <div className="rounded-2xl border border-border bg-card px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">#ID</span>
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <LockIcon className="size-3.5" />
-                не меняется
-              </span>
+        {/* Column 2 on desktop: sharing + the links out of this screen. */}
+        <div>
+          {/* Share profile */}
+          <section className="mt-6 rounded-2xl border border-border bg-card p-4 lg:[.anoon-desktop_&]:mt-0">
+            <h2 className="text-sm font-semibold">Поделиться профилем</h2>
+            {/* Link only — no QR here (the invite screen owns the real, scannable
+                QR code for #ID invites; this was previously a fake decorative
+                grid, not an actual encoding of the link, so it's gone). */}
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Ваша ссылка</p>
+                <p className="truncate font-medium">{profileLink}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="shrink-0 rounded-full bg-card px-3 py-1.5 text-sm font-medium transition-transform active:scale-95"
+              >
+                {copied ? "Скопировано ✓" : "Скопировать ссылку"}
+              </button>
             </div>
-            <p className="mt-0.5 font-mono text-lg font-semibold tracking-wide">
-              #{hashId}
-            </p>
-          </div>
+          </section>
 
-          <Field label="Ник" value={nick} onChange={setNick} placeholder="Придумайте ник" />
-          <Field label="Имя" value={firstName} onChange={setFirstName} placeholder="Имя" />
-          <Field label="Фамилия" value={lastName} onChange={setLastName} placeholder="Фамилия" />
-          <Field
-            label="Возраст"
-            value={age}
-            onChange={(v) => setAge(v.replace(/\D/g, "").slice(0, 3))}
-            placeholder="Возраст"
-            inputMode="numeric"
-          />
-
-          {/* Gender — read only, locked */}
-          <div className="rounded-2xl border border-border bg-card px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Пол</span>
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <LockIcon className="size-3.5" />
-                нельзя изменить
-              </span>
-            </div>
-            <p className="mt-0.5 text-foreground">{genderLabel}</p>
-          </div>
-        </div>
-
-        {/* Save */}
-        <button
-          type="button"
-          onClick={handleSave}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 font-semibold text-primary-foreground transition-transform active:scale-95"
-        >
-          {saved ? (
-            <>
-              <CheckIcon className="size-5" />
-              Сохранено
-            </>
-          ) : (
-            "Сохранить"
-          )}
-        </button>
-
-        {/* Share profile */}
-        <section className="mt-6 rounded-2xl border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold">Поделиться профилем</h2>
-          {/* Link only — no QR here (the invite screen owns the real, scannable
-              QR code for #ID invites; this was previously a fake decorative
-              grid, not an actual encoding of the link, so it's gone). */}
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Ваша ссылка</p>
-              <p className="truncate font-medium">{profileLink}</p>
-            </div>
+          {/* Links */}
+          <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
+            {/* Desktop brings a keyboard, so every `hover:` here carries the
+                matching `focus-visible:` (docs/DESKTOP-LAYOUT.md, rule 5). */}
             <button
               type="button"
-              onClick={handleCopy}
-              className="shrink-0 rounded-full bg-card px-3 py-1.5 text-sm font-medium transition-transform active:scale-95"
+              onClick={() => setWalletOpen(true)}
+              className="flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none active:scale-[0.99]"
             >
-              {copied ? "Скопировано ✓" : "Скопировать ссылку"}
+              <span>Монеты и подписка</span>
+              <ChevronRightIcon className="size-4 text-muted-foreground" />
+            </button>
+            <div className="border-t border-border" />
+            <button
+              type="button"
+              onClick={() => nav.push("settings")}
+              className="flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none active:scale-[0.99]"
+            >
+              <span>Настройки</span>
+              <ChevronRightIcon className="size-4 text-muted-foreground" />
+            </button>
+            <div className="border-t border-border" />
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center justify-between px-4 py-3.5 text-left text-destructive transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none active:scale-[0.99]"
+            >
+              <span className="font-medium">Выйти</span>
+              <ChevronRightIcon className="size-4 text-destructive/70" />
             </button>
           </div>
-        </section>
-
-        {/* Links */}
-        <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
-          <button
-            type="button"
-            onClick={() => setWalletOpen(true)}
-            className="flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-muted active:scale-[0.99]"
-          >
-            <span>Монеты и подписка</span>
-            <ChevronRightIcon className="size-4 text-muted-foreground" />
-          </button>
-          <div className="border-t border-border" />
-          <button
-            type="button"
-            onClick={() => nav.push("settings")}
-            className="flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors hover:bg-muted active:scale-[0.99]"
-          >
-            <span>Настройки</span>
-            <ChevronRightIcon className="size-4 text-muted-foreground" />
-          </button>
-          <div className="border-t border-border" />
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex w-full items-center justify-between px-4 py-3.5 text-left text-destructive transition-colors hover:bg-muted active:scale-[0.99]"
-          >
-            <span className="font-medium">Выйти</span>
-            <ChevronRightIcon className="size-4 text-destructive/70" />
-          </button>
         </div>
       </div>
 

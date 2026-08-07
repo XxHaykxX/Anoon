@@ -86,6 +86,23 @@ function capBadge(n: number): string {
 }
 
 /**
+ * Desktop column. On ≥1024px the work area is up to 60rem wide, so a phone-width
+ * row stretched across it puts the name at one edge and the chevron at the other
+ * — the row stops reading as one object. Centre a 36rem column instead — the
+ * same width «Заявки» and «Найти друга» use, so moving between the three
+ * screens of this tab doesn't shift the content sideways.
+ *
+ * BOTH halves of `lg:[.anoon-desktop_&]:` are load-bearing, and neither works
+ * alone: `lg:` is the width test, but the showcase (`src/app/page.tsx`) renders
+ * this very screen inside fixed 390px frames on a wide monitor, so `lg:` on its
+ * own fires there too; `.anoon-desktop` excludes the showcase (only AnoonApp
+ * carries that class), but it sits on the app root at EVERY width, so on its own
+ * it would restyle the phone. See docs/DESKTOP-LAYOUT.md.
+ */
+const DESKTOP_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[36rem]";
+
+/**
  * BUG-36: this single screen renders BOTH nav tabs — «Чаты» (route "chats",
  * the post-login landing screen, active conversations only) and «Друзья»
  * (route "friends", the full contact list + search/requests/add-by-#ID).
@@ -175,7 +192,7 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 pb-2 pt-3">
+      <div className={`flex items-center justify-between px-5 pb-2 pt-3 ${DESKTOP_COL}`}>
         {/* BUG-36: title matches whichever nav tab led here. */}
         <h1 className="text-2xl font-bold">{isChats ? "Чаты" : "Контакты"}</h1>
         <div className="flex items-center gap-4">
@@ -209,7 +226,7 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
       </div>
 
       {searchOpen && (
-        <div className="px-5 pb-2">
+        <div className={`px-5 pb-2 ${DESKTOP_COL}`}>
           <input
             type="text"
             value={query}
@@ -268,7 +285,7 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
               data-testid="friend-row"
               data-topic={f.topic}
               data-fid={f.id}
-              className={`anoon-cv-row flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-muted active:bg-muted/40 active:scale-[0.99] motion-reduce:transition-none ${
+              className={`anoon-cv-row flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-muted active:bg-muted/40 active:scale-[0.99] motion-reduce:transition-none ${DESKTOP_COL} lg:[.anoon-desktop_&]:rounded-2xl lg:[.anoon-desktop_&]:py-3 ${
                 USE_TINODE ? "cursor-pointer" : ""
               }`}
               onClick={() => (USE_TINODE ? openFriend(f.id) : setMenuFor(null))}

@@ -28,6 +28,16 @@ const DIRECTORY: Person[] = [
   { id: "p5", hashId: "#00777", name: "Оникс", initials: "О", tone: 5, note: "был 3 ч назад" },
 ];
 
+/**
+ * Desktop column — the search field and the result cards read as a form, not as
+ * a 60rem-wide banner. `lg:` is the width test and `.anoon-desktop` excludes the
+ * showcase (which renders this screen inside a fixed 390px frame on a wide
+ * monitor) — that class alone is on the app root at every width, so both halves
+ * are needed. See docs/DESKTOP-LAYOUT.md.
+ */
+const DESKTOP_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[36rem]";
+
 /** Bare digits of a #ID, so «#00012» and «00012» compare equal. */
 const bareId = (id: string) => id.replace(/^#/, "").trim().toLowerCase();
 
@@ -151,13 +161,13 @@ export default function AnoonFriendSearch() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="px-5 pb-3 pt-3">
+      <div className={`px-5 pb-3 pt-3 ${DESKTOP_COL}`}>
         <h1 className="text-2xl font-bold">Найти друга</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">Введите ID пользователя</p>
       </div>
 
       {/* Search field */}
-      <div className="px-5 pb-3">
+      <div className={`px-5 pb-3 ${DESKTOP_COL}`}>
         <div className="flex items-center gap-2 rounded-full border border-transparent bg-muted px-4 py-2.5 ring-primary/40 transition-shadow focus-within:border-primary focus-within:ring-2">
           <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
           <input
@@ -197,7 +207,7 @@ export default function AnoonFriendSearch() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2.5">
+          <div className={`flex flex-col gap-2.5 ${DESKTOP_COL}`}>
             {results.map((p) => {
               const isFriend = p.relation === "friends";
               const isSent = sent[p.id] || p.relation === "request_sent";
