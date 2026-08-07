@@ -8,24 +8,43 @@ import (
 )
 
 // handleMe returns the authenticated caller's own anoon profile: the real #ID,
-// gender, and self-reported age. The frontend calls GET /me right after login
-// (basic scheme) to replace the synthesized placeholder with the real identity
-// — without this the profile card falls back to showing the raw Tinode UID.
+// gender, self-reported age, and their monetization state. The frontend calls
+// GET /me right after login (basic scheme) to replace the synthesized
+// placeholder with the real identity — without this the profile card falls back
+// to showing the raw Tinode UID.
 //
 // Shape matches POST /auth/register so the frontend's User builder handles both
 // the register and login paths identically.
+//
+// `coins`/`subscription` are read by walletStore.fetchWallet, which is the only
+// source the wallet screen has. They were missing from this response while the
+// frontend already asked for them, so `me?.coins ?? 0` and
+// `me?.subscription ?? "free"` always fell through to their defaults: an account
+// with an active Premium row in the database showed a zero balance and the free
+// tier, while the match queue — which reads the same table through
+// Store.Priority — did give it priority. Same data, two answers.
+//
+// A failure to read the wallet is NOT fatal to the identity: the caller needs
+// their #ID to finish signing in far more than they need a balance, so it is
+// logged and reported as free/0 rather than turning login into an error.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	u, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
+	wallet, err := s.Store.WalletOf(r.Context(), u.ID)
+	if err != nil {
+		log.Printf("me: wallet of user %d: %v", u.ID, err)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tinodeUid": u.TinodeUID,
-		"hashId":    store.FormatHashID(u.HashID),
-		"hashIdNum": u.HashID,
-		"gender":    u.Gender,
-		"age":       u.Age,
-		"state":     u.State,
+		"tinodeUid":    u.TinodeUID,
+		"hashId":       store.FormatHashID(u.HashID),
+		"hashIdNum":    u.HashID,
+		"gender":       u.Gender,
+		"age":          u.Age,
+		"state":        u.State,
+		"coins":        wallet.Coins,
+		"subscription": wallet.Tier,
 	})
 }
 
