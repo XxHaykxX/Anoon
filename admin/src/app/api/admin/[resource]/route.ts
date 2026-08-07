@@ -34,7 +34,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ resource
       sort: sp.get("sort") ?? undefined,
       order: (sp.get("order") as "asc" | "desc") ?? undefined,
       filters,
-      ids: sp.get("ids") ? sp.get("ids")!.split(",") : undefined,
+      // По НАЛИЧИЮ параметра, не по его непустоте: `ids=` — это «только эти, то
+      // есть никого». Проверка на истинность строки превращала пустой набор в
+      // отсутствие фильтра, и getMany ни за что отдавал первую страницу целиком
+      // (замерено: `ids=` возвращал все 13 строк вместо нуля).
+      ids: sp.has("ids") ? sp.get("ids")!.split(",").filter(Boolean) : undefined,
     });
     return NextResponse.json(result);
   } catch (err) {

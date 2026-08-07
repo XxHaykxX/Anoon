@@ -160,6 +160,10 @@ function listQuery(p: CompanionListParams): string {
   if (p.sort) qs.set("_sort", p.sort);
   if (p.order) qs.set("_order", p.order);
   for (const [k, v] of Object.entries(p.filters ?? {})) if (v != null && v !== "") qs.set(`f_${k}`, v);
+  // getMany (Refine): один запрос набором id вместо цикла по GET /{ресурс}/{id}.
+  // Ставится по НАЛИЧИЮ ids, а не по непустоте: пустой набор означает «только эти,
+  // то есть никого», и опустить параметр значило бы отдать первую страницу целиком.
+  if (p.ids) qs.set("ids", p.ids.join(","));
   const s = qs.toString();
   return s ? `?${s}` : "";
 }
@@ -286,13 +290,6 @@ export async function companionList(
 ): Promise<{ data: unknown[]; total: number }> {
   const path = resourcePath(resource);
   if (!path) throw new Error(`companion не обслуживает ресурс: ${resource}`);
-
-  // getMany (ids) — companion list-контракт равенства не покрывает набор id; тянем поштучно.
-  if (p.ids?.length) {
-    const rows = await Promise.all(p.ids.map((id) => companionGetOne(resource, id)));
-    const data = rows.filter((x): x is NonNullable<typeof x> => x != null);
-    return { data, total: data.length };
-  }
 
   const body = await companionFetch<{ data: any[]; total: number }>(`/admin/${path}${listQuery(p)}`);
   const rows = Array.isArray(body?.data) ? body.data : [];
