@@ -7,6 +7,16 @@ import { PRESS_FX } from "@/components/anoon/_shared";
 import { USE_TINODE } from "@/lib/tinode";
 import { useAnoonStore } from "@/store";
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonInvite() {
   const nav = useAnoonNav();
   const [copied, setCopied] = useState(false);
@@ -44,7 +54,7 @@ export default function AnoonInvite() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center gap-1 px-6 pb-2 pt-6">
+      <div className={`flex items-center gap-1 px-6 pb-2 pt-6 ${DESKTOP_FORM}`}>
         <button
           type="button"
           onClick={() => nav.back()}
@@ -61,7 +71,9 @@ export default function AnoonInvite() {
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col items-center overflow-y-auto px-6 pb-4">
+      <div
+        className={`flex flex-1 flex-col items-center overflow-y-auto px-6 pb-4 ${DESKTOP_FORM}`}
+      >
         {/* #ID card — no QR (BUG-20: removed entirely, link + #ID is enough). */}
         <div className="mt-3 flex w-full flex-col items-center rounded-3xl border border-border bg-card p-6">
           <p className="text-xs text-muted-foreground">Мой код</p>

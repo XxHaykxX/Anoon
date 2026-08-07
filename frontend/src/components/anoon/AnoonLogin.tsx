@@ -6,6 +6,20 @@ import { useAnoonNav } from "@/components/anoon/anoonNav";
 import { USE_TINODE } from "@/lib/tinode";
 import { useAnoonStore } from "@/store";
 
+/**
+ * Desktop (≥1024): this is a narrow form, so it becomes one centered column of
+ * a readable width instead of stretching across the shell's 60rem work area —
+ * a login form 960px wide reads worse than the phone one. The background stays
+ * full-bleed; only the content is capped.
+ *
+ * Both halves of the variant are load-bearing (docs/DESKTOP-LAYOUT.md): a bare
+ * `lg:` would also fire in the showcase's 390px frames on a wide monitor, and
+ * `.anoon-desktop` alone sits on the AnoonApp root at every width, so it would
+ * fire on the phone.
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 /* --- Brand logo mark (not in shared icon set) --- */
 function GoogleMark({ className }: { className?: string }) {
   return (
@@ -76,7 +90,7 @@ export default function AnoonLogin() {
         style={{ background: "rgba(253,191,45,0.14)" }}
       />
 
-      <div className="relative z-10 flex flex-1 flex-col overflow-y-auto px-6">
+      <div className={`relative z-10 flex flex-1 flex-col overflow-y-auto px-6 ${DESKTOP_FORM}`}>
         {/* Logo + tagline */}
         <div className="mt-16 flex flex-col items-center text-center">
           <AnoonLogo className="text-4xl" />
@@ -185,7 +199,9 @@ export default function AnoonLogin() {
       </div>
 
       {/* Footer */}
-      <div className="relative z-10 mt-auto px-6 pb-6 pt-4 text-center text-[11px] leading-relaxed text-muted-foreground">
+      <div
+        className={`relative z-10 mt-auto px-6 pb-6 pt-4 text-center text-[11px] leading-relaxed text-muted-foreground ${DESKTOP_FORM}`}
+      >
         Продолжая, вы подтверждаете, что вам 18+ и принимаете условия
         использования.
       </div>

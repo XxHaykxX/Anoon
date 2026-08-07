@@ -25,6 +25,16 @@ function EnvelopeIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonVerifyEmail() {
   const nav = useAnoonNav();
   const email = "you@example.com";
@@ -97,7 +107,7 @@ export default function AnoonVerifyEmail() {
         style={{ background: "rgba(253,191,45,0.14)" }}
       />
 
-      <div className="relative z-10 flex items-center gap-1 px-6 pt-6">
+      <div className={`relative z-10 flex items-center gap-1 px-6 pt-6 ${DESKTOP_FORM}`}>
         <button
           type="button"
           onClick={() => nav.back()}
@@ -109,7 +119,9 @@ export default function AnoonVerifyEmail() {
         <AnoonLogo className="text-xl" />
       </div>
 
-      <div className="relative z-10 flex flex-1 flex-col items-center px-6 pt-10 text-center">
+      <div
+        className={`relative z-10 flex flex-1 flex-col items-center px-6 pt-10 text-center ${DESKTOP_FORM}`}
+      >
         <div className="grid size-20 place-items-center rounded-full bg-primary/15 text-primary">
           <EnvelopeIcon />
         </div>

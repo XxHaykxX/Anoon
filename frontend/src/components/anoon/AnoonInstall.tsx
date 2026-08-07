@@ -44,6 +44,16 @@ function AddSquareIcon({ className }: { className?: string }) {
 
 type Platform = "android" | "iphone";
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonInstall() {
   const nav = useAnoonNav();
   const [platform, setPlatform] = useState<Platform>("android");
@@ -51,7 +61,7 @@ export default function AnoonInstall() {
 
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
-      <div className="flex shrink-0 items-center gap-1 px-6 pt-6">
+      <div className={`flex shrink-0 items-center gap-1 px-6 pt-6 ${DESKTOP_FORM}`}>
         <button
           type="button"
           onClick={() => nav.back()}
@@ -61,7 +71,9 @@ export default function AnoonInstall() {
           <ChevronLeftIcon className="size-6" />
         </button>
       </div>
-      <div className="flex flex-1 flex-col items-center justify-center px-7 pb-10 text-center">
+      <div
+        className={`flex flex-1 flex-col items-center justify-center px-7 pb-10 text-center ${DESKTOP_FORM}`}
+      >
         {/* App icon */}
         <div
           className="flex size-20 items-center justify-center rounded-3xl shadow-lg"

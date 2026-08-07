@@ -29,6 +29,16 @@ const slides: Slide[] = [
   },
 ];
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonOnboarding() {
   const nav = useAnoonNav();
   const [activeSlide, setActiveSlide] = useState(0);
@@ -56,7 +66,7 @@ export default function AnoonOnboarding() {
       />
 
       {/* Top bar: Skip → login */}
-      <div className="relative z-10 flex w-full items-center justify-between">
+      <div className={`relative z-10 flex w-full items-center justify-between ${DESKTOP_FORM}`}>
         <AnoonLogo className="text-xl" />
         {!isLastSlide && (
           <button
@@ -108,7 +118,7 @@ export default function AnoonOnboarding() {
       </div>
 
       {/* Bottom CTA */}
-      <div className="relative z-10 flex w-full flex-col items-center gap-3">
+      <div className={`relative z-10 flex w-full flex-col items-center gap-3 ${DESKTOP_FORM}`}>
         <button
           type="button"
           onClick={handleNext}

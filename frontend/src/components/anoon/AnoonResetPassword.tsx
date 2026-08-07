@@ -44,6 +44,16 @@ function EyeOffIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonResetPassword() {
   const nav = useAnoonNav();
   // No route-param plumbing between screens (AnoonNavApi is a plain route stack,
@@ -86,7 +96,7 @@ export default function AnoonResetPassword() {
       {/* Back is for the form only: once the password is saved the flow is done,
           and the sole thing behind it is the form the user just completed. The
           logo then sits on the content column, like the other no-back screens. */}
-      <div className="relative z-10 flex items-center gap-1 px-6 pt-6">
+      <div className={`relative z-10 flex items-center gap-1 px-6 pt-6 ${DESKTOP_FORM}`}>
         {!saved && (
           <button
             type="button"
@@ -101,7 +111,9 @@ export default function AnoonResetPassword() {
       </div>
 
       {saved ? (
-        <div className="relative z-10 flex flex-1 flex-col items-center px-6 pt-16 text-center">
+        <div
+          className={`relative z-10 flex flex-1 flex-col items-center px-6 pt-16 text-center ${DESKTOP_FORM}`}
+        >
           <div className="grid size-20 place-items-center rounded-full bg-online/15 text-online">
             <CheckIcon className="size-10" />
           </div>
@@ -119,7 +131,7 @@ export default function AnoonResetPassword() {
           </button>
         </div>
       ) : (
-        <div className="relative z-10 flex flex-1 flex-col px-6 pt-8">
+        <div className={`relative z-10 flex flex-1 flex-col px-6 pt-8 ${DESKTOP_FORM}`}>
           <h1 className="text-2xl font-bold">Новый пароль</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Придумайте новый пароль для входа в аккаунт.

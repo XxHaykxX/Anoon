@@ -6,6 +6,16 @@ import { AnoonLogo } from "@/components/anoon/_shared";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
 import { getCompanionClient } from "@/lib/companion";
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonForgotPassword() {
   const nav = useAnoonNav();
   const [email, setEmail] = useState("");
@@ -40,7 +50,7 @@ export default function AnoonForgotPassword() {
         style={{ background: "rgba(253,191,45,0.14)" }}
       />
 
-      <div className="relative z-10 flex items-center gap-1 px-6 pt-6">
+      <div className={`relative z-10 flex items-center gap-1 px-6 pt-6 ${DESKTOP_FORM}`}>
         <button
           type="button"
           onClick={() => nav.back()}
@@ -53,7 +63,9 @@ export default function AnoonForgotPassword() {
       </div>
 
       {sent ? (
-        <div className="relative z-10 flex flex-1 flex-col items-center px-6 pt-16 text-center">
+        <div
+          className={`relative z-10 flex flex-1 flex-col items-center px-6 pt-16 text-center ${DESKTOP_FORM}`}
+        >
           <div className="grid size-20 place-items-center rounded-full bg-online/15 text-online">
             <CheckIcon className="size-10" />
           </div>
@@ -84,7 +96,7 @@ export default function AnoonForgotPassword() {
           </button>
         </div>
       ) : (
-        <div className="relative z-10 flex flex-1 flex-col px-6 pt-8">
+        <div className={`relative z-10 flex flex-1 flex-col px-6 pt-8 ${DESKTOP_FORM}`}>
           <h1 className="text-2xl font-bold">Восстановление пароля</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Введите почту от аккаунта — мы пришлём ссылку для сброса пароля.

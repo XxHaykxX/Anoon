@@ -47,6 +47,16 @@ function EyeOffIcon({ className }: { className?: string }) {
 
 type Gender = "male" | "female" | null;
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonRegister() {
   const nav = useAnoonNav();
   const [email, setEmail] = useState("");
@@ -103,7 +113,7 @@ export default function AnoonRegister() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center gap-1 px-6 pt-6">
+      <div className={`flex items-center gap-1 px-6 pt-6 ${DESKTOP_FORM}`}>
         <button
           type="button"
           onClick={() => nav.back()}
@@ -115,7 +125,7 @@ export default function AnoonRegister() {
         <AnoonLogo className="text-xl" />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-6">
+      <div className={`flex-1 overflow-y-auto px-6 pb-6 ${DESKTOP_FORM}`}>
         <h1 className="mt-5 text-2xl font-bold">Регистрация</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Создайте аккаунт по email

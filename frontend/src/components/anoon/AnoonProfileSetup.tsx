@@ -26,6 +26,16 @@ function CameraIcon({ className }: { className?: string }) {
 
 const AGE_RANGES = ["18–21", "22–25", "26–35", "36+"] as const;
 
+/**
+ * Desktop (≥1024): this screen is a narrow form, so it becomes one centered
+ * column of a readable width instead of stretching across the shell's 60rem
+ * work area; the background stays full-bleed, only the content is capped.
+ * Both halves of the variant are load-bearing — see docs/DESKTOP-LAYOUT.md,
+ * «Как писать десктопные стили в файле экрана».
+ */
+const DESKTOP_FORM =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[26rem]";
+
 export default function AnoonProfileSetup() {
   const nav = useAnoonNav();
   const [firstName, setFirstName] = useState("");
@@ -37,11 +47,11 @@ export default function AnoonProfileSetup() {
 
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
-      <div className="px-6 pt-6">
+      <div className={`px-6 pt-6 ${DESKTOP_FORM}`}>
         <AnoonLogo className="text-xl" />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-6">
+      <div className={`flex-1 overflow-y-auto px-6 pb-6 ${DESKTOP_FORM}`}>
         <h1 className="mt-5 text-2xl font-bold">Заполните профиль</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Всё, кроме имени, можно пропустить.
@@ -134,22 +144,25 @@ export default function AnoonProfileSetup() {
         </div>
       </div>
 
-      <div className="border-t border-border px-6 py-4">
-        <button
-          type="button"
-          disabled={!canFinish}
-          onClick={() => nav.go("home")}
-          className={`w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer ${
-            canFinish ? "" : "cursor-not-allowed opacity-50"
-          }`}
-          style={
-            canFinish
-              ? { boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" }
-              : undefined
-          }
-        >
-          Готово
-        </button>
+      {/* The hairline stays full-bleed; only the button inside rides the column. */}
+      <div className="border-t border-border">
+        <div className={`px-6 py-4 ${DESKTOP_FORM}`}>
+          <button
+            type="button"
+            disabled={!canFinish}
+            onClick={() => nav.go("home")}
+            className={`w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer ${
+              canFinish ? "" : "cursor-not-allowed opacity-50"
+            }`}
+            style={
+              canFinish
+                ? { boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" }
+                : undefined
+            }
+          >
+            Готово
+          </button>
+        </div>
       </div>
     </div>
   );
