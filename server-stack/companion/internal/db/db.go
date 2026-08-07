@@ -13,6 +13,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log"
 	"sort"
 	"time"
 
@@ -51,8 +52,45 @@ func Open(ctx context.Context, dsn string) (*DB, error) {
 }
 
 // Migrate applies any embedded migration files that have not yet been recorded
-// in schema_migrations. It is safe to run on every startup.
+// in schema_migrations. It is safe to run on every startup, and — since the
+// advisory lock below — safe to run from several companion processes at once.
+//
+// The lock is taken on its own connection, while migrateLocked keeps running its
+// statements through the pool. That split is intentional and safe: the lock's
+// only job is to exclude other callers of acquireMigrationLock, so it does not
+// need to sit on the session doing the DDL. Migrating on the dedicated
+// connection instead would mean threading it through migrationApplied and
+// applyMigration for no gain.
 func (d *DB) Migrate(ctx context.Context) error {
+	conn, err := d.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("db: migration lock: reserve connection: %w", err)
+	}
+	locked := true
+	defer func() {
+		if locked {
+			// Nothing sane is left to do with the error but shout: the process is
+			// about to hand this connection back to the pool, so discardConn is
+			// what keeps a still-held lock from outliving us.
+			if relErr := releaseMigrationLock(conn); relErr != nil {
+				log.Printf("db: migration lock NOT released, dropping its connection: %v", relErr)
+				discardConn(conn)
+			}
+		}
+		_ = conn.Close()
+	}()
+
+	if err := acquireMigrationLock(ctx, conn); err != nil {
+		locked = false // never taken: unlocking would just log a false warning
+		return err
+	}
+
+	return d.migrateLocked(ctx)
+}
+
+// migrateLocked is the original migration walk. The caller holds the migration
+// advisory lock, so the check-then-apply below has no competitor.
+func (d *DB) migrateLocked(ctx context.Context) error {
 	if _, err := d.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    TEXT PRIMARY KEY,
