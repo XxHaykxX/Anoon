@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"anoon/companion/internal/store"
 )
@@ -62,7 +63,12 @@ const activityType = "activity"
 // handleWSFrame dispatches one inbound WS frame from an authenticated user.
 // Malformed or unrecognized frames are silently ignored (robustness over
 // strictness — a client bug here must not kill the socket).
-func (s *Server) handleWSFrame(ctx context.Context, u store.User, raw []byte) {
+//
+// lim is the socket's inbound budget (#33). The caller has already charged this
+// frame against the overall bucket; what is charged here is the tighter one for
+// msg:sent, the only type that reaches off the socket by waking somebody else's
+// device. A nil lim means unlimited and is for tests only.
+func (s *Server) handleWSFrame(ctx context.Context, u store.User, raw []byte, lim *wsFrameLimiter) {
 	var frame map[string]any
 	if err := json.Unmarshal(raw, &frame); err != nil {
 		return
@@ -78,6 +84,9 @@ func (s *Server) handleWSFrame(ctx context.Context, u store.User, raw []byte) {
 		s.relayActivity(ctx, u, frame)
 	case typ == msgSentType:
 		// Not a relay: it pushes to an OFFLINE recipient (see message_push.go).
+		if lim != nil && !lim.allowPush(time.Now()) {
+			return // over the push budget: drop, no notification
+		}
 		s.onMessageSent(ctx, u, frame)
 	}
 	// Any other frame type is ignored — the socket is otherwise receive-only.

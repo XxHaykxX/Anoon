@@ -82,6 +82,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		conn.Close()
 	}()
 
+	// Inbound budget for this socket (#33): a size cap per frame and token
+	// buckets for how many of them may do work. See wsframelimit.go.
+	conn.SetReadLimit(wsReadLimitBytes)
+	frameLimit := newWSFrameLimiter(time.Now())
+
 	conn.SetReadDeadline(time.Now().Add(wsPongWait))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(wsPongWait))
@@ -115,12 +120,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// Read pump: the client is otherwise receive-only, but WebRTC call signaling
 	// frames (call:offer/answer/ice/hangup) travel up this same socket — see
 	// handleWSFrame. Exit on close/error, which tears down the write pump too.
+	// Over-budget frames are dropped and the socket stays up: a client that
+	// talks too fast is throttled, not disconnected.
 	for {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			break
 		}
-		s.handleWSFrame(r.Context(), u, raw)
+		if !frameLimit.allowFrame(time.Now()) {
+			continue
+		}
+		s.handleWSFrame(r.Context(), u, raw, frameLimit)
 	}
 	close(done)
 }
