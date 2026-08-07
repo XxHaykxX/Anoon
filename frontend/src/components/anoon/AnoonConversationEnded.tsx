@@ -27,9 +27,17 @@ export default function AnoonConversationEnded({
   const [rating, setRating] = useState<number | null>(null);
 
   return (
-    <div className="absolute inset-0 z-50 flex items-end bg-black/60 px-4 pb-6">
-      <div className="anoon-msg-in w-full rounded-3xl border border-border bg-card p-5 shadow-2xl">
-        <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-muted-foreground/30" />
+    // Desktop: a bottom sheet is a phone idiom — on a 1440px viewport the same
+    // markup is a rating bar glued to the bottom edge with the five emoji a
+    // hand-span apart. Centre it and cap it, and the sheet reads as the dialog
+    // it already is. `lg:[.anoon-desktop_&]:` needs both halves: `lg:` alone
+    // fires in the showcase's 390px frames, the class alone is on the app root
+    // at every width (docs/DESKTOP-LAYOUT.md).
+    <div className="absolute inset-0 z-50 flex items-end bg-black/60 px-4 pb-6 lg:[.anoon-desktop_&]:items-center lg:[.anoon-desktop_&]:pb-4">
+      <div className="anoon-msg-in w-full rounded-3xl border border-border bg-card p-5 shadow-2xl lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:max-w-[26rem]">
+        {/* Drag handle — a phone affordance; the centred desktop dialog has
+            nothing to drag, so it goes. */}
+        <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-muted-foreground/30 lg:[.anoon-desktop_&]:hidden" />
 
         <h2 className="text-center text-lg font-bold text-foreground">
           Разговор завершён

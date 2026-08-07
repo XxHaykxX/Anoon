@@ -68,7 +68,12 @@ export default function IncomingCall({ peerName, peerId, media, onAccept, onDecl
         </div>
       </div>
 
-      <div className="flex w-full items-center justify-around pb-4">
+      {/* Desktop: `justify-around` across a 1440px viewport puts «Отклонить» and
+          «Принять» half a screen apart — cap the row so the pair stays one
+          control group under the avatar. `lg:[.anoon-desktop_&]:` needs both
+          halves: `lg:` alone fires in the showcase's 390px frames, the class
+          alone is on the app root at every width (docs/DESKTOP-LAYOUT.md). */}
+      <div className="flex w-full items-center justify-around pb-4 lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:max-w-[22rem]">
         <div className="flex flex-col items-center gap-2">
           <button
             type="button"

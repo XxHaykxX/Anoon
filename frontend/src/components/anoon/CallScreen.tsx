@@ -421,11 +421,23 @@ export default function CallScreen({
       <div className="relative flex-1 overflow-hidden">
         {media === "video" ? (
           <>
+            {/*
+              Desktop: cap the stage and switch to `object-contain`. The peer's
+              camera is a phone portrait frame; `object-cover` across a 1440px
+              wall crops it to a letterbox strip of someone's forehead and chin,
+              which is worse than the black margins the cap leaves. `inset-0` +
+              `mx-auto` + a max width centres an absolutely positioned element;
+              `min(100%,…)` keeps it inside the stage at 1024px, where the cap
+              alone would be wider than the viewport.
+              `lg:[.anoon-desktop_&]:` needs both halves: `lg:` alone fires in
+              the showcase's 390px frames, the class alone is on the app root at
+              every width (docs/DESKTOP-LAYOUT.md).
+            */}
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              className="absolute inset-0 h-full w-full bg-card object-cover"
+              className="absolute inset-0 h-full w-full bg-card object-cover lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:max-w-[min(100%,56rem)] lg:[.anoon-desktop_&]:object-contain"
             />
             {!connected && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/70">
@@ -436,7 +448,10 @@ export default function CallScreen({
             )}
 
             {/* Local self-view PIP — muted (own audio must not echo back) and mirrored. */}
-            <div className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] h-32 w-24 overflow-hidden rounded-2xl border border-white/15 bg-muted shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+            {/* Self-view rides the right edge of the capped stage above, not the
+                viewport's, so it stays over the video instead of floating in
+                the black gutter beside it. */}
+            <div className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] h-32 w-24 overflow-hidden rounded-2xl border border-white/15 bg-muted shadow-[0_8px_24px_rgba(0,0,0,0.4)] lg:[.anoon-desktop_&]:right-[max(1rem,calc((100%-56rem)/2+1rem))]">
               <video
                 ref={localVideoRef}
                 autoPlay

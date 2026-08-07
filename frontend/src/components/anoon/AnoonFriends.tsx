@@ -288,7 +288,12 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
               className={`anoon-cv-row flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-muted active:bg-muted/40 active:scale-[0.99] motion-reduce:transition-none ${DESKTOP_COL} lg:[.anoon-desktop_&]:rounded-2xl lg:[.anoon-desktop_&]:py-3 ${
                 USE_TINODE ? "cursor-pointer" : ""
               }`}
-              onClick={() => (USE_TINODE ? openFriend(f.id) : setMenuFor(null))}
+              // Real mode: the row IS the chat. Mock mode (showcase): the row
+              // body owns the actions menu — «Убрать» has no other entry point
+              // — and the chevron below is what opens the chat.
+              onClick={() =>
+                USE_TINODE ? openFriend(f.id) : setMenuFor((cur) => (cur === f.id ? null : f.id))
+              }
             >
               <div className="relative shrink-0">
                 <FriendAvatar topic={f.topic} initials={f.initials} tone={f.tone} size={48} />
@@ -354,11 +359,15 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      // Mock mode has no store friend to open, so it can't go
+                      // through openFriend — it shows the standalone mock
+                      // thread instead. Without this the private chat is
+                      // unreachable in the showcase and in mock QA.
                       if (USE_TINODE) openFriend(f.id);
-                      else setMenuFor(f.id);
+                      else nav.push("private-chat");
                     }}
                     className={`grid size-7 place-items-center text-muted-foreground ${PRESS_FX}`}
-                    aria-label={USE_TINODE ? "Открыть чат" : "Действия"}
+                    aria-label="Открыть чат"
                   >
                     <ChevronRightIcon className="size-5" />
                   </button>

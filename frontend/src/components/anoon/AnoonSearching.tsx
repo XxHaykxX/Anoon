@@ -92,8 +92,12 @@ export default function AnoonSearching() {
         </p>
       </div>
 
-      {/* Cancel */}
-      <div className="w-full px-5 pb-8">
+      {/* Cancel. Capped on desktop: this screen has no nav rail (leaving a match
+          must go through leaveQueue, see docs/DESKTOP-LAYOUT.md), so it owns the
+          whole viewport and a full-width button would be a 1400px bar.
+          `lg:[.anoon-desktop_&]:` — both halves needed: `lg:` alone fires in the
+          showcase's 390px frames, the class alone is on the root at every width. */}
+      <div className="w-full px-5 pb-8 lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:max-w-[22rem]">
         <button
           type="button"
           onClick={cancel}

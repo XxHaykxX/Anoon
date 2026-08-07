@@ -22,6 +22,18 @@ function initialsOf(name: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+/**
+ * Desktop column — same 36rem the other tab screens use, so switching tabs in
+ * the rail doesn't slide the content sideways.
+ *
+ * `lg:[.anoon-desktop_&]:` needs both halves: `lg:` alone would also fire in the
+ * showcase (it renders this screen in a fixed 390px frame on a wide monitor),
+ * and `.anoon-desktop` alone sits on the app root at every width and would
+ * restyle the phone. See docs/DESKTOP-LAYOUT.md.
+ */
+const DESKTOP_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[36rem]";
+
 /** Bucket a numeric age (from the profile) into one of the shared ranges. */
 function ageRangeFor(age: number): AgeRange {
   if (age <= 21) return "18–21";
@@ -66,8 +78,12 @@ export default function AnoonHome() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Top bar */}
-      <header className="flex items-center justify-between px-5 pt-4">
-        <AnoonLogo />
+      <header className={`flex items-center justify-between px-5 pt-4 ${DESKTOP_COL}`}>
+        {/* Desktop: the rail already carries the anoon wordmark two centimetres
+            to the left, so the screen's own copy is a duplicate. Swap it for the
+            tab's title, which is what every other screen shows here. */}
+        <AnoonLogo className="lg:[.anoon-desktop_&]:hidden" />
+        <h1 className="hidden text-2xl font-bold lg:[.anoon-desktop_&]:block">Рулетка</h1>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -94,7 +110,7 @@ export default function AnoonHome() {
       </header>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto px-5 pb-4 pt-4">
+      <div className={`flex-1 overflow-y-auto px-5 pb-4 pt-4 ${DESKTOP_COL}`}>
         {/* Own card */}
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
           {cardAvatarRef && cardAvatarBroken !== cardAvatarRef ? (
@@ -151,7 +167,7 @@ export default function AnoonHome() {
 
       {/* Start button (pinned above nav) — always enabled now that own age
           isn't a manual step (BUG-21). */}
-      <div className="px-5 pb-3">
+      <div className={`px-5 pb-3 ${DESKTOP_COL}`}>
         <button
           type="button"
           onClick={() => {

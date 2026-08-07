@@ -110,7 +110,10 @@ function ViewerSlide({
             data-testid={isCurrent ? "media-viewer-item" : undefined}
             onLoad={onLoad}
             onError={onError}
-            className="max-h-full max-w-full select-none object-contain"
+            // Desktop cap: `max-w-full` alone lets a large photo run the full
+            // 1440px. `min(100%,…)` keeps the phone rule intact below the cap
+            // and at 1024px, where 72rem is wider than the viewport itself.
+            className="max-h-full max-w-full select-none object-contain lg:[.anoon-desktop_&]:max-w-[min(100%,72rem)]"
           />
         ) : (
           <video
@@ -128,7 +131,7 @@ function ViewerSlide({
             onPointerDown={(e) => e.stopPropagation()}
             onPointerMove={(e) => e.stopPropagation()}
             onPointerUp={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full bg-black object-contain"
+            className="max-h-full max-w-full bg-black object-contain lg:[.anoon-desktop_&]:max-w-[min(100%,72rem)]"
           />
         )}
       </div>

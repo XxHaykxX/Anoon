@@ -124,7 +124,13 @@ export default function AnoonReport({ onClose }: AnoonReportProps) {
           />
 
           {/* Sheet */}
-          <div className="absolute inset-x-0 bottom-0 z-20 max-h-[92%] overflow-y-auto rounded-t-3xl bg-card ring-1 ring-border animate-in slide-in-from-bottom duration-300 ease-out motion-reduce:animate-none">
+          {/* Desktop: the sheet keeps its bottom anchor (it belongs to the chat
+              it covers) but stops being a 1400px-wide bar — capped and centred.
+              `inset-x-0` + `mx-auto` + a max width centres an absolutely
+              positioned box. `lg:[.anoon-desktop_&]:` needs both halves: `lg:`
+              alone fires in the showcase's 390px frames, the class alone is on
+              the app root at every width (docs/DESKTOP-LAYOUT.md). */}
+          <div className="absolute inset-x-0 bottom-0 z-20 max-h-[92%] overflow-y-auto rounded-t-3xl bg-card ring-1 ring-border animate-in slide-in-from-bottom duration-300 ease-out motion-reduce:animate-none lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:max-w-[32rem] lg:[.anoon-desktop_&]:rounded-b-3xl lg:[.anoon-desktop_&]:bottom-6">
             <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-3xl bg-card px-5 pb-3 pt-4">
               <div className="pointer-events-none absolute inset-x-0 top-2 mx-auto h-1 w-10 rounded-full bg-muted-foreground/30" />
               <h2 className="text-lg font-bold">Пожаловаться</h2>

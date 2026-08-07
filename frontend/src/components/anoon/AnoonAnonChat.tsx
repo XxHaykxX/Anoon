@@ -41,6 +41,27 @@ import {
   UserCircleIcon,
 } from "@/components/icons";
 
+/**
+ * Desktop column for the thread and the composer — same 48rem the friend chat
+ * uses, so a reveal (anon chat → private chat) doesn't reflow the conversation.
+ * Header and hairlines still span the full width; only their contents are
+ * centred, which is why the padding variants exist alongside the column.
+ *
+ * This screen gets the FULL viewport on desktop — `anon-chat` is deliberately
+ * out of `SIDE_NAV_TAB` (leaving a match must go through `closeAnon`), so there
+ * is no rail and no 60rem work-area clamp to lean on.
+ *
+ * `lg:[.anoon-desktop_&]:` needs both halves: `lg:` alone fires in the showcase's
+ * fixed 390px frames, `.anoon-desktop` alone is on the app root at every width.
+ */
+const DESKTOP_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[48rem]";
+/** The same column as padding — for rows whose border must stay full-width. */
+const DESKTOP_COL_PX = "lg:[.anoon-desktop_&]:px-[max(0.75rem,calc((100%-48rem)/2))]";
+/** Right/left edges of that column, for overlays hung off the screen root. */
+const DESKTOP_COL_RIGHT = "lg:[.anoon-desktop_&]:right-[max(0.75rem,calc((100%-48rem)/2))]";
+const DESKTOP_COL_LEFT = "lg:[.anoon-desktop_&]:left-[max(0.5rem,calc((100%-48rem)/2))]";
+
 const PARTNER_ID = "~SAMPLE";
 
 /**
@@ -239,7 +260,11 @@ const AnonBubble = memo(function AnonBubble({
 
   if (deleted) {
     return (
-      <div className={`flex max-w-[78%] ${own ? "self-end" : "self-start"}`}>
+      <div
+        className={`flex max-w-[78%] lg:[.anoon-desktop_&]:max-w-[32rem] ${
+          own ? "self-end" : "self-start"
+        }`}
+      >
         <span className="rounded-2xl bg-muted px-3.5 py-2 text-sm italic text-muted-foreground">
           сообщение удалено
         </span>
@@ -249,7 +274,7 @@ const AnonBubble = memo(function AnonBubble({
 
   return (
     <div
-      className={`relative flex max-w-[78%] flex-col ${
+      className={`relative flex max-w-[78%] flex-col lg:[.anoon-desktop_&]:max-w-[32rem] ${
         own ? "items-end self-end" : "items-start self-start"
       }`}
     >
@@ -856,7 +881,7 @@ export default function AnoonAnonChat() {
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center gap-2.5 border-b border-border px-3 py-2.5">
+      <div className={`flex items-center gap-2.5 border-b border-border px-3 py-2.5 ${DESKTOP_COL_PX}`}>
         <ChevronLeftIcon
           className={`size-6 shrink-0 text-foreground ${PRESS_FX}`}
           aria-label="Назад"
@@ -980,7 +1005,7 @@ export default function AnoonAnonChat() {
               onClick={() => setMenuOpen(false)}
               role="presentation"
             />
-            <div className="absolute right-3 top-14 z-40 w-52 origin-top-right overflow-hidden rounded-2xl border border-border bg-popover py-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150 motion-reduce:animate-none">
+            <div className={`absolute right-3 top-14 z-40 w-52 origin-top-right overflow-hidden rounded-2xl border border-border bg-popover py-1 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 duration-150 motion-reduce:animate-none ${DESKTOP_COL_RIGHT}`}>
               <button
                 type="button"
                 onClick={() => {
@@ -1028,9 +1053,17 @@ export default function AnoonAnonChat() {
       <div
         ref={threadRef}
         onScroll={onThreadScroll}
-        className="flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 py-3"
+        className={`flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 py-3 ${DESKTOP_COL}`}
         onClick={() => setActionFor(null)}
       >
+        {/* Desktop: pin a short thread to the bottom. A 900px-tall work area is
+            not filled by the first few messages the way a phone viewport is, and
+            a match that opens with two lines hanging from the top reads as
+            broken. A spacer, not `justify-end`: on a scroll container that makes
+            overflowing history unreachable, while `margin-top:auto` collapses to
+            0 as soon as the thread overflows. `hidden` keeps it out of the
+            phone's box model entirely. */}
+        <div aria-hidden className="hidden lg:[.anoon-desktop_&]:block lg:[.anoon-desktop_&]:mt-auto" />
         <div className="mx-auto rounded-full bg-muted px-3 py-1 text-[11px] text-muted-foreground">
           {revealed
             ? "Профили открыты — вы теперь друзья"
@@ -1208,7 +1241,9 @@ export default function AnoonAnonChat() {
           type="button"
           onClick={() => scrollToBottom()}
           aria-label="К последнему сообщению"
-          className={`absolute bottom-20 right-3 z-20 grid size-9 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg ${PRESS_FX}`}
+          // Desktop: ride the right edge of the thread column, not of the
+          // viewport — otherwise it floats alone in the empty gutter.
+          className={`absolute bottom-20 right-3 z-20 grid size-9 place-items-center rounded-full border border-border bg-card text-foreground shadow-lg ${DESKTOP_COL_RIGHT} ${PRESS_FX}`}
         >
           <ChevronDownIcon className="size-5" />
         </button>
@@ -1242,8 +1277,10 @@ export default function AnoonAnonChat() {
         <ReplyPreview text={replyTarget.text} onCancel={() => setReplyTarget(null)} />
       ) : null}
 
-      {/* Composer */}
-      <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+      {/* Composer. The hairline still spans the full width on desktop while the
+          controls sit in the thread's column — padding, not a nested wrapper,
+          so the phone markup is untouched. */}
+      <div className={`flex items-center gap-2 border-t border-border px-3 py-2.5 ${DESKTOP_COL_PX}`}>
         {/* While recording, hide the text controls so the record bar owns the row (BUG-37). */}
         {!voiceRecording && (
           <>
@@ -1340,7 +1377,7 @@ export default function AnoonAnonChat() {
       />
 
       {emojiOpen && (
-        <div className="absolute bottom-16 left-2 z-30">
+        <div className={`absolute bottom-16 left-2 z-30 ${DESKTOP_COL_LEFT}`}>
           <EmojiPicker
             onSelect={(emoji) => setDraft((d) => d + emoji)}
             onClose={() => setEmojiOpen(false)}
