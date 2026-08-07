@@ -16,18 +16,26 @@
 		respond 404
 	}
 
+	# Upstreams are addressed as 127.0.0.1, never "localhost". On Windows
+	# localhost resolves to ::1 first, and Docker publishes each port on BOTH
+	# stacks: com.docker.backend takes 0.0.0.0 and wslrelay takes ::1. The IPv6
+	# half can go dead on its own (seen after a container recreate: 127.0.0.1
+	# answered instantly while localhost hung until timeout), and then every
+	# proxied /api call fails as a gateway timeout while the container itself is
+	# perfectly healthy — a false backend outage that costs an hour to place.
+
 	# Companion backend (REST + /ws event socket). /api prefix stripped.
 	handle_path /api/* {
-		reverse_proxy localhost:6062
+		reverse_proxy 127.0.0.1:6062
 	}
 
 	# Tinode WS + media — tinode-sdk hardcodes /v0/channels, forward /v0/* unchanged.
 	handle /v0/* {
-		reverse_proxy localhost:6061
+		reverse_proxy 127.0.0.1:6061
 	}
 
 	# Next.js frontend (frontend) — catch-all, must stay last.
 	handle {
-		reverse_proxy localhost:3001
+		reverse_proxy 127.0.0.1:3001
 	}
 }
