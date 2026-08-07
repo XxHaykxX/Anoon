@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -103,6 +104,20 @@ func (s recordingStmt) Query(args []driver.Value) (driver.Rows, error) {
 	s.rec.record(s.query, args)
 	s.rec.mu.Lock()
 	defer s.rec.mu.Unlock()
+	// One exception to "nothing here interprets SQL": a count(*) is answered
+	// with a single scalar column holding the number of configured rows. The
+	// admin list methods issue a count and then the page, and database/sql
+	// insists the destination count match the column count — without this, one
+	// configured row set could not serve both statements and a list method could
+	// not be exercised at all.
+	// Prefix, not substring: profileCols embeds a count(*) subquery, and matching
+	// that would answer the page itself with a scalar.
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(s.query)), "select count(") {
+		return &recordingRows{
+			cols: []string{"count"},
+			rows: [][]driver.Value{{int64(len(s.rec.rows))}},
+		}, nil
+	}
 	return &recordingRows{cols: s.rec.cols, rows: s.rec.rows}, nil
 }
 

@@ -27,6 +27,35 @@ type ListParams struct {
 	Sort    string
 	Order   string
 	Filters map[string]string
+	// IDs restricts the page to an explicit set of row ids — the documented
+	// `ids` csv (COMPANION-ADMIN-API.md §1), which is how Refine asks for a
+	// getMany. nil means "no restriction"; an EMPTY, NON-NIL slice means the
+	// caller did ask for a set and none of it parsed, which must answer with no
+	// rows rather than the whole table. Getting that distinction wrong turns a
+	// getMany of one deleted row into a dump of everything.
+	IDs []int64
+}
+
+// idClause renders "col IN ($n, $n+1, ...)" for an explicit id set, numbering
+// the placeholders after the argsSoFar the caller has already bound. Every id
+// travels as a parameter — the only thing interpolated is the column name,
+// which is a literal at every call site. Returns "" when ids is nil (no
+// restriction) and the constant-false predicate when the set is empty (see
+// ListParams.IDs).
+func idClause(col string, ids []int64, argsSoFar int) (string, []any) {
+	if ids == nil {
+		return "", nil
+	}
+	if len(ids) == 0 {
+		return "false", nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for n, id := range ids {
+		placeholders[n] = "$" + strconv.Itoa(argsSoFar+1+n)
+		args[n] = id
+	}
+	return col + " IN (" + strings.Join(placeholders, ", ") + ")", args
 }
 
 // PadHashID renders a numeric #ID as a zero-padded public id WITHOUT the leading
@@ -96,21 +125,26 @@ func scanReport(sc interface{ Scan(...any) error }) (ReportRow, error) {
 }
 
 // ListReports returns a page of reports plus the total (pre-pagination) count.
-// Honors the f_status equality filter.
+// Honors the f_status equality filter and the `ids` set.
 func (s *Store) ListReports(ctx context.Context, p ListParams) ([]ReportRow, int, error) {
-	status := p.Filters["status"]
+	args := []any{p.Filters["status"]}
 	where := "WHERE ($1 = '' OR r.status = $1)"
+	if clause, idArgs := idClause("r.id", p.IDs, len(args)); clause != "" {
+		where += " AND " + clause
+		args = append(args, idArgs...)
+	}
 
 	var total int
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM reports r `+where, status).Scan(&total); err != nil {
+		`SELECT count(*) FROM reports r `+where, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store: count reports: %w", err)
 	}
 
 	order := orderClause(p.Sort, p.Order,
 		map[string]string{"createdAt": "r.created_at", "status": "r.status", "id": "r.id"}, "r.created_at")
-	q := reportSelect + " " + where + " " + order + " LIMIT $2 OFFSET $3"
-	rows, err := s.db.QueryContext(ctx, q, status, p.Limit, p.Offset)
+	q := reportSelect + " " + where + " " + order +
+		fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	rows, err := s.db.QueryContext(ctx, q, append(append([]any{}, args...), p.Limit, p.Offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: list reports: %w", err)
 	}
@@ -279,6 +313,11 @@ func (s *Store) ListUsers(ctx context.Context, p ListParams) ([]ProfileRow, int,
 	if v := strings.TrimSpace(p.Filters["banned"]); v == "true" {
 		where = append(where, "(u.state = 'susp' AND (u.ban_until IS NULL OR u.ban_until > now()))")
 	}
+	if clause, idArgs := idClause("u.id", p.IDs, len(args)); clause != "" {
+		where = append(where, clause)
+		args = append(args, idArgs...)
+		i = len(args) + 1
+	}
 
 	whereSQL := ""
 	if len(where) > 0 {
@@ -368,21 +407,27 @@ func scanBan(sc interface{ Scan(...any) error }) (BanRow, error) {
 	return b, nil
 }
 
-// ListBans returns a page of bans + total count. Honors f_status.
+// ListBans returns a page of bans + total count. Honors f_status and the `ids`
+// set.
 func (s *Store) ListBans(ctx context.Context, p ListParams) ([]BanRow, int, error) {
-	status := p.Filters["status"]
+	args := []any{p.Filters["status"]}
 	where := "WHERE ($1 = '' OR b.status = $1)"
+	if clause, idArgs := idClause("b.id", p.IDs, len(args)); clause != "" {
+		where += " AND " + clause
+		args = append(args, idArgs...)
+	}
 
 	var total int
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM bans b `+where, status).Scan(&total); err != nil {
+		`SELECT count(*) FROM bans b `+where, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store: count bans: %w", err)
 	}
 
 	order := orderClause(p.Sort, p.Order,
 		map[string]string{"createdAt": "b.created_at", "status": "b.status", "id": "b.id"}, "b.created_at")
-	q := banSelect + " " + where + " " + order + " LIMIT $2 OFFSET $3"
-	rows, err := s.db.QueryContext(ctx, q, status, p.Limit, p.Offset)
+	q := banSelect + " " + where + " " + order +
+		fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	rows, err := s.db.QueryContext(ctx, q, append(append([]any{}, args...), p.Limit, p.Offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: list bans: %w", err)
 	}

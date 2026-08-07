@@ -21,6 +21,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -225,13 +226,59 @@ func parseListParams(r *http.Request) store.ListParams {
 		}
 	}
 
-	return store.ListParams{
+	p := store.ListParams{
 		Offset:  offset,
 		Limit:   limit,
 		Sort:    firstNonEmpty(q.Get("_sort"), q.Get("sort")),
 		Order:   firstNonEmpty(q.Get("_order"), q.Get("order")),
 		Filters: filters,
 	}
+	// `ids` (spec §1) is Refine's getMany: fetch this exact set of rows. It is
+	// read by presence, not by value — an ids= that parses to nothing still
+	// means "only these", so p.IDs stays non-nil and the query answers empty.
+	// Spelt f_ids too because that is how a generic filter layer would send it.
+	if raw, ok := firstPresent(q, "ids", "f_ids"); ok {
+		p.IDs = parseIDList(raw)
+	}
+	return p
+}
+
+// maxListIDs caps a getMany. The set arrives in the URL and becomes one
+// placeholder each, so it is bounded here rather than left to whatever the
+// caller (or a request-line limit) happens to allow.
+const maxListIDs = 200
+
+// parseIDList turns "3,7,11" into row ids, dropping anything non-numeric — a
+// junk entry narrows the answer, it must never widen it. The result is always
+// non-nil so callers can tell "asked for a set" from "asked for a page".
+func parseIDList(raw string) []int64 {
+	out := []int64{}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		n, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, n)
+		if len(out) == maxListIDs {
+			break
+		}
+	}
+	return out
+}
+
+// firstPresent returns the first of keys that is present in q (even empty), and
+// whether any was.
+func firstPresent(q url.Values, keys ...string) (string, bool) {
+	for _, k := range keys {
+		if v, ok := q[k]; ok && len(v) > 0 {
+			return v[0], true
+		}
+	}
+	return "", false
 }
 
 func atoiOr(s string, def int) int {

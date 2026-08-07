@@ -179,71 +179,100 @@ func (s *Store) ModerationStatus(ctx context.Context, userID int64) (banned, mut
 	return banned, muted, nil
 }
 
-// ExpireDueBans auto-lifts every active, temporary ban whose expires_at has
-// passed: it flips the ban row to 'expired', restores the user to state='ok'/
-// ban_until=NULL (the same effect UnbanUser has on the user row), and appends a
-// moderator_actions entry with moderator_id NULL (system-driven, not an
-// operator). It returns the companion user ids that were auto-unbanned so the
-// caller can also lift their Tinode account state (see tinode.Client.Unban).
-//
-// Permanent bans (expires_at IS NULL) are never touched here — only the
-// companion admin API's explicit lift path clears those.
-func (s *Store) ExpireDueBans(ctx context.Context) ([]int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("store: begin expire bans tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
+// DueBan is one lapsed temporary ban the sweep still has to retire. TinodeUID
+// is joined in because the sweep needs it *before* it may retire the row (see
+// ExpireBanFor); it is empty for the rare row whose account never got one.
+type DueBan struct {
+	UserID    int64
+	TinodeUID string
+}
 
-	rows, err := tx.QueryContext(ctx, `
-		SELECT user_id FROM bans
-		WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= now()
-		FOR UPDATE`)
+// DueBans lists the users whose temporary ban has outlived its expires_at while
+// its ledger row is still 'active' — the outstanding work of the ban sweep.
+//
+// Users who still have *another* ban in force are excluded, and that is the
+// whole point of the NOT EXISTS: BanUser does not refuse a second active ban, so
+// "temp ban, then permanent ban" is a reachable pair of rows. Lifting on the
+// temp one's expiry would then restore state='ok' and clear the Tinode
+// suspension — silently dissolving a permanent ban because an older, weaker one
+// ran out. The lapsed row simply stays 'active' until the permanent ban is
+// lifted (UnbanUser retires every active row at once), so nothing is lost.
+//
+// Permanent bans (expires_at IS NULL) never appear here at all: only the
+// explicit lift path clears those.
+func (s *Store) DueBans(ctx context.Context) ([]DueBan, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT b.user_id, COALESCE(u.tinode_uid, '')
+		FROM bans b
+		JOIN users u ON u.id = b.user_id
+		WHERE b.status = 'active' AND b.expires_at IS NOT NULL AND b.expires_at <= now()
+		  AND NOT EXISTS (
+		    SELECT 1 FROM bans o
+		    WHERE o.user_id = b.user_id AND o.status = 'active'
+		      AND (o.expires_at IS NULL OR o.expires_at > now()))`)
 	if err != nil {
 		return nil, fmt.Errorf("store: select due bans: %w", err)
 	}
-	var userIDs []int64
+	defer rows.Close()
+
+	var out []DueBan
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+		var d DueBan
+		if err := rows.Scan(&d.UserID, &d.TinodeUID); err != nil {
 			return nil, fmt.Errorf("store: scan due ban: %w", err)
 		}
-		userIDs = append(userIDs, id)
+		out = append(out, d)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, fmt.Errorf("store: iterate due bans: %w", err)
-	}
-	rows.Close()
+	return out, rows.Err()
+}
 
-	if len(userIDs) == 0 {
-		return nil, tx.Commit()
+// ExpireBanFor retires one user's lapsed temporary bans: the rows flip to
+// 'expired', the user row goes back to state='ok'/ban_until=NULL (the same
+// effect UnbanUser has) and a moderator_actions entry is appended with a NULL
+// author — the clock did this, not an operator.
+//
+// Per user, and deliberately NOT in the transaction that finds the work: the
+// sweep calls this only once Tinode has actually accepted the unban, so a
+// ROOT-stream outage leaves the row 'active' and the next tick tries again. The
+// ban row is the only thing that remembers a suspension still needs lifting; a
+// batch flip would have to declare every ban lifted before knowing whether any
+// of them were.
+//
+// The user row and the journal entry are re-guarded against a ban still being
+// in force — DueBans already filters those out, but a permanent ban landing
+// between the two calls must not be undone by this one.
+func (s *Store) ExpireBanFor(ctx context.Context, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin expire ban tx: %w", err)
 	}
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE bans SET status = 'expired'
-		WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= now()`); err != nil {
-		return nil, fmt.Errorf("store: expire bans: %w", err)
+		WHERE user_id = $1 AND status = 'active'
+		  AND expires_at IS NOT NULL AND expires_at <= now()`, userID); err != nil {
+		return fmt.Errorf("store: expire bans for user %d: %w", userID, err)
 	}
-
-	for _, id := range userIDs {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE users SET state = 'ok', ban_until = NULL, updated_at = now()
-			WHERE id = $1`, id); err != nil {
-			return nil, fmt.Errorf("store: expire ban update user %d: %w", id, err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO moderator_actions (moderator_id, action_type, target_user_id)
-			VALUES (NULL, 'unban', $1)`, id); err != nil {
-			return nil, fmt.Errorf("store: expire ban action log user %d: %w", id, err)
-		}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users SET state = 'ok', ban_until = NULL, updated_at = now()
+		WHERE id = $1
+		  AND NOT EXISTS (SELECT 1 FROM bans WHERE user_id = $1 AND status = 'active')`,
+		userID); err != nil {
+		return fmt.Errorf("store: expire ban update user %d: %w", userID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO moderator_actions (moderator_id, action_type, target_user_id)
+		SELECT NULL, 'unban', $1
+		WHERE NOT EXISTS (SELECT 1 FROM bans WHERE user_id = $1 AND status = 'active')`,
+		userID); err != nil {
+		return fmt.Errorf("store: expire ban action log user %d: %w", userID, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("store: commit expire bans: %w", err)
+		return fmt.Errorf("store: commit expire ban user %d: %w", userID, err)
 	}
-	return userIDs, nil
+	return nil
 }
 
 // nullString wraps a possibly-empty string as a NULL-able SQL value.
