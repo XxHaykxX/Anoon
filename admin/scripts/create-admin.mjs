@@ -45,6 +45,13 @@ if (!ROLES.includes(role)) {
 const email = ADMIN_EMAIL.trim().toLowerCase();
 const passwordHash = await hash(ADMIN_PASSWORD);
 const row = {
+  // `AdminUser.id` is NOT NULL with no database default — the schema expects
+  // the application to mint it, the same way the panel does for
+  // ModeratorAction. Without it this script could not create an operator at
+  // all: every run died on the not-null constraint, and the only accounts that
+  // ever existed were rows inserted by hand. On upsert-by-email an existing row
+  // keeps its own id, so this only ever fills in the new-operator case.
+  id: crypto.randomUUID(),
   email,
   passwordHash,
   role,
