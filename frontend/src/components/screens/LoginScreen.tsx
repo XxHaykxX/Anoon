@@ -142,7 +142,7 @@ export default function LoginScreen() {
       {/* Soft brand glow */}
       <div
         className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[420px] h-[420px] rounded-full blur-3xl"
-        style={{ background: "rgba(253,191,45,0.14)" }}
+        style={{ background: "rgb(var(--brand-rgb) / 0.14)" }}
       />
 
       {/* Language selector, top-right */}
@@ -238,7 +238,7 @@ export default function LoginScreen() {
             className={`mt-1 w-full rounded-xl bg-primary text-primary-foreground py-3.5 font-semibold active:scale-95 transition-transform cursor-pointer flex items-center justify-center gap-2 ${
               !canSubmit || submitting ? "opacity-50 cursor-not-allowed" : ""
             }`}
-            style={{ boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" }}
+            style={{ boxShadow: "var(--cta-glow)" }}
           >
             {submitting ? (
               <>

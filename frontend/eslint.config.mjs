@@ -20,6 +20,10 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Same thing under another name: the mock and real modes build into their
+    // own dirs so neither reuses the other's output, and eslint was linting
+    // one of them — 58k findings in minified chunks, drowning the real ones.
+    ".next-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

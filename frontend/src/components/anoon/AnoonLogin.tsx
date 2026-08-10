@@ -153,7 +153,7 @@ export default function AnoonLogin() {
       {/* Soft brand glow */}
       <div
         className="pointer-events-none absolute -top-24 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-3xl"
-        style={{ background: "rgba(253,191,45,0.14)" }}
+        style={{ background: "rgb(var(--brand-rgb) / 0.14)" }}
       />
 
       <div className={`relative z-10 flex flex-1 flex-col overflow-y-auto px-6 ${DESKTOP_FORM}`}>
@@ -217,7 +217,7 @@ export default function AnoonLogin() {
             className={`mt-1 w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer ${
               canSubmit ? "" : "cursor-not-allowed opacity-50"
             }`}
-            style={canSubmit ? { boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" } : undefined}
+            style={canSubmit ? { boxShadow: "var(--cta-glow)" } : undefined}
           >
             {submitting ? "Входим…" : "Войти"}
           </button>

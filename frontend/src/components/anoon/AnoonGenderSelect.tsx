@@ -184,7 +184,7 @@ export default function AnoonGenderSelect() {
             }`}
             style={
               canContinue
-                ? { boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" }
+                ? { boxShadow: "var(--cta-glow)" }
                 : undefined
             }
           >

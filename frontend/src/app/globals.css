@@ -57,65 +57,24 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  /* Anoon — light theme, primary = brand yellow */
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --card: #ffffff;
-  --card-foreground: #0a0a0a;
-  --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #FDBF2D;
-  --primary-foreground: #000000;
-  --secondary: #f2f2f7;
-  --secondary-foreground: #0a0a0a;
-  --muted: #f2f2f7;
-  --muted-foreground: #8e8e93;
-  --accent: #FDBF2D;
-  --accent-foreground: #000000;
-  --destructive: #ff3b30;
-  --border: #e5e5ea;
-  --input: #e5e5ea;
-  --ring: #FDBF2D;
-  /* messenger custom tokens */
-  --bubble-in: #e9e9eb;
-  --bubble-in-foreground: #0a0a0a;
-  --bubble-out: #FDBF2D;
-  --bubble-out-foreground: #000000;
-  --online: #34c759;
-  --read-tick: #0a84ff;   /* status blue — read receipts / verified / links (NOT the yellow primary) */
-  /* Same tick, drawn INSIDE the outgoing bubble, which is brand yellow. The
-     status blue above sits at 1.78:1 on that yellow — the one delivery state
-     that matters most was the least visible one in the whole thread. This is
-     the darker blue that clears 3:1 on yellow while still reading as blue.
-     Do not use it anywhere else: on a dark surface it is nearly invisible. */
-  --read-tick-on-primary: #1D4ED8;
-  --verified: #0a84ff;
-  --info: #0a84ff;
-  --hairline: rgba(0,0,0,0.06);
-  /* elevation scale (consistent, subtle) */
-  --elevation-1: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
-  --elevation-2: 0 4px 12px rgba(0,0,0,0.08);
-  --elevation-3: 0 12px 32px rgba(0,0,0,0.12);
-  --cta-glow: 0 8px 24px -6px rgba(253,191,45,0.40);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.9rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+/* ===== Anoon design tokens — one theme, and it is the dark one =====
 
-.dark {
-  /* Anoon — dark theme, primary = brand yellow */
+   These values used to live under `.dark`, with a light set at `:root` that
+   only ever rendered in the /showcase gallery's "Light" column. The split
+   leaked: `.dark` sits on a div inside AnoonApp, so anything outside it — the
+   offline page, Next's built-in 404, an error boundary — picked up the light
+   set, where the brand yellow used as text is 1.66:1 on white and
+   `--muted-foreground` was 2.92:1 on `--muted`. Both fail AA badly.
+
+   Fixing that set was the wrong trade: the yellow is the brand and cannot be
+   darkened into a readable brown, so an accessible light theme needed a second
+   yellow threaded through 134 `text-primary` call sites — for a theme the
+   product does not ship. So there is one set now, and a page rendered without
+   `.dark` looks like the product instead of like a bug. The `.dark` class
+   still in the markup scopes nothing and is harmless.
+
+   Nothing in `src/` uses a `dark:` variant; the theme was always these tokens. */
+:root {
   --background: #000000;
   --foreground: #ffffff;
   --card: #1c1c1e;
@@ -155,17 +114,30 @@
   --bubble-out: #FDBF2D;
   --bubble-out-foreground: #000000;
   --online: #32d74b;
-  --read-tick: #3898ff;   /* status blue (lighter for dark) */
-  /* Read tick on the yellow outgoing bubble — see the light-theme note. The
-     bubble is the same brand yellow in both themes, so this value is too. */
+  --read-tick: #3898ff;   /* status blue — read receipts / verified / links (NOT the yellow primary) */
+  /* Same tick, drawn INSIDE the outgoing bubble, which is brand yellow. The
+     status blue above sits at 1.78:1 on that yellow — the one delivery state
+     that matters most was the least visible one in the whole thread. This is
+     the darker blue that clears 3:1 on yellow while still reading as blue.
+     Do not use it anywhere else: on a dark surface it is nearly invisible. */
   --read-tick-on-primary: #1D4ED8;
   --verified: #3898ff;
   --info: #3898ff;
   --hairline: rgba(255,255,255,0.08);
+  /* elevation scale (consistent, subtle) */
   --elevation-1: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.4);
   --elevation-2: 0 4px 16px rgba(0,0,0,0.5);
   --elevation-3: 0 12px 36px rgba(0,0,0,0.6);
-  --cta-glow: 0 8px 24px -6px rgba(253,191,45,0.35);
+  /* The brand yellow as channels, for the translucent uses of it. `--primary`
+     is a colour and cannot be given an alpha at the call site, so every glow
+     and tint spelled `rgba(253,191,45, …)` by hand — the same magic triplet in
+     a dozen files, none of which would follow if the brand ever moved. */
+  --brand-rgb: 253 191 45;
+  /* The standard CTA glow under a primary button. 0.40, which is what all nine
+     call sites already hardcoded; the token itself was never referenced and
+     had drifted to 0.35. */
+  --cta-glow: 0 8px 24px -6px rgb(var(--brand-rgb) / 0.40);
+  --radius: 0.9rem;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -186,36 +158,24 @@
     @apply border-border outline-ring/50;
   }
   /*
-    The app is dark, but nothing told the browser that: `.dark` sits on a div
-    inside AnoonApp, not on <html>, so every UA-drawn surface — document
+    The app is dark, but nothing told the browser that: `.dark` used to sit on a
+    div inside AnoonApp, not on <html>, so every UA-drawn surface — document
     scrollbar, overscroll rubber-band, autofill and password dropdowns, form
-    controls — was rendered in the light scheme over a black app.
-    `color-scheme` has to be on the root element to reach them; setting it on
-    `.dark` would not, for exactly the reason above.
+    controls — was rendered in the light scheme over a black app. `color-scheme`
+    has to be on the root element to reach them.
 
-    The document background moves with it. `--background` is #ffffff at :root
-    (the light theme), and <body> applies it, so the page behind the app was
-    white: visible as a white flash before paint and as a white rubber-band
-    when overscrolling on a phone.
+    Keep it here even though the tokens above no longer flip: it is what the UA
+    reads, and the tokens are not.
   */
   :root {
     color-scheme: dark;
-    /* The canvas behind the app. Its own token, not `--background`: that one
-       flips with the theme (and is white at :root), while this surface is
-       always the dark one the product ships on. */
-    --canvas: #000000;
   }
   html,
   body {
-    background-color: var(--canvas);
+    background-color: var(--background);
   }
-  /* Paired with `--canvas`, not with `--foreground`: that one is #0a0a0a at
-     `:root`, so anything rendered without a `.dark` ancestor — Next's built-in
-     404, an error boundary, a bare page — put near-black text on the black
-     canvas and read as an empty screen. The canvas never flips theme, so
-     neither does its text colour. */
   body {
-    color: #ffffff;
+    color: var(--foreground);
   }
 
   /* Dark scrollbars for the document itself. `.anoon-noscroll` already hides

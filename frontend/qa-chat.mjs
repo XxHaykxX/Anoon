@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ANOON — 2-user CHAT + MEDIA + CALL + REVEAL + TIMING QA harness
  * ============================================================================

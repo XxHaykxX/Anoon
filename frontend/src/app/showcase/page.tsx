@@ -170,16 +170,11 @@ const TABS: TabName[] = [
  * (frame is 410 x 864 at full size, incl. its 10px bezel) while the inner
  * wrapper applies the matching transform scale from a top-left origin.
  */
-function PhoneFrame({ dark, children }: { dark?: boolean; children: ReactNode }) {
+function PhoneFrame({ children }: { children: ReactNode }) {
   return (
     <div className="flex shrink-0 flex-col items-center">
       <div className="h-[605px] w-[287px] min-[360px]:h-[692px] min-[360px]:w-[328px] min-[460px]:h-[864px] min-[460px]:w-[410px]">
-        <div
-          className={
-            "origin-top-left scale-[0.7] min-[360px]:scale-[0.8] min-[460px]:scale-100" +
-            (dark ? " dark" : "")
-          }
-        >
+        <div className="origin-top-left scale-[0.7] min-[360px]:scale-[0.8] min-[460px]:scale-100">
           <div className="relative h-[844px] w-[390px] overflow-hidden rounded-[44px] border-[10px] border-neutral-800 bg-background shadow-2xl">
             <div className="pointer-events-none absolute left-1/2 top-0 z-10 h-6 w-36 -translate-x-1/2 rounded-b-2xl bg-neutral-800" />
             <div className="flex h-full flex-col">
@@ -190,20 +185,18 @@ function PhoneFrame({ dark, children }: { dark?: boolean; children: ReactNode })
           </div>
         </div>
       </div>
-      <p className="mt-3 text-center text-xs font-medium text-neutral-400">{dark ? "Dark" : "Light"}</p>
     </div>
   );
 }
 
-function DesktopFrame({ dark }: { dark?: boolean }) {
+function DesktopFrame() {
   return (
     <div className="w-full min-w-0">
       <div className="w-full overflow-x-auto pb-2">
-        <div className={"mx-auto w-fit" + (dark ? " dark" : "")}>
+        <div className="mx-auto w-fit">
           <DesktopScreen />
         </div>
       </div>
-      <p className="mt-2 text-center text-xs font-medium text-neutral-400">{dark ? "Dark" : "Light"}</p>
     </div>
   );
 }
@@ -218,7 +211,7 @@ export default function Home() {
       <div className="mx-auto max-w-[1240px] px-4 sm:px-6">
         <header className="mb-8 flex flex-col items-center gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FDBF2D] text-2xl font-bold text-black">A</div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-black">A</div>
             <h1 className="text-3xl font-bold text-neutral-900">Anoon</h1>
           </div>
           <nav className="flex max-w-full flex-wrap justify-center gap-1.5 rounded-2xl bg-white p-1.5 shadow-sm sm:gap-2 sm:rounded-full">
@@ -228,7 +221,7 @@ export default function Home() {
                 onClick={() => setTab(name)}
                 className={
                   "rounded-full px-3 py-1.5 text-xs font-medium transition sm:px-4 sm:text-sm " +
-                  (tab === name ? "bg-[#FDBF2D] text-black" : "text-neutral-500 hover:text-neutral-900")
+                  (tab === name ? "bg-primary text-black" : "text-neutral-500 hover:text-neutral-900")
                 }
               >
                 {name}
@@ -237,19 +230,17 @@ export default function Home() {
           </nav>
         </header>
 
-        {/* Frames: phones stack on small screens and sit side-by-side on large;
-            the wide desktop window always stacks and scrolls inside its own container */}
+        {/* One frame per screen. There used to be two, a Light one and a Dark
+            one, back when `:root` carried a light token set; the product ships
+            a single theme (see globals.css), so the second frame was a copy of
+            the first with a label that lied. */}
         {isDesktop ? (
           <div className="flex w-full flex-col gap-10 pb-4">
             <DesktopFrame />
-            <DesktopFrame dark />
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center gap-8 pb-4 lg:flex-row lg:items-start lg:gap-12">
+          <div className="flex flex-col items-center justify-center gap-8 pb-4">
             <PhoneFrame>
-              <div key={tab} className="anoon-noscroll anoon-screen-in flex h-full flex-col overflow-x-hidden">{Screen && <Screen />}</div>
-            </PhoneFrame>
-            <PhoneFrame dark>
               <div key={tab} className="anoon-noscroll anoon-screen-in flex h-full flex-col overflow-x-hidden">{Screen && <Screen />}</div>
             </PhoneFrame>
           </div>

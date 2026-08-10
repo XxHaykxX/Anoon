@@ -66,7 +66,7 @@ export default function AnoonOnboarding() {
       {/* Soft brand glow */}
       <div
         className="pointer-events-none absolute -top-16 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-3xl"
-        style={{ background: "rgba(253,191,45,0.16)" }}
+        style={{ background: "rgb(var(--brand-rgb) / 0.16)" }}
       />
 
       {/* Top bar: Skip → login */}
@@ -87,7 +87,7 @@ export default function AnoonOnboarding() {
       <div className="relative z-10 flex flex-col items-center">
         <div
           className="grid size-24 place-items-center rounded-[28px] bg-primary"
-          style={{ boxShadow: "0 20px 48px -12px rgba(253,191,45,0.5)" }}
+          style={{ boxShadow: "0 20px 48px -12px rgb(var(--brand-rgb) / 0.5)" }}
         >
           {/*
             «a», а не «b»: буква взята из вордмарка, а переименование продукта
@@ -127,7 +127,7 @@ export default function AnoonOnboarding() {
           type="button"
           onClick={handleNext}
           className="w-full cursor-pointer rounded-2xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95"
-          style={{ boxShadow: "0 12px 32px -8px rgba(253,191,45,0.45)" }}
+          style={{ boxShadow: "0 12px 32px -8px rgb(var(--brand-rgb) / 0.45)" }}
         >
           {isLastSlide ? "Начать" : "Далее"}
         </button>

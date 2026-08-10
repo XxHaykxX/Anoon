@@ -23,12 +23,12 @@ function GlobeOffIcon({ className }: { className?: string }) {
 
 export default function OfflinePage() {
   return (
-    /* `dark` belongs here, not only inside AnoonApp: this page is its own root
-       and the theme tokens are light at `:root`, so without it the offline
-       fallback comes up as a white sheet in the middle of a black app — with
-       its body text at 3.26:1, below AA. Same trap the app itself hit when the
-       browser was never told the app is dark. */
-    <div className="dark flex flex-1 flex-col items-center justify-center bg-background px-8 text-center text-foreground">
+    /* This page is its own root — it never gets AnoonApp's wrapper. It used to
+       need a `dark` class of its own, because the tokens at `:root` were a
+       light set and the offline fallback came up as a white sheet in the middle
+       of a black app, body text at 3.26:1. The tokens are the product's now
+       (see globals.css), so `bg-background` is black here without any help. */
+    <div className="flex flex-1 flex-col items-center justify-center bg-background px-8 text-center text-foreground">
       <div className="flex size-20 items-center justify-center rounded-3xl bg-primary shadow-lg">
         <span className="text-3xl font-extrabold text-black">a</span>
       </div>

@@ -58,7 +58,7 @@ export default function OnboardingScreen() {
       {/* Soft brand glow */}
       <div
         className="pointer-events-none absolute -top-16 left-1/2 -translate-x-1/2 w-[420px] h-[420px] rounded-full blur-3xl"
-        style={{ background: "rgba(253,191,45,0.16)" }}
+        style={{ background: "rgb(var(--brand-rgb) / 0.16)" }}
       />
 
       {/* Top bar: Skip */}
@@ -77,7 +77,7 @@ export default function OnboardingScreen() {
       <div className="relative z-10 flex flex-col items-center">
         <div
           className="size-24 rounded-[28px] bg-primary grid place-items-center"
-          style={{ boxShadow: "0 20px 48px -12px rgba(253,191,45,0.5)" }}
+          style={{ boxShadow: "0 20px 48px -12px rgb(var(--brand-rgb) / 0.5)" }}
         >
           <span className="text-6xl font-bold text-primary-foreground">
             B
@@ -129,7 +129,7 @@ export default function OnboardingScreen() {
         <button
           onClick={handleNext}
           className="w-full rounded-2xl bg-primary text-primary-foreground py-4 font-semibold active:scale-95 transition-transform cursor-pointer"
-          style={{ boxShadow: "0 12px 32px -8px rgba(253,191,45,0.45)" }}
+          style={{ boxShadow: "0 12px 32px -8px rgb(var(--brand-rgb) / 0.45)" }}
         >
           {isLastSlide ? "Get Started" : "Next"}
         </button>

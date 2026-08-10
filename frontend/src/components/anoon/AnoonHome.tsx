@@ -63,8 +63,6 @@ export default function AnoonHome() {
   const cardTone = real ? user!.avatarTone : 4;
   const notifBadge = real ? unreadCount : 3;
   const cardAvatarRef = real ? getTinodeClient().avatarRefFor(MY_TOPIC) : null;
-  // Fall back to initials if the stored ref's blob 404s (BUG-39/41).
-  const [cardAvatarBroken, setCardAvatarBroken] = useState<string | null>(null);
   // Own age range, sourced from the profile (not user-picked) — showcase
   // stub mirrors the same default the mock previously seeded by hand.
   const ownAgeRange: AgeRange = real ? ageRangeFor(user!.age) : "22–25";
@@ -119,18 +117,13 @@ export default function AnoonHome() {
       >
         {/* Own card */}
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
-          {cardAvatarRef && cardAvatarBroken !== cardAvatarRef ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={authedFileUrl(cardAvatarRef)}
-              alt=""
-              onError={() => setCardAvatarBroken(cardAvatarRef)}
-              className="shrink-0 rounded-full object-cover"
-              style={{ width: 48, height: 48 }}
-            />
-          ) : (
-            <AnoonAvatar initials={cardInitials} tone={cardTone} size={48} />
-          )}
+          <AnoonAvatar
+            initials={cardInitials}
+            tone={cardTone}
+            size={48}
+            photoUrl={cardAvatarRef ? authedFileUrl(cardAvatarRef) : null}
+          />
+
           <div className="min-w-0">
             <p className="truncate font-semibold">{cardName}</p>
             <p className="text-xs text-muted-foreground">{hashId}</p>

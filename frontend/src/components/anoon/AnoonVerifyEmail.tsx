@@ -104,7 +104,7 @@ export default function AnoonVerifyEmail() {
     <div className="anoon-auth relative flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       <div
         className="pointer-events-none absolute -top-24 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-3xl"
-        style={{ background: "rgba(253,191,45,0.14)" }}
+        style={{ background: "rgb(var(--brand-rgb) / 0.14)" }}
       />
 
       <div className={`relative z-10 flex items-center gap-1 px-6 pt-6 ${DESKTOP_FORM}`}>
@@ -147,7 +147,7 @@ export default function AnoonVerifyEmail() {
           }`}
           style={
             canResend
-              ? { boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" }
+              ? { boxShadow: "var(--cta-glow)" }
               : undefined
           }
         >

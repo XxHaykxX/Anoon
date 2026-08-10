@@ -90,7 +90,7 @@ export default function AnoonResetPassword() {
     <div className="anoon-auth relative flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       <div
         className="pointer-events-none absolute -top-24 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-3xl"
-        style={{ background: "rgba(253,191,45,0.14)" }}
+        style={{ background: "rgb(var(--brand-rgb) / 0.14)" }}
       />
 
       {/* Back is for the form only: once the password is saved the flow is done,
@@ -125,7 +125,7 @@ export default function AnoonResetPassword() {
             type="button"
             onClick={() => nav.go("auth-login")}
             className="mt-8 w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer"
-            style={{ boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" }}
+            style={{ boxShadow: "var(--cta-glow)" }}
           >
             Войти
           </button>
@@ -214,7 +214,7 @@ export default function AnoonResetPassword() {
             }`}
             style={
               canSave
-                ? { boxShadow: "0 8px 24px -6px rgba(253,191,45,0.4)" }
+                ? { boxShadow: "var(--cta-glow)" }
                 : undefined
             }
           >

@@ -30,7 +30,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#FDBF2D",
+  // The colour the browser paints AROUND the app — address bar, PWA status bar,
+  // task switcher card. The brand yellow put a bright band above a black app,
+  // which reads as a rendering fault rather than as branding; the app's own
+  // background makes the chrome disappear instead (#38, owner's call). Keep it
+  // byte-equal to `--background` in globals.css — the seam is only invisible
+  // while the two match.
+  themeColor: "#000000",
   // Extend under the notch/home-bar so env(safe-area-inset-*) resolves — the
   // anoon app route relies on it to look native as a full-screen PWA.
   viewportFit: "cover",
