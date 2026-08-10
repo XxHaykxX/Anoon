@@ -6,6 +6,12 @@
 .env.local
 .env.*.local
 *.env
+# `.env.prod` matched NONE of the rules above: `*.env` needs the name to END in
+# `.env`, and this one ends in `.prod`. The production file — the one holding
+# the real keys — was the single most dangerous name in the project and the only
+# one not covered. Anything after `.env.` is now ignored, and the three example
+# files are re-admitted below.
+.env.*
 !.env.example
 !.env.local.example
 !.env.prod.example
