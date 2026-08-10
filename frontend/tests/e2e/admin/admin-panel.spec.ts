@@ -185,6 +185,65 @@ test.describe("admin panel: session gate, role gate, live companion data", () =>
     await ctx.close();
   });
 
+  test("media moderation: refused for a moderator, done for a super_admin, and it sticks", async ({
+    browser,
+  }) => {
+    const supCtx = await browser.newContext();
+    await loginAs(supCtx, "super_admin");
+
+    // Pick a still-live asset from the gallery view. Deleting is a one-way trip
+    // (companion soft-deletes; there is no undelete route), so take the OLDEST
+    // live one — the list is newest-first, so the newer files other assertions
+    // and manual QA look at stay untouched.
+    const gallery = (await (
+      await supCtx.request.get("/api/admin/media?all=1&pageSize=60")
+    ).json()) as { files?: { id: string; deletedAt: string | null }[] };
+    const victim = [...(gallery.files ?? [])].reverse().find((f) => f.deletedAt == null);
+    test.skip(!victim, "no live media asset in companion to moderate");
+
+    // The moderator half, asked the way anyone holding the cookie would ask:
+    // straight at the route. Deleting a user's media is destructive and not
+    // undoable from the panel, so it sits with the other super_admin-only
+    // actions (permanent ban, unban, lifting a ban) — and, like those, the
+    // check has to live in the route. Hiding the button is not a boundary.
+    const modCtx = await browser.newContext();
+    await loginAs(modCtx, "moderator");
+    const refused = await modCtx.request.patch(`/api/admin/media/${victim!.id}`, {
+      data: { deleted: true },
+    });
+    expect(refused.status(), "a moderator must not delete media").toBe(403);
+    expect(await refused.text()).toContain("super_admin");
+
+    // …and the UI does not offer it to them either.
+    const modPage = await modCtx.newPage();
+    await modPage.goto("/gallery");
+    const modTile = modPage.locator(`[data-media-id="${victim!.id}"]`);
+    await expect(modTile).toBeVisible({ timeout: 15_000 });
+    await expect(modTile.getByRole("button", { name: "Удалить медиа" })).toHaveCount(0);
+    await modCtx.close();
+
+    // The super_admin half, through the UI: this is the wiring that did not
+    // exist at all until now — companion has accepted PATCH /admin/media/{id}
+    // since it shipped, the panel's route answered 400 «update not supported:
+    // media», and no button anywhere sent it.
+    const page = await supCtx.newPage();
+    await page.goto("/gallery");
+    const tile = page.locator(`[data-media-id="${victim!.id}"]`);
+    await expect(tile).toBeVisible({ timeout: 15_000 });
+    await tile.hover();
+    await tile.getByRole("button", { name: "Удалить медиа" }).click();
+    await page.getByRole("button", { name: "Удалить", exact: true }).click();
+    await expect(tile.getByText("Медиа удалено или истекло")).toBeVisible();
+
+    // Re-read: the tile must come back deleted from the server, not just from
+    // the optimistic local state — and the page must render it without error.
+    await page.reload();
+    const after = page.locator(`[data-media-id="${victim!.id}"]`);
+    await expect(after.getByText("Медиа удалено или истекло")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Нет доступа к медиа")).toHaveCount(0);
+    await supCtx.close();
+  });
+
   test("broadcast is closed to a moderator and open to a super_admin", async ({ browser }) => {
     const asRole = async (role: "moderator" | "super_admin"): Promise<[BrowserContext, Page]> => {
       const ctx = await browser.newContext();

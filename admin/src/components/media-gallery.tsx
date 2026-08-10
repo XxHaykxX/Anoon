@@ -1,7 +1,8 @@
 "use client";
 
+import { usePermissions, useUpdate } from "@refinedev/core";
 import { motion } from "framer-motion";
-import { Eye, Film, ImageOff, Lock, Play, ShieldAlert } from "lucide-react";
+import { Eye, Film, ImageOff, Lock, Play, ShieldAlert, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import Lightbox, { type GenericSlide, type Slide } from "yet-another-react-lightbox";
@@ -9,6 +10,7 @@ import Zoom from "yet-another-react-lightbox/plugins/zoom";
 
 import "yet-another-react-lightbox/styles.css";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "@/components/ui/toaster";
 import type { MediaAssetRow } from "@/data/fixtures";
 import { addAction } from "@/lib/audit";
@@ -29,8 +31,8 @@ declare module "yet-another-react-lightbox" {
   }
 }
 
-function isBlocked(m: MediaAssetRow, escalatedIds: Set<string>) {
-  return m.deletedAt != null || m.escalated || escalatedIds.has(m.id);
+function isBlocked(m: MediaAssetRow, escalatedIds: Set<string>, deletedIds: Set<string>) {
+  return m.deletedAt != null || m.escalated || escalatedIds.has(m.id) || deletedIds.has(m.id);
 }
 
 export function MediaGallery({
@@ -48,12 +50,20 @@ export function MediaGallery({
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   // Локально эскалированные в этой сессии (в проде — ModeratorAction на сервере).
   const [escalatedIds, setEscalatedIds] = useState<Set<string>>(new Set());
+  // Удалённые прямо сейчас: ответ PATCH уже пришёл, а список (Refine или свой fetch
+  // страницы) мог ещё не перечитаться — тайл гасим сразу, не дожидаясь его.
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState<MediaAssetRow | null>(null);
   const [lightboxAt, setLightboxAt] = useState<number>(-1);
+
+  const { mutate: update } = useUpdate();
+  const { data: role } = usePermissions<string>({});
+  const canDelete = role === "super_admin";
 
   // Просматриваемые медиа (не удалённые, не эскалированные) → слайды лайтбокса.
   const viewable = useMemo(
-    () => media.filter((m) => !isBlocked(m, escalatedIds)),
-    [media, escalatedIds],
+    () => media.filter((m) => !isBlocked(m, escalatedIds, deletedIds)),
+    [media, escalatedIds, deletedIds],
   );
 
   const slides: Slide[] = useMemo(
@@ -80,6 +90,25 @@ export function MediaGallery({
     toast("Передано на эскалацию — элемент заблокирован", "danger");
   }
 
+  // Мягкое удаление: PATCH /api/admin/media/{id} {deleted:true} → companion помечает
+  // deleted_at и пишет moderator_actions. Refine инвалидирует ресурс "media", поэтому
+  // списки на карточке пользователя и в жалобе перечитываются сами.
+  function remove(m: MediaAssetRow) {
+    setConfirmDelete(null);
+    update(
+      { resource: "media", id: m.id, values: { deleted: true } },
+      {
+        onSuccess: () => {
+          setDeletedIds((s) => new Set(s).add(m.id));
+          addAction({ type: "escalate", target: ownerLabel, reason: `Медиа ${m.id} удалено модератором` });
+          toast("Медиа удалено", "danger");
+        },
+        // Роль проверяет роут — отказ (403) показываем как есть, а не молча.
+        onError: (e: unknown) => toast(e instanceof Error && /403/.test(e.message) ? "Удаление доступно только super_admin" : "Не удалось удалить медиа", "danger"),
+      },
+    );
+  }
+
   function openLightbox(m: MediaAssetRow) {
     const idx = viewable.findIndex((v) => v.id === m.id);
     if (idx >= 0) setLightboxAt(idx);
@@ -97,13 +126,14 @@ export function MediaGallery({
     <>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
         {media.map((m, i) => {
-          const deleted = m.deletedAt != null;
+          const deleted = m.deletedAt != null || deletedIds.has(m.id);
           const escalated = m.escalated || escalatedIds.has(m.id);
           const shown = (noBlur || revealed.has(m.id)) && !deleted && !escalated;
 
           return (
             <motion.div
               key={m.id}
+              data-media-id={m.id}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, ease: "easeOut", delay: i * 0.03 }}
@@ -194,6 +224,18 @@ export function MediaGallery({
                     )}
                   </div>
 
+                  {/* Удаление (мягкое) — деструктивно, поэтому только super_admin и через confirm.
+                      Роут проверяет роль сам; здесь кнопку просто не показываем модератору. */}
+                  {canDelete && (
+                    <button
+                      onClick={() => setConfirmDelete(m)}
+                      aria-label="Удалить медиа"
+                      className="absolute bottom-2 left-2 flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-semibold text-white opacity-0 transition hover:bg-danger/85 group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <Trash2 size={12} /> Удалить
+                    </button>
+                  )}
+
                   {/* Кнопка эскалации (CSAM/illegal) — только в режиме модерации (blur). */}
                   <button
                     onClick={() => escalate(m)}
@@ -211,6 +253,15 @@ export function MediaGallery({
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Удалить медиа?"
+        message={`Файл будет помечен удалённым и перестанет открываться (${ownerLabel}). Действие попадёт в журнал модерации.`}
+        confirmLabel="Удалить"
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => confirmDelete && remove(confirmDelete)}
+      />
 
       <Lightbox
         open={lightboxAt >= 0}

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- граница нетипизированного Supabase query builder */
 import {
+  companionDeleteMedia,
   companionEnabled,
   companionGetOne,
   companionHandles,
@@ -206,6 +207,20 @@ export async function updateResource(
   role: AdminRoleName = "moderator",
 ) {
   if (resource === "reports") return updateReport(id, values as { status?: string }, adminId, role);
+
+  // Модерация медиа: единственная мутация — мягкое удаление. Раньше сюда никто не доходил
+  // (падало в `update not supported: media` внизу), хотя companion принимает её с самого
+  // начала. Гейт как у разбана/снятия бана — только super_admin, и проверяется ЗДЕСЬ:
+  // UI кнопку модератору не рисует, но спрятанная кнопка границей не является.
+  // Отдельно от servedByCompanion(): media не в resourcePath (список читается своим
+  // роутом /api/admin/media, не общим companionList).
+  if (resource === "media") {
+    if (values.deleted !== true) throw new Error("media update поддерживает только {deleted:true}");
+    if (role !== "super_admin") throw new PermissionError("Удаление медиа доступно только super_admin.");
+    if (companionEnabled()) return companionDeleteMedia(id, adminId, role);
+    await supabaseAdmin().from("MediaAsset").update({ deletedAt: new Date().toISOString() }).eq("id", id);
+    return getOne(resource, id);
+  }
 
   // companion-путь для users/bans (mute/ban/unban/lift). media и пр. — остаются на Supabase ниже.
   if (servedByCompanion(resource)) return companionUpdateResource(resource, id, values, adminId, role);

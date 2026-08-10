@@ -1,0 +1,66 @@
+# =============================================================================
+# anoon-admin — PRODUCTION image (used by server-stack/compose.prod.yml)
+#
+# Why a Dockerfile at all: the admin panel was previously deployed to Vercel /
+# run from a workstation. In prod it must run next to the companion so its
+# operator sessions and the companion's X-Admin-Token verification share one
+# secret (attested admin mode — see .env.prod.example ADMIN_SESSION_SECRET).
+#
+# Why `next start` and not the standalone output the frontend image uses:
+# admin/next.config.ts does not set `output: "standalone"`, and changing app
+# config is out of scope for a deploy artifact. `next start` over a pruned
+# node_modules works identically, just with a fatter image (~400 MB vs ~150).
+# ponytail: switch to standalone if image size ever matters — one config line
+# plus the frontend's Dockerfile.prod runner stage, copied verbatim.
+#
+# NEXT_PUBLIC_DATA_MODE is the only client-visible value and Next inlines it at
+# BUILD time, hence a build arg. Everything else (Supabase, session secret,
+# companion URL/secret) is server-only and arrives as runtime env.
+# =============================================================================
+
+ARG NODE_VERSION=24.14.1-slim
+
+# ---- Stage 1: build ---------------------------------------------------------
+FROM node:${NODE_VERSION} AS builder
+WORKDIR /app
+
+# pnpm via corepack — admin/ has a pnpm-lock.yaml, not a package-lock.json.
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+COPY . .
+
+# Prod must talk to the real admin API. "mock" here would build a panel that
+# renders fixtures and never calls the companion — a silently useless deploy.
+ARG NEXT_PUBLIC_DATA_MODE=api
+ENV NEXT_PUBLIC_DATA_MODE=${NEXT_PUBLIC_DATA_MODE} \
+    NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+
+RUN test "$NEXT_PUBLIC_DATA_MODE" = "api" \
+  || (echo "ERROR: prod admin image must be built with NEXT_PUBLIC_DATA_MODE=api" && exit 1)
+
+# ADMIN_SESSION_SECRET is read at request time, not build time, but Next
+# pre-renders route modules — a dummy keeps the build from tripping the
+# >=16-char guard in src/lib/admin-session.ts. Never used at runtime.
+ENV ADMIN_SESSION_SECRET=build-time-placeholder-not-a-secret
+
+RUN pnpm build \
+ && pnpm prune --prod
+
+# ---- Stage 2: runtime (non-root) --------------------------------------------
+FROM node:${NODE_VERSION} AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=builder --chown=node:node /app ./
+
+USER node
+EXPOSE 3000
+CMD ["node_modules/.bin/next", "start", "-p", "3000", "-H", "0.0.0.0"]

@@ -29,7 +29,6 @@ export default function ReportsPage() {
     sorters: [{ field: "createdAt", order: "desc" }],
     pagination: { mode: "off" },
   });
-  const { result: mediaResult } = useList<MediaAssetRow>({ resource: "media", pagination: { mode: "off" } });
   const { mutate: update } = useUpdate();
   const [sel_, setSel] = useState(0);
   // Мобильный вид (как в Чаты): список ↔ детали жалобы, со стрелкой «назад». sel_ у Жалоб
@@ -45,6 +44,18 @@ export default function ReportsPage() {
   // Клампим индекс на чтении (список сокращается после бана/отклонения) — без setState в effect.
   const sel = rows.length ? Math.min(sel_, rows.length - 1) : 0;
   const selected = rows[sel] ?? null;
+
+  // Медиа нарушителя. Спрашиваем ИМЕННО его файлы: запрос без фильтра уходит в
+  // /api/admin/media без f_ownerProfileId, а это контракт страниц «Файлы»/«Галерея» —
+  // роут отвечает {folders}, Refine читает несуществующее `data`, и блок медиа в
+  // карточке жалобы был пуст у любой жалобы (та же причина, что чинили на карточке
+  // пользователя). Фильтр по владельцу заодно снимает выкачивание всей библиотеки.
+  const { result: mediaResult } = useList<MediaAssetRow>({
+    resource: "media",
+    filters: [{ field: "ownerProfileId", operator: "eq", value: selected?.targetProfileId ?? "" }],
+    queryOptions: { enabled: Boolean(selected?.targetProfileId) },
+    pagination: { mode: "off" },
+  });
   const allMedia = mediaResult?.data ?? [];
 
   const dismiss = useCallback(
@@ -195,7 +206,7 @@ export default function ReportsPage() {
                 <div className="mt-5">
                   <h3 className="mb-2 text-sm font-medium text-fg-secondary">Медиа пользователя</h3>
                   <MediaGallery
-                    media={allMedia.filter((m) => m.ownerProfileId === selected.targetProfileId)}
+                    media={allMedia}
                     ownerLabel={`${selected.targetNickname} #${selected.targetPublicId}`}
                   />
                 </div>

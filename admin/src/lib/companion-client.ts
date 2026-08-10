@@ -456,6 +456,19 @@ export async function companionMediaFolders(): Promise<{ folders: CompanionMedia
   };
 }
 
+// PATCH /admin/media/{id} с телом {"deleted":true} — мягкое удаление (deleted_at,
+// файл не трогаем). Единственная мутация медиа, которую companion принимает; он же
+// пишет moderator_actions('media_delete') с автором из X-Admin-Id/токена, поэтому
+// отдельного аудита на стороне панели тут нет. Ролевой гейт — в admin-repo.
+export async function companionDeleteMedia(id: string, adminId: string, role: string): Promise<MediaAssetRow> {
+  const res = await companionFetch<any>(
+    `/admin/media/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify({ deleted: true }) },
+    { adminId, role },
+  );
+  return mapMediaAsset(res?.data ?? res);
+}
+
 // --- Broadcast (раздел «Рассылка»). Companion пока не хранит push-подписки массовой
 // рассылки сам по себе (Фаза E1) — этот вызов бьёт в companion, когда ADMIN_BACKEND=companion,
 // иначе broadcast/route.ts продолжает проксировать на WEB_URL (см. COMPANION-ADMIN-API.md §5).

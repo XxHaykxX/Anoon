@@ -1,0 +1,10 @@
+# Build-context exclusions for Dockerfile.prod.
+# node_modules is reinstalled inside the image from the lockfile (host copy may
+# hold Windows-native binaries); .env* must never enter an image layer.
+node_modules
+.next
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+.git
