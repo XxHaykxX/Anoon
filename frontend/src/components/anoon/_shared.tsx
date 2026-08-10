@@ -24,18 +24,47 @@ export const AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #86B7BD 0%, #5D939B 100%)", // teal
 ] as const;
 
-/** Gradient circle avatar with initials (no photos, per brand). */
+/**
+ * Circle avatar: the person's photo when there is one, the brand gradient with
+ * their initials otherwise.
+ *
+ * `photoUrl` is already-resolved and ready for `<img src>` — a blob preview, or
+ * a `public.photo.ref` put through `authedFileUrl`. A ref whose blob 404s (a
+ * lost/GC'd upload, or a Google photo the account later removed) falls back to
+ * the gradient instead of a broken image (BUG-39/41). The failure is remembered
+ * by *which* URL failed rather than as a bare boolean, so a new photo is retried
+ * on the render that introduces it — no effect needed to reset the flag.
+ *
+ * Anonymity is NOT this component's job: it draws whatever URL it is handed.
+ * In the roulette the peer has no photo to hand it, because Tinode blanks the
+ * peer's `public` for the whole anonymous phase (server ANON-PATCH, replyGetSub).
+ */
 export function AnoonAvatar({
   initials,
   tone = 0,
   size = 44,
   className,
+  photoUrl,
 }: {
   initials: string;
   tone?: number;
   size?: number;
   className?: string;
+  photoUrl?: string | null;
 }) {
+  const [brokenUrl, setBrokenUrl] = React.useState<string | null>(null);
+  if (photoUrl && brokenUrl !== photoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={photoUrl}
+        alt=""
+        onError={() => setBrokenUrl(photoUrl)}
+        className={cn("shrink-0 rounded-full object-cover", className)}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   return (
     <div
       className={cn("relative flex shrink-0 items-center justify-center rounded-full", className)}
@@ -172,7 +201,7 @@ export function AnoonBottomNav({
             >
               <span
                 className="relative -mt-7 flex size-14 items-center justify-center rounded-full bg-primary ring-4 ring-background"
-                style={{ boxShadow: "0 10px 24px -6px rgba(253,191,45,0.55)" }}
+                style={{ boxShadow: "0 10px 24px -6px rgb(var(--brand-rgb) / 0.55)" }}
               >
                 <Icon className="size-7 text-primary-foreground" />
                 {badge > 0 && (
@@ -290,7 +319,7 @@ export function AnoonSideNav({
               {isPrimary ? (
                 <span
                   className="grid size-7 place-items-center rounded-full bg-primary"
-                  style={{ boxShadow: "0 6px 16px -8px rgba(253,191,45,0.75)" }}
+                  style={{ boxShadow: "0 6px 16px -8px rgb(var(--brand-rgb) / 0.75)" }}
                 >
                   <Icon className="size-4 text-primary-foreground" />
                 </span>

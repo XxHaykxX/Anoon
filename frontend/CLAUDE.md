@@ -6,7 +6,7 @@
 ## Конвенции
 - Каждый экран: `"use client"`, корень `<div className="relative flex h-full w-full flex-col bg-background text-foreground">`, рассчитан на телефон-фрейм 390×844.
 - Только Tailwind + токены из `globals.css` (`bg-background`, `text-muted-foreground`, `bg-primary`, `bg-bubble-out`, `text-online`, `text-read-tick`, `border-border`, …). Хардкод hex — только бренд `#FDBF2D` при необходимости.
-- Аватары = градиент+инициалы (`AnoonAvatar` из `@/components/anoon/_shared`), НЕ фото.
+- Аватары — всегда `AnoonAvatar` из `@/components/anoon/_shared`. По умолчанию градиент+инициалы; фото рисуется, только если передан `photoUrl` (своё фото в профиле; чужое — лишь там, где оно легально видно: друзья и раскрытая пара). Нет URL или картинка не загрузилась — обратно к градиенту. Свой `<img>` вместо этого пропа не заводить.
 - Press-фидбек: `active:scale-95 transition-transform cursor-pointer`. Новые пузыри — класс `anoon-msg-in`.
 - Кнопки/тумблеры должны реально работать (useState), без мёртвых.
 - Иконки из `@/components/icons`; недостающие — локальный `const XIcon = (p) => (<svg .../>)`, НЕ править `icons.tsx`.

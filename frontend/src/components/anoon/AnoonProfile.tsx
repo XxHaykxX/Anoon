@@ -63,11 +63,6 @@ export default function AnoonProfile() {
   // me-topic (and its avatar) loads. Re-renders triggered by avatarUploading/
   // avatarPreview changes below also pick up a freshly-uploaded ref for free.
   const avatarRef = real ? getTinodeClient().avatarRefFor(MY_TOPIC) : null;
-  // A stored photo ref whose blob 404s (a lost/GC'd upload) must fall back to
-  // the initials avatar instead of a broken <img> (BUG-39/41). Tracked by the
-  // specific ref that failed, so a fresh upload (new ref) isn't hidden.
-  const [brokenAvatarRef, setBrokenAvatarRef] = useState<string | null>(null);
-  const avatarBroken = !!avatarRef && brokenAvatarRef === avatarRef;
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [walletOpen, setWalletOpen] = useState(false);
@@ -145,30 +140,14 @@ export default function AnoonProfile() {
           {/* Avatar + change photo */}
           <div className="flex flex-col items-center gap-3 py-4 lg:[.anoon-desktop_&]:pt-0">
             <div className="relative">
-              {avatarPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={avatarPreview}
-                  alt="Аватар"
-                  className="rounded-full object-cover"
-                  style={{ width: 92, height: 92 }}
-                />
-              ) : avatarRef && !avatarBroken ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={authedFileUrl(avatarRef)}
-                  alt="Аватар"
-                  onError={() => setBrokenAvatarRef(avatarRef)}
-                  className="rounded-full object-cover"
-                  style={{ width: 92, height: 92 }}
-                />
-              ) : (
-                <AnoonAvatar
-                  initials={avatarInitials}
-                  tone={real ? user!.avatarTone : 3}
-                  size={92}
-                />
-              )}
+              <AnoonAvatar
+                initials={avatarInitials}
+                tone={real ? user!.avatarTone : 3}
+                size={92}
+                photoUrl={
+                  avatarPreview ?? (avatarRef ? authedFileUrl(avatarRef) : null)
+                }
+              />
               {avatarUploading && (
                 <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-xs font-medium text-white">
                   Загрузка…

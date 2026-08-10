@@ -253,10 +253,64 @@ export class TinodeClient {
    * A contact's avatar ref (`public.photo.ref`) as stored by the SDK, or `null`
    * if the contact has no photo set. Wrap the result in {@link authedFileUrl}
    * before handing it to an `<img>`.
+   *
+   * Two shapes of topic answer here. For `me` and for a p2p friend chat the
+   * topic's own `public` IS the profile (Tinode fills a p2p topic's public from
+   * the peer), so one lookup is the whole story. A roulette pair is a *group*
+   * topic created bare by the companion ROOT bot — it has no public of its own,
+   * and the peer's profile rides on their subscription instead, which is what
+   * {@link peerSubAvatarRef} reads.
+   *
+   * Nothing here can leak a photo during the anonymous phase: Tinode blanks the
+   * peer's `Public` in every `{meta sub}` while `aux.anon` is set (server
+   * ANON-PATCH, `replyGetSub`), so the subscription simply carries no photo
+   * until the mutual reveal lifts the flag.
    */
   avatarRefFor(topic: string): string | null {
-    const ref = this.tinode?.getTopic(topic)?.public?.photo?.ref;
-    return typeof ref === "string" ? ref : null;
+    const t = this.tinode?.getTopic(topic);
+    const ref = t?.public?.photo?.ref;
+    if (typeof ref === "string") return ref;
+    return t && topic.startsWith("grp") ? this.peerSubAvatarRef(t, topic) : null;
+  }
+
+  /**
+   * The other member's `public.photo.ref` on a pair (grp) topic, or `null`.
+   *
+   * The subscription list is fetched once when the chat is opened — during the
+   * anonymous phase, i.e. blanked. Nothing re-reads it when the reveal lands,
+   * so a peer photo would stay invisible for the life of the chat; that is why
+   * an empty answer schedules one `{get sub}` refresh (once per topic, never on
+   * the friends list, which uses p2p topics and needs no refetch). The caller
+   * polls for a few seconds after the reveal — see AnoonAnonChat, BUG-14.
+   */
+  private peerSubAvatarRef(t: Topic, topic: string): string | null {
+    const me = this.tinode?.getCurrentUserID?.();
+    let ref: string | null = null;
+    t.subscribers?.((sub: { public?: { photo?: { ref?: string } } }, uid: string) => {
+      if (ref || uid === me) return;
+      if (typeof sub?.public?.photo?.ref === "string") ref = sub.public.photo.ref;
+    });
+    if (!ref && !this.subsRefreshed.has(topic)) {
+      this.subsRefreshed.add(topic);
+      void t.getMeta(t.startMetaQuery().withSub().build()).catch(() => {
+        this.subsRefreshed.delete(topic);
+      });
+    }
+    return ref;
+  }
+
+  /** Pair topics whose subscriptions were already re-fetched once post-reveal. */
+  private subsRefreshed = new Set<string>();
+
+  /**
+   * Own display name as stored in the account's Tinode `public.fn` — the field
+   * the profile screen writes and the one a Google sign-in seeds from the ID
+   * token (companion `googleAccountPublic`). `null` until the `me` topic is
+   * subscribed, or when the account has no name set.
+   */
+  myDisplayName(): string | null {
+    const fn = this.tinode?.getMeTopic()?.public?.fn;
+    return typeof fn === "string" && fn.trim() ? fn.trim() : null;
   }
 
   /** Lazily build the Tinode instance bound to {@link wsUrl} (browser only). */

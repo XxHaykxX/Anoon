@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"anoon/companion/internal/oauth"
 	"anoon/companion/internal/store"
 )
 
@@ -199,8 +200,41 @@ func (s *Server) restAuth(ctx context.Context, w http.ResponseWriter, req *restR
 	// Ask Tinode to create the account (uid left zero). Tinode then calls `link`.
 	writeJSON(w, http.StatusOK, restResponse{
 		Record: &restRec{AuthLevel: "auth", Features: "V"},
-		NewAcc: &restNewAcc{Auth: "JRWPA", Anon: "N"},
+		NewAcc: &restNewAcc{Auth: "JRWPA", Anon: "N", Public: googleAccountPublic(id)},
 	})
+}
+
+// googleAccountPublic turns the Google profile claims into the Tinode `public`
+// of a brand-new account: `{fn, photo:{ref}}` — exactly the two fields the app
+// writes when the profile is filled in by hand (tinode.ts `createAccountBasic`
+// writes `fn`, `setAvatar` merges `photo.ref`), so there is no second place
+// where a name or a photo can live. Returns nil when Google sent neither, which
+// keeps `newacc.public` out of the JSON altogether.
+//
+// This runs ONLY on the account-creation reply, never on a returning sign-in,
+// which is what makes "fill only what is empty" true without having to read the
+// current profile back: the account does not exist yet, so nothing can be
+// overwritten. A user who later renames themselves keeps that name forever —
+// their next Google login takes the `found` branch above and never gets here.
+//
+// The photo ref is Google's absolute https URL rather than an uploaded file:
+// `authedFileUrl` passes non-"/" refs through untouched, so it renders as-is.
+func googleAccountPublic(id oauth.Identity) any {
+	fn := strings.TrimSpace(id.Name)
+	if fn == "" {
+		fn = strings.TrimSpace(strings.TrimSpace(id.GivenName) + " " + strings.TrimSpace(id.FamilyName))
+	}
+	pub := map[string]any{}
+	if fn != "" {
+		pub["fn"] = fn
+	}
+	if pic := strings.TrimSpace(id.Picture); pic != "" {
+		pub["photo"] = map[string]any{"ref": pic}
+	}
+	if len(pub) == 0 {
+		return nil
+	}
+	return pub
 }
 
 // restLink runs after Tinode created the account: persist the identity mapping

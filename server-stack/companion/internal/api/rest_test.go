@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"anoon/companion/internal/oauth"
 )
 
 // okHandler records that the wrapped handler ran and answers 200.
@@ -96,5 +98,40 @@ func TestPresentedRestSecretPrefersHeader(t *testing.T) {
 	r.Header.Set(restSecretHeader, "from-header")
 	if got := presentedRestSecret(r); got != "from-header" {
 		t.Fatalf("presentedRestSecret = %q, want %q", got, "from-header")
+	}
+}
+
+// The Google claims are best-effort: `name` may be absent while given/family
+// are present, and a profile with neither must not put an empty `public` on the
+// new account (which would then look "filled" and never be seeded again).
+func TestGoogleAccountPublic(t *testing.T) {
+	tests := []struct {
+		name    string
+		id      oauth.Identity
+		wantFn  any
+		wantPic any
+	}{
+		{"full name wins", oauth.Identity{Name: "Айк Карапетян", GivenName: "Айк", Picture: "https://lh3/x"}, "Айк Карапетян", "https://lh3/x"},
+		{"given+family when name absent", oauth.Identity{GivenName: "Айк", FamilyName: "Карапетян"}, "Айк Карапетян", nil},
+		{"given only", oauth.Identity{GivenName: "Айк"}, "Айк", nil},
+		{"photo only", oauth.Identity{Picture: "https://lh3/y"}, nil, "https://lh3/y"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pub, _ := googleAccountPublic(tc.id).(map[string]any)
+			if got := pub["fn"]; got != tc.wantFn {
+				t.Errorf("fn = %v, want %v", got, tc.wantFn)
+			}
+			var gotPic any
+			if photo, ok := pub["photo"].(map[string]any); ok {
+				gotPic = photo["ref"]
+			}
+			if gotPic != tc.wantPic {
+				t.Errorf("photo.ref = %v, want %v", gotPic, tc.wantPic)
+			}
+		})
+	}
+	if got := googleAccountPublic(oauth.Identity{Subject: "123", Email: "a@b.c"}); got != nil {
+		t.Errorf("no profile claims: public = %v, want nil", got)
 	}
 }

@@ -15,11 +15,21 @@ import (
 )
 
 // Identity is the verified result of a third-party sign-in.
+//
+// The profile fields (Name/GivenName/FamilyName/Picture) are best-effort: they
+// are only present when the person granted the `profile` scope, and Google may
+// send `name` alone or the given/family pair alone. Nothing downstream may
+// require them. They seed a brand-new account's profile — see
+// api.googleAccountPublic.
 type Identity struct {
-	Provider string // "google"
-	Subject  string // stable provider user id (Google "sub")
-	Email    string
-	Verified bool // provider asserts the email is verified
+	Provider   string // "google"
+	Subject    string // stable provider user id (Google "sub")
+	Email      string
+	Verified   bool // provider asserts the email is verified
+	Name       string
+	GivenName  string
+	FamilyName string
+	Picture    string // absolute https URL of the Google account photo
 }
 
 // defaultTokenInfoURL is Google's token verification endpoint. It validates the
@@ -51,6 +61,10 @@ type tokenInfo struct {
 	Sub           string `json:"sub"`
 	Email         string `json:"email"`
 	EmailVerified string `json:"email_verified"`
+	Name          string `json:"name"`
+	GivenName     string `json:"given_name"`
+	FamilyName    string `json:"family_name"`
+	Picture       string `json:"picture"`
 	Exp           string `json:"exp"`
 	Iss           string `json:"iss"`
 	Error         string `json:"error"`
@@ -110,9 +124,13 @@ func (v *GoogleVerifier) Verify(ctx context.Context, idToken string) (Identity, 
 	}
 
 	return Identity{
-		Provider: "google",
-		Subject:  info.Sub,
-		Email:    info.Email,
-		Verified: info.EmailVerified == "true",
+		Provider:   "google",
+		Subject:    info.Sub,
+		Email:      info.Email,
+		Verified:   info.EmailVerified == "true",
+		Name:       info.Name,
+		GivenName:  info.GivenName,
+		FamilyName: info.FamilyName,
+		Picture:    info.Picture,
 	}, nil
 }
