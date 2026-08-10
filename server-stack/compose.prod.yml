@@ -181,8 +181,9 @@ services:
       # sign-in through Tinode. Must match the secret embedded in the Tinode
       # config's rest auth server_url. Caddy never proxies this path.
       COMPANION_REST_SECRET: ${COMPANION_REST_SECRET:-}
-      # Roulette anti-repeat window (prod default 2h; dev used 0).
-      ROULETTE_RECENT_WINDOW: ${ROULETTE_RECENT_WINDOW:-2h}
+      # Roulette anti-repeat window. 0 = off, which is the default: only a
+      # block keeps two people apart. Set a duration here to bring it back.
+      ROULETTE_RECENT_WINDOW: ${ROULETTE_RECENT_WINDOW:-0}
       # Web Push (VAPID) — generate a PROD keypair; empty disables push.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}

@@ -143,11 +143,13 @@ type Config struct {
 
 	// RouletteRecentWindow is how long a just-matched peer stays on a user's
 	// roulette exclude list, so the matcher does not re-pair the same two
-	// people back-to-back. 0 (or negative) disables the exclusion entirely,
-	// which is what you want when testing roulette with only a couple of
-	// accounts.
+	// people back-to-back. 0 (or negative) disables that exclusion, which is
+	// the default: the owner's rule is that the only thing standing between
+	// two people is a block. On a small user base the window is also a way to
+	// make the roulette look broken — both sides queue, neither is blocked,
+	// and nothing happens for two hours with no explanation on screen.
 	// Env: ROULETTE_RECENT_WINDOW (a Go duration string, e.g. "2h", "30s",
-	// "0"). Defaults to 2h when unset or not a valid duration.
+	// "0"). Defaults to 0 when unset or not a valid duration.
 	RouletteRecentWindow time.Duration
 
 	// VAPIDPublicKey / VAPIDPrivateKey are the P-256 VAPID keypair used to sign
@@ -218,7 +220,7 @@ func Load() (*Config, error) {
 		AdminSecret:          os.Getenv("COMPANION_ADMIN_SECRET"),
 		AdminTokenSecret:     strings.TrimSpace(os.Getenv("COMPANION_ADMIN_TOKEN_SECRET")),
 		RestSecret:           strings.TrimSpace(os.Getenv("COMPANION_REST_SECRET")),
-		RouletteRecentWindow: durationOr("ROULETTE_RECENT_WINDOW", 2*time.Hour),
+		RouletteRecentWindow: durationOr("ROULETTE_RECENT_WINDOW", 0),
 		VAPIDPublicKey:       os.Getenv("VAPID_PUBLIC_KEY"),
 		VAPIDPrivateKey:      os.Getenv("VAPID_PRIVATE_KEY"),
 		VAPIDSubject:         envOr("VAPID_SUBJECT", "mailto:admin@anoon.app"),
