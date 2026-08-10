@@ -252,91 +252,23 @@ const SIDE_NAV_TAB: Partial<Record<AnoonRoute, AnoonTab>> = {
 const WIDE_ROUTES: Partial<Record<AnoonRoute, true>> = { chats: true };
 
 /**
- * Viewport-fit for the fixed 390x844 phone frame. Same technique as the
- * showcase's own PhoneFrame (`app/page.tsx`) — a breakpoint-driven transform
- * scale — extended to fit BOTH axes: `--anoon-fw` is the largest scale the
- * viewport WIDTH allows, `--anoon-fh` the largest its HEIGHT allows, and the
- * frame uses `min()` of the two. Steps are cut so that `frame * scale + 16px`
- * (the page wrapper's `p-2`) never exceeds the viewport on either axis.
+ * The app shell: the dark scope plus the box every screen lays out inside.
  *
- * The outer `.anoon-frame-fit` box reserves the SCALED footprint (a transform
- * doesn't affect layout, so without it a centred flex parent would clip the
- * top of the frame); the inner `.anoon-frame-scale` keeps the untouched
- * 390x844 coordinate system every screen lays out against.
+ * There used to be a drawn phone here — a fixed 390x844 bezel with a rounded
+ * border, scaled to fit by a ladder of width/height breakpoints, dropped only
+ * from `lg` up. It was backwards in both directions: a real phone (which is
+ * below `lg`) got a picture of a phone drawn around the phone in the user's
+ * hand, losing a gutter on all four sides and shrinking the layout below its
+ * own design size, while a desktop window narrower than 1024px got the same
+ * treatment and read as "the site opens as mobile". The app now fills whatever
+ * viewport it is given; the framed previews live in /showcase, which is what
+ * that page is for.
  *
- * All of this is PHONE-ONLY. From 1024px up, globals.css cancels the scale and
- * the fixed box (`.anoon-desktop .anoon-frame-fit`) so the same markup fills the
- * viewport instead — that is the single desktop breakpoint, don't add another.
- */
-const FRAME_FIT_CSS = `
-.anoon-frame-fit {
-  --anoon-fw: 0.65;
-  --anoon-fh: 0.45;
-  --anoon-fs: min(var(--anoon-fw), var(--anoon-fh));
-  flex-shrink: 0;
-  width: calc(390px * var(--anoon-fs));
-  height: calc(844px * var(--anoon-fs));
-}
-.anoon-frame-scale {
-  width: 390px;
-  height: 844px;
-  transform: scale(var(--anoon-fs));
-  transform-origin: top left;
-}
-@media (min-width: 289px) { .anoon-frame-fit { --anoon-fw: 0.7; } }
-@media (min-width: 309px) { .anoon-frame-fit { --anoon-fw: 0.75; } }
-@media (min-width: 328px) { .anoon-frame-fit { --anoon-fw: 0.8; } }
-@media (min-width: 348px) { .anoon-frame-fit { --anoon-fw: 0.85; } }
-@media (min-width: 367px) { .anoon-frame-fit { --anoon-fw: 0.9; } }
-@media (min-width: 387px) { .anoon-frame-fit { --anoon-fw: 0.95; } }
-@media (min-width: 406px) { .anoon-frame-fit { --anoon-fw: 1; } }
-@media (min-height: 438px) { .anoon-frame-fit { --anoon-fh: 0.5; } }
-@media (min-height: 481px) { .anoon-frame-fit { --anoon-fh: 0.55; } }
-@media (min-height: 523px) { .anoon-frame-fit { --anoon-fh: 0.6; } }
-@media (min-height: 565px) { .anoon-frame-fit { --anoon-fh: 0.65; } }
-@media (min-height: 607px) { .anoon-frame-fit { --anoon-fh: 0.7; } }
-@media (min-height: 649px) { .anoon-frame-fit { --anoon-fh: 0.75; } }
-@media (min-height: 692px) { .anoon-frame-fit { --anoon-fh: 0.8; } }
-@media (min-height: 734px) { .anoon-frame-fit { --anoon-fh: 0.85; } }
-@media (min-height: 776px) { .anoon-frame-fit { --anoon-fh: 0.9; } }
-@media (min-height: 818px) { .anoon-frame-fit { --anoon-fh: 0.95; } }
-@media (min-height: 860px) { .anoon-frame-fit { --anoon-fh: 1; } }
-
-/*
-  On a real phone the bezel is a drawing of the device already in the user's
-  hand: it costs a black gutter on all four sides, rounds off the corners of a
-  screen that is already round, and shrinks the app below its own design size —
-  844px of layout scaled into whatever is left. The frame exists to preview a
-  phone on something that is not one, so it is gated on the pointer, not on
-  width: a narrow desktop window keeps the frame, a touch device drops it.
-
-  Height is 100dvh, not 100%: the parent only carries a min-height, which is not
-  a definite height for a percentage to resolve against, and dvh follows the
-  browser chrome as it collapses on scroll.
-
-  The frame used to be what kept content clear of the notch. Full-bleed it is
-  the safe-area insets' job — the top one here, the bottom one already handled
-  by the nav and the sheets that sit on it.
-*/
-@media (hover: none) and (pointer: coarse) {
-  .anoon-app-page { padding: 0; }
-  .anoon-frame-fit { width: 100%; height: 100dvh; }
-  .anoon-frame-scale { width: 100%; height: 100%; transform: none; }
-  .anoon-frame-scale > div {
-    width: 100%;
-    height: 100%;
-    padding-top: env(safe-area-inset-top);
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-}
-`;
-
-/**
- * The app shell: dark scope + the self-scaling 390x844 bezel below `lg`, and
- * the same box full-bleed from `lg` up (bezel, notch and shadow all drop away —
- * a desktop app is not a phone in a frame).
+ * `100dvh`, not `100%`: the parent carries only a min-height, which is not a
+ * definite height for a percentage to resolve against, and dvh follows the
+ * browser chrome as it collapses on scroll. The top safe-area inset is what
+ * keeps content off the notch now that the bezel is gone; the bottom one is
+ * already handled by the nav and the sheets that sit on it.
  *
  * `anoon-desktop` is the scope hook every desktop rule in globals.css hangs off.
  * It sits here and nowhere else, which is what keeps the showcase's own fixed
@@ -345,18 +277,13 @@ const FRAME_FIT_CSS = `
  * Plain `lg:` utilities are fine INSIDE this file (nothing here is reused by the
  * showcase); shared components under `_shared.tsx` must use the class scope.
  */
-function PhoneFrame({ className = "", children }: { className?: string; children: React.ReactNode }) {
+function AppShell({ className = "", children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className="anoon-desktop dark">
-      <style>{FRAME_FIT_CSS}</style>
-      <div className="anoon-frame-fit mx-auto">
-        <div className="anoon-frame-scale">
-          <div
-            className={`relative flex h-[844px] w-[390px] flex-col overflow-hidden rounded-[44px] border-[10px] border-neutral-800 bg-background text-foreground shadow-2xl lg:h-full lg:w-full lg:rounded-none lg:border-0 lg:shadow-none ${className}`}
-          >
-            {children}
-          </div>
-        </div>
+    <div className="anoon-desktop dark h-dvh w-full">
+      <div
+        className={`relative flex h-full w-full flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground ${className}`}
+      >
+        {children}
       </div>
     </div>
   );
@@ -653,19 +580,17 @@ export default function AnoonApp() {
   // onboarding screen from flashing before the silent re-login lands.
   if (booting) {
     return (
-      <PhoneFrame className="items-center justify-center">
+      <AppShell className="items-center justify-center">
         <div className="animate-in fade-in-0 duration-500 motion-reduce:animate-none text-3xl font-bold text-primary">
           anoon
         </div>
-      </PhoneFrame>
+      </AppShell>
     );
   }
 
   return (
     <AnoonNavContext.Provider value={nav}>
-      <PhoneFrame>
-        {/* Notch — decorative, part of the phone bezel only */}
-        <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-6 w-36 -translate-x-1/2 rounded-b-2xl bg-neutral-800 lg:hidden" />
+      <AppShell>
         {/* Phone: one column. Desktop: nav rail + work area, side by side. */}
         <div className="flex h-full flex-col lg:flex-row">
           {sideTab && <AnoonSideNav active={sideTab} badges={sideBadges} />}
@@ -809,7 +734,7 @@ export default function AnoonApp() {
             </div>
           </div>
         </div>
-      </PhoneFrame>
+      </AppShell>
     </AnoonNavContext.Provider>
   );
 }
