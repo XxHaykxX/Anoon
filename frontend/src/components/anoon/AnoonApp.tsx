@@ -597,8 +597,6 @@ export default function AnoonApp() {
           {/* `min-w-0` so a wide child (chat bubbles, long handles) can't push
               the flex row past the viewport and give the rail a scrollbar. */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {/* Status bar spacer — clears the decorative notch */}
-            <div className="h-7 shrink-0 bg-background lg:hidden" />
             {/* Shell-provided back bar for sub-screens without their own. The
                 hairline runs the full work area; the chevron inside sits on the
                 same clamp as the content, so on desktop it lines up with the

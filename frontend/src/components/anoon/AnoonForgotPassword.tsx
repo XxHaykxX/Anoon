@@ -44,7 +44,7 @@ export default function AnoonForgotPassword() {
   }
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+    <div className="anoon-auth relative flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       <div
         className="pointer-events-none absolute -top-24 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-3xl"
         style={{ background: "rgba(253,191,45,0.14)" }}

@@ -140,7 +140,7 @@ export default function AnoonRegister() {
   };
 
   return (
-    <div className="relative flex h-full w-full flex-col bg-background text-foreground">
+    <div className="anoon-auth relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
       <div className={`flex items-center gap-1 px-6 pt-6 ${DESKTOP_FORM}`}>
         <button

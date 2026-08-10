@@ -99,7 +99,7 @@ export default function AnoonGenderSelect() {
   ];
 
   return (
-    <div className="relative flex h-full w-full flex-col bg-background text-foreground">
+    <div className="anoon-auth relative flex h-full w-full flex-col bg-background text-foreground">
       <div className={`px-6 pt-6 ${DESKTOP_FORM}`}>
         <AnoonLogo className="text-xl" />
       </div>
