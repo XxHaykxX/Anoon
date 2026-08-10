@@ -15,6 +15,11 @@
 
 # next.js
 /.next/
+# The api/companion build lives in its own dir so it can never be mixed with a
+# mock-mode one: NEXT_PUBLIC_DATA_MODE is inlined at BUILD time, and a build on
+# top of the other mode's output produces a hybrid that lies about which backend
+# it talks to. Same reason frontend/ ignores `.next-*`.
+/.next-*/
 /out/
 
 # production
