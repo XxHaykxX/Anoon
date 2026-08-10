@@ -2,15 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { ChevronLeftIcon, CheckIcon, LockIcon } from "@/components/icons";
+import type { BillingOrder } from "@/lib/companion";
 import { USE_TINODE } from "@/lib/tinode";
+import { useAnoonStore } from "@/store";
 import {
-  COIN_PACKS,
+  coinPacks,
   FEATURE_LABELS,
+  PAYMENTS_OFF_MESSAGE,
+  planOffer,
   SUBSCRIPTION_PLANS,
   useWalletStore,
-  type WalletActionResult,
 } from "@/store/walletStore";
 import { PRESS_FX } from "@/components/anoon/_shared";
+
+/** How often the open order is re-read while the payer is on the provider's page. */
+const ORDER_POLL_MS = 2000;
 
 /**
  * The coin glyph's three golds. Deliberately NOT the brand yellow and
@@ -39,6 +45,17 @@ function CoinIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Desktop column. Across the shell's full 60rem the balance strip was an
+ * 840px-wide rule with «Баланс монет» at one end and the tier pill at the
+ * other, and the four coin packs were 200px boxes holding a number. Both halves
+ * of the variant are load-bearing: `lg:` alone would also fire in the showcase
+ * (fixed 390px frames on a wide monitor), and `.anoon-desktop` alone is on the
+ * app root at every width and would restyle the phone (docs/DESKTOP-LAYOUT.md).
+ */
+const DESKTOP_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[44rem]";
+
 export interface AnoonWalletProps {
   /** Opened as a local overlay from AnoonProfile — no global route yet. */
   onClose: () => void;
@@ -54,11 +71,17 @@ export interface AnoonWalletProps {
 export default function AnoonWallet({ onClose }: AnoonWalletProps) {
   const balance = useWalletStore((s) => s.balance);
   const tier = useWalletStore((s) => s.tier);
+  const products = useWalletStore((s) => s.products);
   const fetchWallet = useWalletStore((s) => s.fetchWallet);
-  const buyCoins = useWalletStore((s) => s.buyCoins);
-  const subscribe = useWalletStore((s) => s.subscribe);
+  const startPurchase = useWalletStore((s) => s.startPurchase);
+  const orderStatus = useWalletStore((s) => s.orderStatus);
+  const showError = useAnoonStore((s) => s.showError);
 
   const [toast, setToast] = useState<string | null>(null);
+  /** The order the payer is currently settling, if any. */
+  const [pending, setPending] = useState<BillingOrder | null>(null);
+
+  const packs = coinPacks(products);
 
   useEffect(() => {
     if (USE_TINODE) void fetchWallet();
@@ -70,11 +93,69 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const showResult = (r: WalletActionResult) => setToast(r.message);
+  /**
+   * While an order is open, ask companion what became of it.
+   *
+   * This is the only thing on the client that may conclude a payment happened.
+   * The provider's page sends the payer back to a URL, and that redirect proves
+   * nothing — it is a link anyone can type — so no branch here reacts to the
+   * user returning. Companion flips the order to `paid` only after the
+   * provider's signed callback settled it, and the balance is then re-read from
+   * `/me` rather than added up locally.
+   *
+   * Polling ends by itself: every non-open status is terminal, and an order the
+   * payer abandons reads back as `expired` once its deadline passes.
+   */
+  useEffect(() => {
+    if (!pending) return;
+    let done = false;
+    const timer = window.setInterval(async () => {
+      const order = await orderStatus(pending.id);
+      // A failed poll is transient (a dropped request, a restart): keep waiting.
+      if (done || !order || order.status === "new" || order.status === "pending") return;
+      done = true;
+      window.clearInterval(timer);
+      setPending(null);
+      if (order.status === "paid") {
+        await fetchWallet();
+        setToast("Оплата прошла — начислено");
+      } else {
+        showError(
+          order.status === "expired"
+            ? "Время на оплату истекло. Заказ отменён"
+            : "Оплата не прошла. Деньги не списаны",
+        );
+      }
+    }, ORDER_POLL_MS);
+    return () => {
+      done = true;
+      window.clearInterval(timer);
+    };
+  }, [pending, orderStatus, fetchWallet, showError]);
+
+  /**
+   * Buy `code`. An empty code means the catalogue is not live (no provider
+   * configured), which is answered honestly instead of with a button that
+   * appears to work.
+   */
+  const buy = async (code: string | null) => {
+    if (!code) {
+      setToast(PAYMENTS_OFF_MESSAGE);
+      return;
+    }
+    const result = await startPurchase(code);
+    if (!result.ok) {
+      showError(result.message);
+      return;
+    }
+    setPending(result.order);
+  };
 
   return (
     <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-background text-foreground animate-in fade-in-0 duration-200 motion-reduce:animate-none">
-      <header className="flex shrink-0 items-center gap-2 px-3 pb-2 pt-4 lg:[.anoon-desktop_&]:px-5">
+      <header
+        className={`flex shrink-0 items-center gap-2 px-3 pb-2 pt-4 lg:[.anoon-desktop_&]:px-5 ${DESKTOP_COL}`}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -93,7 +174,9 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
         fire in the showcase's 390px frame on a wide monitor, `.anoon-desktop`
         alone would fire on the phone (docs/DESKTOP-LAYOUT.md).
       */}
-      <div className="flex-1 overflow-y-auto px-5 pb-6 lg:[.anoon-desktop_&]:px-8">
+      <div
+        className={`flex-1 overflow-y-auto px-5 pb-6 lg:[.anoon-desktop_&]:px-5 ${DESKTOP_COL}`}
+      >
         {/* Balance */}
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
           <CoinIcon className="size-10 shrink-0" />
@@ -117,11 +200,11 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
             Монеты — на бусты в очереди, подарки и супер-оценки.
           </p>
           <div className="mt-3 grid grid-cols-2 gap-2.5 lg:[.anoon-desktop_&]:grid-cols-4">
-            {COIN_PACKS.map((pack) => (
+            {packs.map((pack) => (
               <button
-                key={pack.id}
+                key={pack.id || `fallback-${pack.coins}`}
                 type="button"
-                onClick={() => void buyCoins(pack.id).then(showResult)}
+                onClick={() => void buy(pack.id)}
                 className={`flex flex-col items-center gap-1 rounded-2xl border border-border bg-card py-4 ${PRESS_FX}`}
               >
                 <CoinIcon className="size-6" />
@@ -142,6 +225,9 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
           <div className="mt-3 space-y-3 lg:[.anoon-desktop_&]:grid lg:[.anoon-desktop_&]:grid-cols-2 lg:[.anoon-desktop_&]:gap-3 lg:[.anoon-desktop_&]:space-y-0">
             {(Object.keys(SUBSCRIPTION_PLANS) as (keyof typeof SUBSCRIPTION_PLANS)[]).map((id) => {
               const plan = SUBSCRIPTION_PLANS[id];
+              // Price and product code come from the catalogue when billing is
+              // live; the constant's price is only the offline fallback.
+              const offer = planOffer(products, id);
               const isCurrent = tier === id;
               return (
                 <div
@@ -157,7 +243,7 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
                         Ваш тариф
                       </span>
                     ) : (
-                      <span className="text-sm font-semibold">{plan.priceAmd} ֏/мес</span>
+                      <span className="text-sm font-semibold">{offer.priceAmd} ֏/мес</span>
                     )}
                   </div>
                   <ul className="mt-2.5 space-y-1.5 lg:[.anoon-desktop_&]:pb-3">
@@ -171,7 +257,7 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
                   {!isCurrent && (
                     <button
                       type="button"
-                      onClick={() => void subscribe(id).then(showResult)}
+                      onClick={() => void buy(offer.code)}
                       className={`mt-3 w-full rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground lg:[.anoon-desktop_&]:mt-auto ${PRESS_FX}`}
                     >
                       Оформить {plan.label}
@@ -193,8 +279,41 @@ export default function AnoonWallet({ onClose }: AnoonWalletProps) {
         )}
       </div>
 
+      {/*
+        Waiting on an open order. The payment page opens in a new tab from a
+        real click on this link rather than programmatically after the await
+        that created the order — a window.open() at that point is a popup and
+        Safari blocks it, which would strand the payer on a screen saying it is
+        waiting for a payment they were never shown.
+      */}
+      {pending && (
+        <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-background/95 px-8 text-center">
+          <CoinIcon className="size-10" />
+          <p className="text-sm font-semibold">Заказ на {pending.amountAmd} ֏</p>
+          <a
+            href={pending.payUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={`w-full max-w-xs rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground ${PRESS_FX}`}
+          >
+            Перейти к оплате
+          </a>
+          <p className="text-xs text-muted-foreground">
+            Ждём подтверждения от банка. Монеты начислятся сами — эту страницу можно не держать
+            открытой.
+          </p>
+          <button
+            type="button"
+            onClick={() => setPending(null)}
+            className={`rounded-full px-4 py-2 text-xs font-medium text-muted-foreground ${PRESS_FX}`}
+          >
+            Отмена
+          </button>
+        </div>
+      )}
+
       {toast && (
-        <div className="anoon-msg-in absolute left-1/2 top-16 z-40 -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background shadow-lg">
+        <div className="anoon-msg-in absolute left-1/2 top-16 z-[70] -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background shadow-lg">
           {toast}
         </div>
       )}
