@@ -24,8 +24,12 @@
 import type { Tinode, TinodeCtrl, Topic } from "tinode-sdk";
 
 /** Base Tinode WebSocket endpoint. */
+// 127.0.0.1, not `localhost`: the latter resolves to `::1` first, and Docker's
+// IPv6 port relay on this stack can accept the connection and then never
+// answer — a socket that hangs instead of failing (see companion.ts's
+// COMPANION_URL for the same trap on the REST side).
 export const TINODE_WS_URL =
-  process.env.NEXT_PUBLIC_TINODE_WS ?? "ws://localhost:6061/v0/channels";
+  process.env.NEXT_PUBLIC_TINODE_WS ?? "ws://127.0.0.1:6061/v0/channels";
 
 /** API key the server accepts (default self-hosted/demo key). */
 export const TINODE_API_KEY =
@@ -56,16 +60,43 @@ function effectiveWsUrl(wsUrl: string): string {
 const APP_NAME = "anoon-web/0.1";
 
 /**
- * Derive a Tinode `basic`-scheme username from an email. Tinode unames allow
- * `[a-z0-9_.-]` only, so we fold the `@` and lowercase. Deterministic, so the
+ * Longest login the live server accepts. Observed, not documented: 26 chars
+ * register fine, 27 gets `422 policy violation` — which companion surfaces as a
+ * 502. See {@link tinodeLoginFromEmail}.
+ */
+const MAX_LOGIN = 26;
+
+/**
+ * Derive a Tinode `basic`-scheme username from an email. Deterministic, so the
  * same email always maps to the same login (register ↔ login must agree).
+ *
+ * Two server limits are folded in here, both measured against the running
+ * backend rather than read off a doc — and both used to make registration
+ * impossible rather than merely awkward:
+ *
+ *   • A HYPHEN is rejected (`422 policy violation`) even though it is a legal
+ *     uname character, so `ivan-petrov@mail.ru` — an entirely ordinary address
+ *     — could not create an account at all. It folds to `.` like `@` does.
+ *   • Anything longer than {@link MAX_LOGIN} is rejected the same way.
+ *
+ * Truncation keeps a hash tail instead of just cutting: two long addresses that
+ * share their first 26 characters are not the same person, and collapsing them
+ * onto one login would hand the second one a "login taken" dead end.
  */
 export function tinodeLoginFromEmail(email: string): string {
-  return email
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.-]+/g, ".")
+  const normalised = email.trim().toLowerCase();
+  const login = normalised
+    .replace(/[^a-z0-9_.]+/g, ".")
     .replace(/^\.+|\.+$/g, "");
+  if (login.length <= MAX_LOGIN) return login;
+
+  // djb2 over the full address — enough to separate neighbours, and stable
+  // across reloads and devices, which `Math.random()` or a timestamp would not
+  // be. 5 base-36 chars, so the head keeps 20 and stays recognisable.
+  let hash = 5381;
+  for (let i = 0; i < normalised.length; i++) hash = (hash * 33) ^ normalised.charCodeAt(i);
+  const tail = (hash >>> 0).toString(36).slice(0, 5).padStart(5, "0");
+  return `${login.slice(0, MAX_LOGIN - 6)}.${tail}`;
 }
 
 /** Split a `ws(s)://host:port/path` endpoint into the pieces the SDK wants. */

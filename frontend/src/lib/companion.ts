@@ -33,7 +33,10 @@
  * the service is live, the same code hits the real endpoints (the first successful
  * REST call clears mock mode).
  *
- * Env: NEXT_PUBLIC_COMPANION_URL (default http://localhost:6062).
+ * Env: NEXT_PUBLIC_COMPANION_URL (default http://127.0.0.1:6062 — NOT
+ *      `localhost`: it resolves to `::1` first, and Docker's IPv6 port relay on
+ *      this stack accepts the TCP connection and then never answers, so every
+ *      call hangs instead of failing).
  *      NEXT_PUBLIC_SAME_ORIGIN ("1" = single-origin / phone-test mode).
  *
  * Same-origin mode (NEXT_PUBLIC_SAME_ORIGIN=1): the whole stack sits behind ONE
@@ -63,7 +66,7 @@ const SAME_ORIGIN = process.env.NEXT_PUBLIC_SAME_ORIGIN === "1";
  */
 export const COMPANION_URL = SAME_ORIGIN
   ? "/api"
-  : process.env.NEXT_PUBLIC_COMPANION_URL ?? "http://localhost:6062";
+  : process.env.NEXT_PUBLIC_COMPANION_URL ?? "http://127.0.0.1:6062";
 
 /** Derive the ws(s):// origin for the event socket from the http(s):// base. */
 function wsOrigin(httpBase: string): string {
@@ -159,6 +162,37 @@ export interface ReportResult {
 }
 
 /** A peer on the signed-in user's block list (contract: `GET /friends/blocks`). */
+/**
+ * One purchasable item from companion's `products` table. The catalogue lives
+ * in the database (migration 0016), so a price change is a row update — the
+ * client ships no prices of its own beyond a fallback for when billing is off.
+ */
+export interface BillingProduct {
+  /** Stable product code, e.g. "coins_150" / "premium_1m". */
+  code: string;
+  kind: "coins" | "sub";
+  /** Paid tier this grants; `kind: "sub"` only. */
+  tier?: "premium" | "super_premium";
+  /** Subscription length in days; `kind: "sub"` only. */
+  periodDays?: number;
+  /** Coins granted; `kind: "coins"` only. */
+  coins?: number;
+  priceAmd: number;
+}
+
+/** One purchase attempt as companion reports it. */
+export interface BillingOrder {
+  id: string;
+  productCode: string;
+  provider: string;
+  amountAmd: number;
+  status: "new" | "pending" | "paid" | "failed" | "expired" | "refunded";
+  createdAt: string;
+  expiresAt: string;
+  /** The provider's hosted payment page. Present only on the creation response. */
+  payUrl?: string;
+}
+
 export interface BlockedFriend {
   hashId: string;
   displayName?: string;
@@ -228,6 +262,20 @@ const MOCK_DIRECTORY: FriendSearchResult[] = [
  */
 const OUTBOX_TTL_MS = 10_000;
 const OUTBOX_MAX = 64;
+
+/**
+ * Hard ceiling on a single companion REST call.
+ *
+ * `fetch` has no default timeout: a host that completes the TCP handshake and
+ * then never answers leaves the promise pending forever, and every `await`
+ * above it with it. That is the cross-origin login hang — `register()` /
+ * `me()` never settled, `signInWithBasic` never reached its `catch`, and the
+ * button sat on «Входим…» with no error anywhere, for any value of "wait
+ * longer". A backend that cannot answer in 15s is down as far as the UI is
+ * concerned; timing out turns the hang into a normal failure, which every
+ * caller here already knows how to report.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 function mockDirectory(q: string): FriendSearchResult[] {
   const needle = q.trim().toLowerCase().replace(/^#/, "");
@@ -303,14 +351,26 @@ export class CompanionClient {
     // on CORS, leaving a red error in the console of a build that is supposed
     // to be offline.
     if (!USE_TINODE) throw new Error(`companion: mock mode, no request for ${path}`);
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.sessionToken ? { Authorization: `Bearer ${this.sessionToken}` } : {}),
-        ...(init?.headers ?? {}),
-      },
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        // Caller-supplied signal wins; otherwise nothing bounds the wait.
+        signal: init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        headers: {
+          "Content-Type": "application/json",
+          ...(this.sessionToken ? { Authorization: `Bearer ${this.sessionToken}` } : {}),
+          ...(init?.headers ?? {}),
+        },
+      });
+    } catch (err) {
+      // Rethrow the timeout with a message the UI can show verbatim — the raw
+      // DOMException reads "signal timed out", which tells a user nothing.
+      if (err instanceof DOMException && err.name === "TimeoutError") {
+        throw new Error(`Сервер не ответил за ${REQUEST_TIMEOUT_MS / 1000} с (${path})`);
+      }
+      throw err;
+    }
     if (!res.ok) throw new CompanionHttpError(path, res.status);
     // A successful call means the backend is live — leave mock mode.
     this.mock = false;
@@ -721,6 +781,59 @@ export class CompanionClient {
   async me(): Promise<User | null> {
     try {
       return await this.request<User>("/me");
+    } catch {
+      return null;
+    }
+  }
+
+  /* ---------------------------- billing ---------------------------- */
+
+  /**
+   * The purchasable catalogue (`GET /billing/products`).
+   *
+   * Null means "there is nothing to sell here": either no payment provider is
+   * configured (companion does not mount /billing/* at all, so this 404s) or
+   * the backend is unreachable. Both are the same thing to the wallet screen —
+   * it falls back to showing the draft prices without offering to charge for
+   * them. Deliberately not thrown: an absent catalogue is a normal state, not
+   * an error the user did anything to cause.
+   */
+  async billingProducts(): Promise<BillingProduct[] | null> {
+    try {
+      const res = await this.request<{ products?: BillingProduct[] }>("/billing/products");
+      return res.products ?? [];
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Open an order for a product code (`POST /billing/orders`) and get back the
+   * provider's payment URL.
+   *
+   * Note what is NOT sent: an amount. The client names a product; companion
+   * prices it from its own table. Rethrows — the user pressed a buy button, so
+   * a failure has to be visible.
+   */
+  async createOrder(productCode: string): Promise<BillingOrder> {
+    return await this.request<BillingOrder>("/billing/orders", {
+      method: "POST",
+      body: JSON.stringify({ productCode }),
+    });
+  }
+
+  /**
+   * Read one order's status (`GET /billing/orders/:id`).
+   *
+   * This is the ONLY thing that may be believed about a payment. Coming back
+   * from the provider's page proves nothing — that redirect is a URL anyone can
+   * type — so the screen polls this and waits for companion to say `paid`,
+   * which it only does after the provider's signed callback settled the order.
+   * Null on a failed poll: the next tick retries.
+   */
+  async orderStatus(id: string): Promise<BillingOrder | null> {
+    try {
+      return await this.request<BillingOrder>(`/billing/orders/${encodeURIComponent(id)}`);
     } catch {
       return null;
     }

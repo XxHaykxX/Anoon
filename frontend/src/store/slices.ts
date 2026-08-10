@@ -267,8 +267,49 @@ function saveSession(token: string, user: User): void {
 function clearSession(): void {
   try {
     localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(GROUP_FRIENDS_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+/**
+ * A friend made through roulette+reveal lives on the shared GROUP topic, and
+ * that row cannot be rebuilt from the server after a reload: `subscribeMe`
+ * surfaces `usr…` p2p contacts only, and the real #ID/displayName were captured
+ * once, from the `revealed` event (companion's `GET /friends` reports the peer's
+ * p2p uid as `topic`, so it can't be keyed to the group either). Nothing
+ * restored them, so a reload emptied «Чаты»/«Контакты» and the whole
+ * conversation — own messages included — became unreachable.
+ *
+ * Persist exactly those rows: p2p friends come back from the me-contact list on
+ * their own, so this stays the smallest possible local mirror of server state.
+ * The existing `prev`/`keepId` merge in startContacts then treats a restored row
+ * the same way it already treats one that survived in memory.
+ *
+ * ponytail: local mirror, never pruned — a friend removed elsewhere lingers
+ * until the next reveal-side update. Prune against `GET /friends` once that
+ * endpoint reports the group topic (it reports the p2p uid today).
+ */
+const GROUP_FRIENDS_KEY = "anoon:friends:grp";
+
+function saveGroupFriends(friends: Friend[]): void {
+  try {
+    const grp = friends.filter((f) => f.topic?.startsWith("grp"));
+    if (grp.length) localStorage.setItem(GROUP_FRIENDS_KEY, JSON.stringify(grp));
+    else localStorage.removeItem(GROUP_FRIENDS_KEY);
+  } catch {
+    /* storage full / disabled — the list just won't survive a reload */
+  }
+}
+
+function readGroupFriends(): Friend[] {
+  try {
+    const raw = localStorage.getItem(GROUP_FRIENDS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? (parsed as Friend[]) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -559,6 +600,14 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
       // placeholder. Non-fatal — `me()` returns null when companion is down or
       // has no row yet, in which case we fall back to a synthesized User.
       const profile = input.isNew ? null : await companion.me();
+      // `me()` swallows every failure and answers null, so a companion that is
+      // down (or does not know this account) used to log the user in silently
+      // with a synthesized #ID — every companion-backed screen then failed one
+      // by one with no explanation. Say it once, here, and let the login
+      // proceed: Tinode chat still works without companion.
+      if (USE_TINODE && !input.isNew && !profile) {
+        set({ uiError: "Профиль не загрузился: companion не отвечает" });
+      }
 
       // Base placeholder always has every UI field populated (displayName,
       // avatarTone, …). For the login path we overlay the REAL identity fields
@@ -635,6 +684,9 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
       });
       // Refresh the stored token (the SDK may have issued a new one).
       saveSession(fresh, saved.user);
+      // Seed the revealed (group-topic) friends before contacts load, so the
+      // me-contact re-emit merges onto them instead of starting from nothing.
+      set({ friends: readGroupFriends() });
       try {
         await get().startContacts();
       } catch {
@@ -676,11 +728,16 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
 export const createFriendsSlice: Slice<FriendsSlice> = (set) => ({
   friends: [],
   requests: [],
-  setFriends: (friends) => set({ friends }),
+  setFriends: (friends) => {
+    saveGroupFriends(friends);
+    set({ friends });
+  },
   upsertFriend: (friend) =>
     set((s) => {
       const rest = s.friends.filter((f) => f.id !== friend.id);
-      return { friends: [...rest, friend] };
+      const friends = [...rest, friend];
+      saveGroupFriends(friends);
+      return { friends };
     }),
   setRequests: (requests) => set({ requests }),
   addRequest: (request) =>
