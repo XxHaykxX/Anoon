@@ -279,6 +279,21 @@ export type CompanionEvent =
   | FriendRequestEvent
   | FriendAcceptedEvent;
 
+/**
+ * Reply from `POST /auth/oauth/google`. It does NOT carry a session token:
+ * companion only says which of the two cases this is, and the client then logs
+ * into Tinode with the `rest` scheme (secret = the same Google ID token) to get
+ * one. `registered_pending` means companion stored gender/age and is waiting
+ * for that login to actually create the account.
+ */
+export interface GoogleAuthResult {
+  status: "existing" | "registered_pending";
+  /** Present for `existing` only — the account that was recognized. */
+  tinodeUid?: string;
+  /** Present for `existing` only, formatted "#00001". */
+  hashId?: string;
+}
+
 /** Auth result returned by login / OAuth endpoints. */
 export interface AuthResult {
   user: User;

@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { ChevronRightIcon } from "@/components/icons";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
+import GoogleSignInButton, { GOOGLE_ENABLED } from "@/components/anoon/GoogleSignInButton";
 import { USE_TINODE } from "@/lib/tinode";
 import { useAnoonStore } from "@/store";
+import { NeedsGenderError } from "@/store/slices";
 
 /**
  * Desktop (≥1024): this is a narrow form, so it becomes one centered column of
@@ -84,12 +86,17 @@ function GoogleMark({ className }: { className?: string }) {
 export default function AnoonLogin() {
   const nav = useAnoonNav();
   const signInWithBasic = useAnoonStore((s) => s.signInWithBasic);
+  const signInWithGoogle = useAnoonStore((s) => s.signInWithGoogle);
   const authError = useAnoonStore((s) => s.authError);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Set only when a Google sign-in turned out to be a FIRST one: companion
+  // needs a gender before it will register, so we hold the token and ask.
+  const [pendingGoogleToken, setPendingGoogleToken] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   // Tinode "basic" login is a plain username (no @/. allowed), so accept either
   // an email-looking string OR a bare username (3+ chars) — the value is sent
@@ -117,6 +124,28 @@ export default function AnoonLogin() {
       // authError is surfaced from the store below.
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  /**
+   * @param gender undefined on the first attempt — companion answers whether it
+   *   is even needed, and a returning user must never be asked.
+   */
+  const handleGoogle = async (idToken: string, gender?: "male" | "female") => {
+    setGoogleBusy(true);
+    try {
+      await signInWithGoogle(idToken, gender);
+      setPendingGoogleToken(null);
+      nav.go("chats");
+    } catch (err) {
+      if (err instanceof NeedsGenderError) {
+        setPendingGoogleToken(idToken);
+        return;
+      }
+      // Anything else is surfaced through authError below.
+      setPendingGoogleToken(null);
+    } finally {
+      setGoogleBusy(false);
     }
   };
 
@@ -206,13 +235,29 @@ export default function AnoonLogin() {
           <div className="h-px flex-1 bg-border" />
         </div>
 
-        {/* Вход через провайдеров. Ни один пока не подключён: у Google нет
-            боевого client ID, Apple и Facebook не заведены и на бэкенде.
-            Поэтому кнопки в макетном ряду, но честно выключены — нажимаемая
-            кнопка, которая ничего не делает, хуже видимо недоступной. */}
+        {/* Вход через провайдеров. Google работает, если сборке передан
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID; Apple и Facebook не заведены и на
+            бэкенде, поэтому честно выключены — нажимаемая кнопка, которая
+            ничего не делает, хуже видимо недоступной. */}
         <div className="mt-4 flex items-center gap-3">
+          {GOOGLE_ENABLED ? (
+            <GoogleSignInButton
+              onCredential={(t) => void handleGoogle(t)}
+              disabled={googleBusy || submitting}
+            />
+          ) : (
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              aria-label="Войти через Google — скоро"
+              title="Скоро"
+              className="grid flex-1 cursor-not-allowed place-items-center rounded-xl border border-border py-3 opacity-50"
+            >
+              <GoogleMark />
+            </button>
+          )}
           {[
-            { key: "google", mark: <GoogleMark />, label: "Войти через Google" },
             { key: "apple", mark: <AppleMark />, label: "Войти через Apple" },
             { key: "facebook", mark: <FacebookMark />, label: "Войти через Facebook" },
           ].map((p) => (
@@ -230,8 +275,38 @@ export default function AnoonLogin() {
           ))}
         </div>
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          Вход через сервисы — скоро
+          {GOOGLE_ENABLED ? "Apple и Facebook — скоро" : "Вход через сервисы — скоро"}
         </p>
+
+        {/* Первый вход через Google: пол обязателен и его нельзя поменять
+            потом, поэтому спрашиваем здесь, а не подставляем молча. */}
+        {pendingGoogleToken && (
+          <div className="mt-5 rounded-xl border border-border bg-muted/60 p-4">
+            <p className="text-sm font-medium">Ещё один шаг</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Рулётка подбирает собеседника противоположного пола. Поменять
+              позже нельзя.
+            </p>
+            <div className="mt-3 flex gap-2">
+              {(
+                [
+                  { key: "male", label: "Мужской" },
+                  { key: "female", label: "Женский" },
+                ] as const
+              ).map((g) => (
+                <button
+                  key={g.key}
+                  type="button"
+                  disabled={googleBusy}
+                  onClick={() => void handleGoogle(pendingGoogleToken, g.key)}
+                  className="flex-1 cursor-pointer rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-transform active:scale-95 disabled:opacity-50"
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Низ: регистрация + возрастная оговорка */}

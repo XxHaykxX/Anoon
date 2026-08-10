@@ -46,6 +46,14 @@ export interface SessionSlice {
    */
   signInWithBasic: (input: BasicSignInInput) => Promise<void>;
   /**
+   * Sign in with a Google ID token obtained in the browser.
+   *
+   * `gender` is only used on a first sign-in and companion refuses the call
+   * without it, so the caller retries with one after {@link NeedsGenderError}.
+   * Throws on failure (and sets {@link authError}), same as the basic path.
+   */
+  signInWithGoogle: (idToken: string, gender?: Gender, age?: number) => Promise<void>;
+  /**
    * Restore a persisted session on app boot: re-login to Tinode with the saved
    * auth token so a page reload doesn't dump the user back on the login screen
    * (BUG-44). Resolves `true` if a session was restored, `false` otherwise.

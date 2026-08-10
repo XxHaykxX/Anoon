@@ -62,6 +62,12 @@ declare module "tinode-sdk" {
     /** Login with a previously issued token (our companion issues these). */
     loginToken(token: string, cred?: unknown): Promise<TinodeCtrl>;
     loginBasic(uname: string, password: string, cred?: unknown): Promise<TinodeCtrl>;
+    /**
+     * Generic scheme login. Used for `rest`, where the secret is the Google ID
+     * token and Tinode's REST auth handler asks companion whether it is good —
+     * there is no `loginRest` convenience method in the SDK.
+     */
+    login(scheme: string, secret: string, cred?: unknown): Promise<TinodeCtrl>;
     /** Create a `basic`-scheme account; logs in on success. `params` = {public,tags,…}. */
     createAccountBasic(
       uname: string,

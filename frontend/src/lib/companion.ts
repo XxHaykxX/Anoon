@@ -52,6 +52,7 @@ import type {
   CompanionEvent,
   Friend,
   FriendSearchResult,
+  GoogleAuthResult,
   MatchedEvent,
   User,
 } from "@/types/companion";
@@ -403,6 +404,30 @@ export class CompanionClient {
       this.mock = true;
       throw err;
     }
+  }
+
+  /**
+   * Broker a Google sign-in (`POST /auth/oauth/google`). Companion verifies the
+   * ID token with Google and answers `existing` for a returning user.
+   *
+   * `gender` is only consulted on a first sign-in, and companion refuses the
+   * call without it — so the caller is expected to try once WITHOUT it and, on
+   * a 400, ask the person and retry. That order is deliberate: a returning user
+   * must never be asked again for something that is already set and cannot be
+   * changed.
+   *
+   * Unauthenticated — no session token is sent or returned; the Tinode `rest`
+   * login that follows is what mints one.
+   */
+  async oauthGoogle(
+    idToken: string,
+    gender?: "male" | "female",
+    age?: number,
+  ): Promise<GoogleAuthResult> {
+    return this.request<GoogleAuthResult>("/auth/oauth/google", {
+      method: "POST",
+      body: JSON.stringify({ idToken, gender, age }),
+    });
   }
 
   /**

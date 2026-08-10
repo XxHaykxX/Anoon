@@ -65,6 +65,11 @@
 			"expire_in": 900,
 			"max_retries": 3,
 			"code_length": 6
+		},
+		"rest": {
+			"server_url": "$REST_AUTH_URL",
+			"allow_new_accounts": true,
+			"use_separate_endpoints": false
 		}
 	},
 

@@ -40,6 +40,12 @@ RUN mkdir -p /botdata /var/log \
 # and entrypoint.sh get valid values — empty bools would break flag parsing / JSON).
 # Static web client is bind-mounted at runtime (EXT_STATIC_DIR=/opt/tinode/static).
 ENV WAIT_FOR= \
+    # `rest` auth handler target — companion, which brokers Google sign-in.
+    # It carries a default because the handler refuses to initialize on a
+    # non-absolute server_url, and a Tinode that will not start is a worse
+    # failure than a rest scheme nobody calls. The real value (with the shared
+    # secret in userinfo) comes from compose; see companion's POST /auth/rest.
+    REST_AUTH_URL='http://companion:8080/auth/rest' \
     RESET_DB=false \
     UPGRADE_DB=false \
     NO_DB_INIT=false \

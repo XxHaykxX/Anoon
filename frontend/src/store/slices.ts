@@ -540,6 +540,21 @@ function synthesizeUser(uid: string, input: BasicSignInInput): User {
   };
 }
 
+/**
+ * Thrown when a Google sign-in turns out to be a FIRST one: companion needs a
+ * gender before it will register the account, and gender is irreversible once
+ * set. The login screen catches this, asks, and calls back with the answer.
+ *
+ * It exists as its own type so the screen does not have to reason about HTTP
+ * status codes — and so a genuine failure is never mistaken for "just ask".
+ */
+export class NeedsGenderError extends Error {
+  constructor() {
+    super("Google: нужен пол для регистрации");
+    this.name = "NeedsGenderError";
+  }
+}
+
 export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
   user: null,
   hashId: null,
@@ -657,6 +672,83 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Не удалось войти";
+      set({ status: "signed_out", authError: message });
+      throw err;
+    }
+  },
+  signInWithGoogle: async (idToken, gender, age) => {
+    set({ status: "connecting", authError: null });
+    try {
+      const tinode = getTinodeClient();
+      const companion = getCompanionClient();
+
+      // Ask companion first: it is the only side that knows whether this Google
+      // account is already ours. A returning user must not be asked for gender
+      // again — it cannot be changed, so a second answer could only be wrong.
+      try {
+        await companion.oauthGoogle(idToken, gender, age);
+      } catch (err) {
+        // 400 means the token verified but the body was refused, and the only
+        // field this client can be missing is gender (age is either absent or
+        // already in range). Anything else — 401 bad token, 503 Google not
+        // configured, network — is a real failure and must surface as one.
+        if (err instanceof CompanionHttpError && err.status === 400 && !gender) {
+          set({ status: "signed_out" });
+          throw new NeedsGenderError();
+        }
+        throw err;
+      }
+
+      // `rest` scheme, secret = the same ID token. For a first sign-in this is
+      // what actually creates the Tinode account from the pending row above,
+      // which is why it must not be skipped when status was registered_pending.
+      const uid = await tinode.loginRest(idToken);
+
+      const token = tinode.getAuthToken();
+      if (token) {
+        companion.setSessionToken(token);
+        get().reconnectCompanionEvents();
+      }
+
+      // Now that the bearer is set, take the real identity from companion: the
+      // #ID it allocated, and the gender/age it stored. There is nothing to
+      // synthesize from here — Google gives us no display name we asked for,
+      // and the placeholder path exists only for the basic-scheme fallback.
+      const profile = await companion.me();
+      if (!profile) {
+        set({ uiError: "Профиль не загрузился: companion не отвечает" });
+      }
+      const user: User = {
+        id: uid,
+        hashId: profile?.hashId ? String(profile.hashId).replace(/^#/, "") : uid.replace(/^usr/, ""),
+        displayName: profile?.displayName?.trim() || "Аноним",
+        gender: profile?.gender ?? gender ?? "male",
+        age: profile?.age ?? age ?? 18,
+        avatarTone: toneFor(uid),
+        subscription: profile?.subscription ?? "free",
+        coins: profile?.coins ?? 0,
+        moderation: profile?.moderation ?? "ok",
+        tinodeUid: uid,
+      };
+
+      set({
+        user,
+        hashId: user.hashId,
+        status: "ready",
+        tier: user.subscription,
+        coins: user.coins,
+      });
+      if (token) saveSession(token, user);
+      try {
+        await get().startContacts();
+      } catch {
+        // No contacts yet or transient error — the list just stays empty.
+      }
+    } catch (err) {
+      // NeedsGender is a question, not a failure: showing it as authError would
+      // paint a red line under the form while we are about to ask politely.
+      if (err instanceof NeedsGenderError) throw err;
+      const message = err instanceof Error ? err.message : "Не удалось войти через Google";
       set({ status: "signed_out", authError: message });
       throw err;
     }

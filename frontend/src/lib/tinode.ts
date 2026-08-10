@@ -412,6 +412,23 @@ export class TinodeClient {
   }
 
   /**
+   * Log in with the `rest` scheme, whose secret is a Google ID token. Tinode's
+   * REST auth handler hands the secret to companion, which verifies it with
+   * Google and — on a first sign-in — creates the account from the pending
+   * registration row companion saved a moment earlier. So this one call is
+   * both "sign in" and "finish signing up"; which of the two happened is
+   * decided server-side, not here.
+   *
+   * @returns the Tinode account uid ("usrXXXX").
+   */
+  async loginRest(idToken: string): Promise<string> {
+    const tinode = await this.ensure(TINODE_WS_URL);
+    if (!tinode.isConnected()) await tinode.connect();
+    const ctrl = await tinode.login("rest", idToken);
+    return this.captureUid(ctrl);
+  }
+
+  /**
    * Authenticate with a token issued by the companion service after login.
    * @returns the Tinode account uid ("usrXXXX").
    */

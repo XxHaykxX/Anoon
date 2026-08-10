@@ -43,12 +43,18 @@ ARG NEXT_PUBLIC_TINODE_API_KEY
 ARG NEXT_PUBLIC_TURN_URL=
 ARG NEXT_PUBLIC_TURN_USER=
 ARG NEXT_PUBLIC_TURN_PASS=
+# Google sign-in. Empty is a supported state: the login screen then keeps the
+# provider button visibly disabled instead of offering one that can only fail.
+# Must be the SAME client id companion verifies against (COMPANION_GOOGLE_CLIENT_ID) —
+# a token minted for one "aud" is rejected by the other.
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 ENV NEXT_PUBLIC_SAME_ORIGIN=${NEXT_PUBLIC_SAME_ORIGIN} \
     NEXT_PUBLIC_USE_TINODE=${NEXT_PUBLIC_USE_TINODE} \
     NEXT_PUBLIC_TINODE_API_KEY=${NEXT_PUBLIC_TINODE_API_KEY} \
     NEXT_PUBLIC_TURN_URL=${NEXT_PUBLIC_TURN_URL} \
     NEXT_PUBLIC_TURN_USER=${NEXT_PUBLIC_TURN_USER} \
     NEXT_PUBLIC_TURN_PASS=${NEXT_PUBLIC_TURN_PASS} \
+    NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID} \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 

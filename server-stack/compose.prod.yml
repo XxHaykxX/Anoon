@@ -104,6 +104,13 @@ services:
       API_KEY_SALT: ${API_KEY_SALT}
       AUTH_TOKEN_KEY: ${AUTH_TOKEN_KEY}
       UID_ENCRYPTION_KEY: ${UID_ENCRYPTION_KEY}
+      # `rest` auth scheme → companion, which is what makes Google sign-in
+      # possible: the login secret is the Google ID token and companion is the
+      # only side that can verify it. The shared secret rides in the URL's
+      # userinfo because that is the only place Tinode's rest handler will take
+      # a credential; companion checks it in constant time and the path is
+      # never proxied by Caddy. Same value as COMPANION_REST_SECRET below.
+      REST_AUTH_URL: "http://tinode:${COMPANION_REST_SECRET:-}@companion:8080/auth/rest"
       # Pure chat engine: no bundled static web UI (frontend is the frontend).
       MEDIA_HANDLER: fs
       EXT_STATIC_DIR: "-"
@@ -220,6 +227,10 @@ services:
         NEXT_PUBLIC_TURN_URL: ${NEXT_PUBLIC_TURN_URL:-}
         NEXT_PUBLIC_TURN_USER: ${NEXT_PUBLIC_TURN_USER:-}
         NEXT_PUBLIC_TURN_PASS: ${NEXT_PUBLIC_TURN_PASS:-}
+        # Same value as companion's COMPANION_GOOGLE_CLIENT_ID below: the client
+        # asks Google for a token with this "aud" and companion refuses any
+        # other. One variable feeds both so they cannot drift apart.
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${COMPANION_GOOGLE_CLIENT_ID:-}
     image: anoon-frontend:prod
     container_name: anoon-prod-frontend
     # NO ports: — Caddy reaches frontend:3000 by service name.
