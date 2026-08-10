@@ -85,6 +85,42 @@ test.describe.serial("anon roulette: match, reveal proposal → friends", () => 
     await expect(pageA.getByText(draft, { exact: true })).toHaveCount(1);
   });
 
+  /**
+   * Runs BEFORE the accept test on purpose, in the same match — no third
+   * account needed after all (the old skip assumed one was).
+   *
+   * A decline is deliberately non-final on both sides of the wire:
+   * store/roulette.go's `DeclineReveal` clears `reveal_by`, and each person
+   * gets `maxRevealDeclines` = 2 asks per match (`RevealAsksLeft`), so
+   * spending one here still leaves the accept test its ask. Nobody is
+   * un-friended and the match is not ended, so the pair the rest of real/
+   * depends on survives — unlike «Заблокировать», which ends the match and is
+   * why THAT variant is still uncovered.
+   */
+  test("reveal proposal → decline → the ask is offered again, not wedged", async () => {
+    await pageA.getByRole("button", { name: "Раскрыть", exact: true }).click();
+
+    await expect(pageB.getByText("Собеседник хочет открыть профиль")).toBeVisible({
+      timeout: 15_000,
+    });
+    await pageB.getByRole("button", { name: "Отклонить", exact: true }).click();
+
+    // A is told the answer in the thread — neutral wording, not an error.
+    await expect(pageA.getByText("Собеседник пока не готов открыть профиль")).toBeVisible({
+      timeout: 15_000,
+    });
+    // …and the optimistic «Ожидание…» actually cleared. This is the assertion
+    // with teeth: a lost `reveal_declined` leaves the button stuck on
+    // «Ожидание…» (disabled) for the rest of the match with nothing pending
+    // server-side — the wedged state slices.ts's requestReveal/onRevealDeclined
+    // exist to prevent.
+    const askAgain = pageA.getByRole("button", { name: "Раскрыть", exact: true });
+    await expect(askAgain).toBeVisible();
+    await expect(askAgain).toBeEnabled();
+    // B's card is resolved and gone, so a stale prompt can't be answered twice.
+    await expect(pageB.getByText("Собеседник хочет открыть профиль")).toBeHidden();
+  });
+
   test("reveal proposal → accept → both sides become friends", async () => {
     // Header button label is «Раскрыть» (not the older "Раскрыть профиль").
     await pageA.getByRole("button", { name: "Раскрыть", exact: true }).click();
@@ -101,14 +137,14 @@ test.describe.serial("anon roulette: match, reveal proposal → friends", () => 
   });
 
   test.skip(
-    "TODO(QA): decline/block a reveal request",
+    "TODO(QA): BLOCK a reveal request (not decline — that one is covered above)",
     async () => {
-      // Not covered here — this file's pair always accepts so the rest of the
-      // real/ suite's friending assumption (admin1/admin2 end up friends) is
-      // satisfied. A decline/block variant would need a THIRD seeded account
-      // (declining un-friends nobody, but blocking ends the match/leaves
-      // roulette entirely) so it doesn't interfere with the shared pair the
-      // other specs in this directory depend on.
+      // Still uncovered, and this one genuinely does need a THIRD seeded
+      // account: «Заблокировать» calls blockPeer(), which ends the match and
+      // blacklists the peer for good. Running it on admin1/admin2 would leave
+      // the shared pair every other spec in this directory friends through
+      // (see helpers.ts's ensureFriends) blocked on the persistent backend —
+      // a poisoned fixture no later run could recover from on its own.
     },
   );
 });

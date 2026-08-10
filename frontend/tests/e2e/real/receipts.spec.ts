@@ -1,5 +1,12 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
-import { skipUnlessReal, loginReal, ensureFriends, openFirstFriendChat, ACCOUNTS } from "./helpers";
+import {
+  skipUnlessReal,
+  loginReal,
+  ensureFriends,
+  openFirstFriendChat,
+  closeFriendChat,
+  ACCOUNTS,
+} from "./helpers";
 
 skipUnlessReal(test);
 
@@ -68,16 +75,40 @@ test.describe.serial("friend chat: delivered/read receipts", () => {
     await expect(bubble.locator("svg.text-read-tick")).toBeVisible({ timeout: 15_000 });
   });
 
-  test.skip(
-    "TODO(QA): 'delivered' tick (double-check, not yet read) — narrow window to catch",
-    async () => {
-      // 'delivered' (double-check, not yet read) is only observable in the
-      // narrow window between the peer's client receiving the message and
-      // noteRead actually firing — with B's chat already open in this suite
-      // that window is sub-second and not reliably catchable from the DOM.
-      // Would need either a deliberately-closed B chat (contradicts the rest
-      // of this file's setup) or a network-level pause; not guessing at a
-      // selector for a state this suite can't currently force.
-    },
-  );
+  /**
+   * 'delivered' turned out NOT to need a network pause: it is only a
+   * sub-second window while B's chat is OPEN. Close it and the state is
+   * stable indefinitely — store/slices.ts's `bgHandlers` keeps a background
+   * subscription on the friend topic and calls `client.noteRecv(...)` on every
+   * inbound message with the comment "delivered (read only happens on open)",
+   * never `noteRead`. So B stays a peer who has received and not read.
+   *
+   * Runs last in this serial file because it leaves B's chat closed and then
+   * re-opens it.
+   */
+  test("delivered tick (double check, untinted) while the peer's chat is closed", async () => {
+    await closeFriendChat(pageB);
+
+    const draft = `Доставлено ли ${Date.now()}`;
+    await pageA.getByPlaceholder("Сообщение").fill(draft);
+    await pageA.getByRole("button", { name: "Отправить" }).click();
+
+    // Same bubble-scoping as the read-tick test above, and for the same reason:
+    // these are persistent seeded accounts, so every prior run's ticks are
+    // still in the thread.
+    const bubble = pageA.locator("div.anoon-msg-in").filter({ hasText: draft });
+    // StatusTicks renders CheckIcon at `size-3.5` for sent and DoubleCheckIcon
+    // at `size-4` for both delivered and read — so `size-4` present AND
+    // `text-read-tick` absent is exactly "delivered", the one combination the
+    // read-tick assertion below cannot also satisfy.
+    await expect(bubble.locator("svg.size-4")).toBeVisible({ timeout: 15_000 });
+    await expect(bubble.locator("svg.text-read-tick")).toHaveCount(0);
+
+    // Not flaky by construction: with B's chat closed nothing can fire
+    // noteRead, so the tick cannot tint until B actually opens the thread —
+    // which is the other half of the contract, asserted here so a regression
+    // that never advances past 'delivered' fails too.
+    await openFirstFriendChat(pageB);
+    await expect(bubble.locator("svg.text-read-tick")).toBeVisible({ timeout: 15_000 });
+  });
 });
