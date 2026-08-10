@@ -560,6 +560,7 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
   hashId: null,
   status: "signed_out",
   authError: null,
+  pendingGoogleToken: null,
   uiError: null,
   showError: (message) => set({ uiError: message }),
   dismissError: () => set({ uiError: null }),
@@ -693,7 +694,10 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
         // already in range). Anything else — 401 bad token, 503 Google not
         // configured, network — is a real failure and must surface as one.
         if (err instanceof CompanionHttpError && err.status === 400 && !gender) {
-          set({ status: "signed_out" });
+          // Hold the token for the gender screen: it is the same token the retry
+          // must present, and Google will not hand out a second one without
+          // sending the person back through the account chooser.
+          set({ status: "signed_out", pendingGoogleToken: idToken });
           throw new NeedsGenderError();
         }
         throw err;
@@ -735,6 +739,7 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
         user,
         hashId: user.hashId,
         status: "ready",
+        pendingGoogleToken: null,
         tier: user.subscription,
         coins: user.coins,
       });

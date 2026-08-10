@@ -93,9 +93,6 @@ export default function AnoonLogin() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  // Set only when a Google sign-in turned out to be a FIRST one: companion
-  // needs a gender before it will register, so we hold the token and ask.
-  const [pendingGoogleToken, setPendingGoogleToken] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
 
   // Tinode "basic" login is a plain username (no @/. allowed), so accept either
@@ -128,22 +125,24 @@ export default function AnoonLogin() {
   };
 
   /**
-   * @param gender undefined on the first attempt — companion answers whether it
-   *   is even needed, and a returning user must never be asked.
+   * A returning Google user lands straight in the app. A first sign-in needs a
+   * gender, and that is a screen of its own — irreversible, and the same
+   * question the email flow asks with a warning and a confirmation. Asking it in
+   * a card wedged under the provider row made the login form the place where an
+   * account is created, which it is not; the store keeps the token, the gender
+   * screen presents it back.
    */
-  const handleGoogle = async (idToken: string, gender?: "male" | "female") => {
+  const handleGoogle = async (idToken: string) => {
     setGoogleBusy(true);
     try {
-      await signInWithGoogle(idToken, gender);
-      setPendingGoogleToken(null);
+      await signInWithGoogle(idToken);
       nav.go("chats");
     } catch (err) {
       if (err instanceof NeedsGenderError) {
-        setPendingGoogleToken(idToken);
+        nav.push("auth-gender");
         return;
       }
       // Anything else is surfaced through authError below.
-      setPendingGoogleToken(null);
     } finally {
       setGoogleBusy(false);
     }
@@ -278,36 +277,6 @@ export default function AnoonLogin() {
         <p className="mt-2 text-center text-[11px] text-muted-foreground">
           {GOOGLE_ENABLED ? "Apple и Facebook — скоро" : "Вход через сервисы — скоро"}
         </p>
-
-        {/* Первый вход через Google: пол обязателен и его нельзя поменять
-            потом, поэтому спрашиваем здесь, а не подставляем молча. */}
-        {pendingGoogleToken && (
-          <div className="mt-5 rounded-xl border border-border bg-muted/60 p-4">
-            <p className="text-sm font-medium">Ещё один шаг</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Рулётка подбирает собеседника противоположного пола. Поменять
-              позже нельзя.
-            </p>
-            <div className="mt-3 flex gap-2">
-              {(
-                [
-                  { key: "male", label: "Мужской" },
-                  { key: "female", label: "Женский" },
-                ] as const
-              ).map((g) => (
-                <button
-                  key={g.key}
-                  type="button"
-                  disabled={googleBusy}
-                  onClick={() => void handleGoogle(pendingGoogleToken, g.key)}
-                  className="flex-1 cursor-pointer rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-transform active:scale-95 disabled:opacity-50"
-                >
-                  {g.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Низ: регистрация + возрастная оговорка */}

@@ -281,7 +281,7 @@ function AppShell({ className = "", children }: { className?: string; children: 
   return (
     <div className="anoon-desktop dark h-dvh w-full">
       <div
-        className={`relative flex h-full w-full flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground ${className}`}
+        className={`anoon-shell relative flex h-full w-full flex-col overflow-hidden bg-background text-foreground ${className}`}
       >
         {children}
       </div>

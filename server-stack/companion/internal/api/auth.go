@@ -124,8 +124,14 @@ func (s *Server) handleOAuthGoogle(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
+	// The browser reports a stalled Google sign-in as a Tinode timeout, which
+	// says nothing about which of the two hops stalled. This line marks the
+	// broker hop; the rest-auth hook marks the other one.
+	started := time.Now()
+
 	id, err := s.Google.Verify(ctx, req.IDToken)
 	if err != nil {
+		log.Printf("auth/oauth/google: verify failed after %s: %v", time.Since(started).Round(time.Millisecond), err)
 		writeError(w, http.StatusUnauthorized, "invalid_token", "Google token verification failed")
 		return
 	}
@@ -137,6 +143,7 @@ func (s *Server) handleOAuthGoogle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if found {
+		log.Printf("auth/oauth/google: existing user, took=%s", time.Since(started).Round(time.Millisecond))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":    "existing",
 			"tinodeUid": user.TinodeUID,
@@ -161,6 +168,7 @@ func (s *Server) handleOAuthGoogle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("auth/oauth/google: pending registration saved, took=%s", time.Since(started).Round(time.Millisecond))
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"status": "registered_pending",
 		"next":   map[string]any{"scheme": "rest"}, // log into Tinode with secret = the ID token to finish

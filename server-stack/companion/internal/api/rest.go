@@ -124,6 +124,15 @@ func (s *Server) handleAuthRest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
+	// One line per call. Without it a stalled sign-in is indistinguishable from
+	// one that never reached us: this hook is server-to-server, so the browser
+	// sees only Tinode's silence, and the only place the two can be told apart
+	// is here. Nothing identifying is logged — the endpoint and how long it took.
+	started := time.Now()
+	defer func() {
+		log.Printf("auth/rest: endpoint=%s took=%s", req.Endpoint, time.Since(started).Round(time.Millisecond))
+	}()
+
 	switch req.Endpoint {
 	case "auth":
 		s.restAuth(ctx, w, &req)

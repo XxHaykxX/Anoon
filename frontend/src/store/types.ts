@@ -37,6 +37,13 @@ export interface SessionSlice {
   status: "signed_out" | "authenticating" | "connecting" | "ready";
   /** Last auth error (invalid creds, server down), for the auth screens. */
   authError: string | null;
+  /**
+   * Google ID token held between a first sign-in and the gender answer it needs.
+   * Set when {@link signInWithGoogle} raises `NeedsGenderError`, cleared once the
+   * retry succeeds — the gender screen picks it up from here so the login form
+   * does not have to grow a second identity flow inside itself.
+   */
+  pendingGoogleToken: string | null;
   /** Populate user + open Tinode/companion connections. */
   signIn: (user: User, tinodeToken: string, sessionToken: string) => Promise<void>;
   /**

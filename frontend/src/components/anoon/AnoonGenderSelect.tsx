@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckIcon } from "@/components/icons";
 import { AnoonLogo } from "@/components/anoon/_shared";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
+import { useAnoonStore } from "@/store";
 
 function MaleIcon({ className }: { className?: string }) {
   return (
@@ -61,8 +62,36 @@ export default function AnoonGenderSelect() {
   const nav = useAnoonNav();
   const [gender, setGender] = useState<Gender>(null);
   const [understood, setUnderstood] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Set only when a first Google sign-in was interrupted here for the answer.
+  // The email flow leaves it null and this screen behaves exactly as before.
+  const pendingGoogleToken = useAnoonStore((s) => s.pendingGoogleToken);
+  const signInWithGoogle = useAnoonStore((s) => s.signInWithGoogle);
+  const authError = useAnoonStore((s) => s.authError);
 
-  const canContinue = !!gender && understood;
+  const canContinue = !!gender && understood && !busy;
+
+  /**
+   * Google: the answer is the missing half of a registration already in flight,
+   * so it finishes the sign-in and enters the app. Email: the account does not
+   * exist yet and profile setup is the next step.
+   */
+  const submit = async () => {
+    if (!gender) return;
+    if (!pendingGoogleToken) {
+      nav.go("auth-profile-setup");
+      return;
+    }
+    setBusy(true);
+    try {
+      await signInWithGoogle(pendingGoogleToken, gender);
+      nav.go("chats");
+    } catch {
+      // authError is surfaced below; the person stays here and can retry.
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const options = [
     { id: "male" as const, label: "Мужчина", Icon: MaleIcon },
@@ -141,12 +170,15 @@ export default function AnoonGenderSelect() {
       {/* The hairline stays full-bleed; only the button inside rides the column. */}
       <div className="border-t border-border">
         <div className={`px-6 py-4 ${DESKTOP_FORM}`}>
+          {authError && (
+            <p className="mb-3 text-center text-sm text-destructive">{authError}</p>
+          )}
           {/* `go`, not `push`: gender is confirmed irreversible on this screen, so
               there is nothing to come back to — don't leave an unreachable entry. */}
           <button
             type="button"
             disabled={!canContinue}
-            onClick={() => nav.go("auth-profile-setup")}
+            onClick={() => void submit()}
             className={`w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer ${
               canContinue ? "" : "cursor-not-allowed opacity-50"
             }`}
@@ -156,7 +188,7 @@ export default function AnoonGenderSelect() {
                 : undefined
             }
           >
-            Продолжить
+            {busy ? "Входим…" : "Продолжить"}
           </button>
         </div>
       </div>
