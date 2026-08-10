@@ -1,0 +1,11 @@
+# Разработка идёт на Windows, а исполняется всё это на Linux. Без явного
+# правила git подставляет CRLF в рабочую копию и коммитит его дальше, после
+# чего шебанг на сервере превращается в `/bin/bash^M: bad interpreter` —
+# скрипт не запускается вовсе, а cron молчит об этом в лог, который тем же
+# скриптом и пишется.
+*.sh text eol=lf
+Dockerfile* text eol=lf
+*.conf text eol=lf
+Caddyfile* text eol=lf
+*.yml text eol=lf
+*.sql text eol=lf
