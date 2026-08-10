@@ -209,8 +209,13 @@
   body {
     background-color: var(--canvas);
   }
+  /* Paired with `--canvas`, not with `--foreground`: that one is #0a0a0a at
+     `:root`, so anything rendered without a `.dark` ancestor — Next's built-in
+     404, an error boundary, a bare page — put near-black text on the black
+     canvas and read as an empty screen. The canvas never flips theme, so
+     neither does its text colour. */
   body {
-    @apply text-foreground;
+    color: #ffffff;
   }
 
   /* Dark scrollbars for the document itself. `.anoon-noscroll` already hides

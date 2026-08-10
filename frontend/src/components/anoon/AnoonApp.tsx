@@ -301,6 +301,36 @@ const FRAME_FIT_CSS = `
 @media (min-height: 776px) { .anoon-frame-fit { --anoon-fh: 0.9; } }
 @media (min-height: 818px) { .anoon-frame-fit { --anoon-fh: 0.95; } }
 @media (min-height: 860px) { .anoon-frame-fit { --anoon-fh: 1; } }
+
+/*
+  On a real phone the bezel is a drawing of the device already in the user's
+  hand: it costs a black gutter on all four sides, rounds off the corners of a
+  screen that is already round, and shrinks the app below its own design size —
+  844px of layout scaled into whatever is left. The frame exists to preview a
+  phone on something that is not one, so it is gated on the pointer, not on
+  width: a narrow desktop window keeps the frame, a touch device drops it.
+
+  Height is 100dvh, not 100%: the parent only carries a min-height, which is not
+  a definite height for a percentage to resolve against, and dvh follows the
+  browser chrome as it collapses on scroll.
+
+  The frame used to be what kept content clear of the notch. Full-bleed it is
+  the safe-area insets' job — the top one here, the bottom one already handled
+  by the nav and the sheets that sit on it.
+*/
+@media (hover: none) and (pointer: coarse) {
+  .anoon-app-page { padding: 0; }
+  .anoon-frame-fit { width: 100%; height: 100dvh; }
+  .anoon-frame-scale { width: 100%; height: 100%; transform: none; }
+  .anoon-frame-scale > div {
+    width: 100%;
+    height: 100%;
+    padding-top: env(safe-area-inset-top);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
 `;
 
 /**
