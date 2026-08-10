@@ -138,7 +138,7 @@ export default function CallScreen({
             {/* Self-view thumbnail */}
             <div
               className="absolute right-4 top-4 h-32 w-24 overflow-hidden rounded-2xl border border-white/15 shadow-[var(--elevation-3)]"
-              style={{ background: "linear-gradient(160deg, rgba(253,191,45,0.2) 0%, #232329 70%)" }}
+              style={{ background: "linear-gradient(160deg, rgb(var(--brand-rgb) / 0.2) 0%, #232329 70%)" }}
             >
               <div className="grid h-full w-full place-items-center text-xs text-white/70">You</div>
             </div>

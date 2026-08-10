@@ -145,6 +145,20 @@ export interface ChatSlice {
   editChatMessage: (seq: number, text: string) => Promise<void>;
   /** Delete a message: `hard` removes it for everyone, else only for me (Wave-2 #86). */
   deleteChatMessage: (seq: number, hard: boolean) => Promise<void>;
+  /**
+   * Record a finished call as a system line in the conversation with `peer`
+   * — same injected-system-line path as «Собеседник покинул чат» (BUG-15), so
+   * it renders with the existing centered muted pill. `peer` is the signaling
+   * handle the call used: a friend's #ID, or a per-match anon alias.
+   *
+   * Routed by that handle, not by topic: the anon chat gets it via
+   * {@link AnonChatSlice.messages}, an open friend chat via
+   * {@link chatMessages}, and a CLOSED friend chat buffers it until the next
+   * {@link openChat} (a missed call rings on the app shell, not in a thread).
+   * Session-only — nothing is written to the server, so it does not survive a
+   * reload, exactly like every other injected system line.
+   */
+  logCall: (peer: string, text: string) => void;
 }
 
 /**

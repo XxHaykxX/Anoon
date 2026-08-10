@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { ChatIcon, ChevronLeftIcon } from "@/components/icons";
-import { USE_TINODE } from "@/lib/tinode";
+import { getTinodeClient, USE_TINODE } from "@/lib/tinode";
 import { useAnoonStore } from "@/store";
 import { hasPersistedSession } from "@/store/slices";
-import { useCallStore, type CallMedia } from "@/store/callStore";
+import { useCallStore, type CallEndReason, type CallMedia } from "@/store/callStore";
 import { onCall, sendCall } from "@/lib/callSignaling";
 import { getCompanionClient } from "@/lib/companion";
 import { notifyOnce, startRing, stopRing } from "@/lib/notify";
@@ -371,6 +371,35 @@ export default function AnoonApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Adopt the name the account carries in Tinode (`me.public.fn`) when the
+  // store still holds the "no name known" placeholder. That is the Google case:
+  // companion seeds `fn` + `photo` from the ID token when it creates the account
+  // (googleAccountPublic), but the store's User is built from companion's /me,
+  // which only knows the #ID — so an otherwise complete profile rendered as
+  // «Аноним» everywhere. The me-topic is subscribed a beat after login reports
+  // ready, hence the short poll (same shape as the peer-avatar poll in
+  // AnoonAnonChat). Runs ONLY against the placeholder, so a name the user typed
+  // themselves is never overwritten.
+  const profileUser = useAnoonStore((s) => s.user);
+  const setUser = useAnoonStore((s) => s.setUser);
+  const nameUnknown = USE_TINODE && profileUser?.displayName === "Аноним";
+  useEffect(() => {
+    if (!nameUnknown) return;
+    let tries = 0;
+    const adopt = () => {
+      const fn = getTinodeClient().myDisplayName();
+      if (!fn) return false;
+      const u = useAnoonStore.getState().user;
+      if (u) setUser({ ...u, displayName: fn });
+      return true;
+    };
+    if (adopt()) return;
+    const iv = window.setInterval(() => {
+      if (adopt() || ++tries > 6) window.clearInterval(iv);
+    }, 500);
+    return () => window.clearInterval(iv);
+  }, [nameUnknown, setUser]);
+
   // Global connectivity banner: shows AnoonOffline over whatever screen is
   // active while the browser reports it's offline. Effect-only so SSR never
   // touches `navigator`.
@@ -468,7 +497,9 @@ export default function AnoonApp() {
         // screen and the pre-answer caller state have nothing else watching.
         if (active.status === "incoming" || frame.type === "call:unavailable") {
           if (frame.type === "call:unavailable") setCallToast("Собеседник недоступен");
-          useCallStore.getState().endCall();
+          // Ringing screen: the caller gave up before we answered, so this side
+          // records a missed call (the caller's own side records «отменён»).
+          useCallStore.getState().endCall(frame.type === "call:unavailable" ? "unavailable" : "missed");
         }
       }
     });
@@ -483,11 +514,11 @@ export default function AnoonApp() {
     if (call) {
       sendCall({ type: "call:hangup", to: call.peerHashId, callId: call.callId, reason: "declined" });
     }
-    useCallStore.getState().endCall();
+    useCallStore.getState().endCall("declined");
   }, [call]);
-  const endCall = useCallback(() => {
+  const endCall = useCallback((reason?: CallEndReason) => {
     stopRing();
-    useCallStore.getState().endCall();
+    useCallStore.getState().endCall(reason);
   }, []);
 
   // Ring for as long as (and only while) a call is "incoming" — the effect

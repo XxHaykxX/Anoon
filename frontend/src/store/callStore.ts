@@ -11,14 +11,27 @@
  * - The global overlay (AnoonApp) subscribes to `call` and renders CallScreen /
  *   IncomingCall, driving the RTCPeerConnection + callSignaling frames.
  *
+ * The one dependency on the main store is one-way and lives in `endCall`: a
+ * finished call writes a system line into the conversation via `logCall`
+ * (slices.ts). Nothing in the main store imports this file, so there is no cycle.
+ *
  * Teardown of the actual RTCPeerConnection/media tracks lives in CallScreen's
  * own unmount cleanup (see its effect) — `endCall` just clears the state that
  * keeps CallScreen mounted, which is what triggers that cleanup from the overlay.
  */
 import { create } from "zustand";
+import { useAnoonStore } from "@/store";
 
 export type CallMedia = "audio" | "video";
 export type CallStatus = "idle" | "outgoing" | "incoming" | "active" | "ended";
+
+/**
+ * Why a call ended, when it never reached "connected". Passed to
+ * {@link CallStore.endCall} by whoever observed the end: the ringing screen
+ * (AnoonApp) or the in-call screen (CallScreen, which reads it off the peer's
+ * `call:hangup`/`call:unavailable` frame). `undefined` = we ended it ourselves.
+ */
+export type CallEndReason = "declined" | "unavailable" | "missed" | "busy";
 
 export interface CallState {
   status: CallStatus;
@@ -35,6 +48,12 @@ export interface CallState {
   media: CallMedia;
   /** Present only for an incoming call: the caller's SDP offer. */
   incomingOffer?: RTCSessionDescriptionInit;
+  /**
+   * Unix ms when the RTCPeerConnection actually reached "connected", else null.
+   * This — not "the callee tapped accept" — is what makes a call *состоявшимся*
+   * and is the only source for its duration (see {@link CallStore.markConnected}).
+   */
+  connectedAt: number | null;
 }
 
 export interface CallStore {
@@ -42,14 +61,49 @@ export interface CallStore {
   /** Start an outgoing call to a peer (from a chat header button). */
   startCall: (peerHashId: string, peerName: string, media: CallMedia) => void;
   /** Register an inbound offer (driven by the onCall listener). */
-  receiveIncoming: (call: CallState) => void;
+  receiveIncoming: (call: Omit<CallState, "connectedAt">) => void;
   /** Move the current call to active (offer/answer exchanged). */
   setActive: () => void;
-  /** Tear down / clear the current call. */
-  endCall: () => void;
+  /** Media is flowing — starts the duration clock (CallScreen). */
+  markConnected: () => void;
+  /**
+   * Tear down / clear the current call AND leave a system line about it in the
+   * conversation with the peer (see {@link callLogLine}). Pass `reason` when the
+   * call never connected and the end wasn't ours.
+   */
+  endCall: (reason?: CallEndReason) => void;
 }
 
-export const useCallStore = create<CallStore>((set) => ({
+/** mm:ss for a whole-second duration. */
+const mmss = (sec: number) =>
+  `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+
+/**
+ * The one line a finished call leaves in the conversation, e.g.
+ * «Исходящий видеозвонок · 02:14» / «Входящий аудиозвонок · пропущен».
+ *
+ * Direction is read off `incomingOffer`, which is set only by
+ * {@link CallStore.receiveIncoming} — the same signal the overlay already uses
+ * to pick the caller/callee role.
+ */
+function callLogLine(call: CallState, reason: CallEndReason | undefined): string {
+  const kind = call.media === "video" ? "видеозвонок" : "аудиозвонок";
+  const direction = call.incomingOffer ? "Входящий" : "Исходящий";
+  const outcome = call.connectedAt
+    ? mmss((Date.now() - call.connectedAt) / 1000)
+    : reason === "declined"
+      ? "отклонён"
+      : reason === "unavailable"
+        ? "не удалось дозвониться"
+        : reason === "busy"
+          ? "собеседник занят"
+          : reason === "missed"
+            ? "пропущен"
+            : "отменён";
+  return `${direction} ${kind} · ${outcome}`;
+}
+
+export const useCallStore = create<CallStore>((set, get) => ({
   call: null,
   startCall: (peerHashId, peerName, media) => {
     set({
@@ -65,11 +119,20 @@ export const useCallStore = create<CallStore>((set) => ({
         // counter's only job, and a UUID covers that too.
         callId: crypto.randomUUID(),
         media,
+        connectedAt: null,
       },
     });
   },
-  receiveIncoming: (call) => set({ call }),
+  receiveIncoming: (call) => set({ call: { ...call, connectedAt: null } }),
   setActive: () =>
     set((s) => (s.call ? { call: { ...s.call, status: "active" } } : s)),
-  endCall: () => set({ call: null }),
+  markConnected: () =>
+    set((s) => (s.call && !s.call.connectedAt ? { call: { ...s.call, connectedAt: Date.now() } } : s)),
+  endCall: (reason) => {
+    const call = get().call;
+    set({ call: null });
+    // Leave the trace in the conversation the call belonged to. Session-only —
+    // the store owns it, nothing is persisted server-side.
+    if (call) useAnoonStore.getState().logCall(call.peerHashId, callLogLine(call, reason));
+  },
 }));

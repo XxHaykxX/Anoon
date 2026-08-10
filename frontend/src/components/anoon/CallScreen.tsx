@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { AnoonAvatar } from "@/components/anoon/_shared";
 import { createPeerConnection } from "@/lib/tinode";
 import { sendCall, onCall } from "@/lib/callSignaling";
+import { useCallStore, type CallEndReason } from "@/store/callStore";
 import { MicIcon, VideoIcon, PhoneIcon } from "@/components/icons";
 
 export interface CallScreenProps {
@@ -16,7 +17,12 @@ export interface CallScreenProps {
   role: "caller" | "callee";
   /** Callee only: the SDP offer that arrived alongside the incoming-call frame. */
   initialOffer?: unknown;
-  onEnded: () => void;
+  /**
+   * Called once the call is over. `reason` is set only when the call died
+   * without connecting and it wasn't our doing — it's what turns the record
+   * left in the conversation into «отклонён» rather than «отменён».
+   */
+  onEnded: (reason?: CallEndReason) => void;
 }
 
 type IconProps = React.SVGProps<SVGSVGElement>;
@@ -144,7 +150,7 @@ export default function CallScreen({
   // ICE loss, manual hangup) through here is what keeps BOTH sides in sync —
   // previously a failed/dropped call tore down locally without telling the peer,
   // so the peer's call kept ringing/running (BUG-16 desync).
-  const finishRef = useRef<(notifyPeer: boolean) => void>(() => {});
+  const finishRef = useRef<(notifyPeer: boolean, reason?: CallEndReason) => void>(() => {});
 
   // Latest onEnded, read from long-lived callbacks (effect intentionally runs
   // once per call so it never re-subscribes mid-call on a prop identity churn).
@@ -194,6 +200,10 @@ export default function CallScreen({
       if (disposed) return;
       if (pc.connectionState === "connected") {
         setConnected(true);
+        // Stamp the store too: `elapsed` below is local state this effect can't
+        // read on teardown, and the store is what writes the call's duration
+        // into the conversation.
+        useCallStore.getState().markConnected();
         if (timerIdRef.current == null) {
           timerIdRef.current = window.setInterval(() => {
             setElapsed((s) => s + 1);
@@ -234,9 +244,18 @@ export default function CallScreen({
         }
       } else if (frame.type === "call:hangup" || frame.type === "call:unavailable") {
         // Peer ended it — tear down locally WITHOUT echoing a hangup back
-        // (that would ping-pong).
+        // (that would ping-pong). `reason` rides the hangup frame (set by the
+        // peer's decline / busy-reject) and is what the caller's own record
+        // needs to say «отклонён» instead of «отменён».
         setFailed(true);
-        finish(false);
+        finish(
+          false,
+          frame.type === "call:unavailable"
+            ? "unavailable"
+            : frame.reason === "declined" || frame.reason === "busy"
+              ? frame.reason
+              : undefined,
+        );
       }
     });
 
@@ -269,11 +288,11 @@ export default function CallScreen({
     // Single end path for the whole call. `notifyPeer` relays a hangup so the
     // OTHER side tears down too (BUG-16) — pass false only when we're reacting
     // to the peer's own hangup (else we'd bounce it straight back).
-    const finish = (notifyPeer: boolean) => {
+    const finish = (notifyPeer: boolean, reason?: CallEndReason) => {
       if (disposed) return;
       if (notifyPeer) sendCall({ type: "call:hangup", to: peerId, callId });
       cleanup();
-      onEndedRef.current();
+      onEndedRef.current(reason);
     };
     finishRef.current = finish;
 

@@ -209,6 +209,13 @@ function systemMsg(text: string): TinodeMessageLite {
   };
 }
 
+/**
+ * Normalize a signaling handle so «#00012» and «00012» compare equal — the call
+ * layer prefixes the #ID (AnoonAnonChat) or passes `Friend.hashId` raw
+ * (AnoonPrivateChat). Anon aliases start with «~» and are unaffected.
+ */
+const peerKey = (handle: string) => handle.replace(/^#/, "");
+
 /** Build the optimistic-bubble `media` entry for a just-uploaded attachment. */
 function mediaPartFrom(
   up: UploadedMedia,
@@ -854,6 +861,10 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
   // Topic of the currently-open chat, so background subscriptions never clobber
   // the active chat's handlers (BUG-17).
   let activeTopic: string | null = null;
+  // Call system-lines for peers whose chat wasn't open when the call ended,
+  // keyed by peerKey(hashId). Flushed (and cleared) by the next openChat — a
+  // missed call rings on the app shell, not inside the thread it belongs to.
+  const pendingCallLines = new Map<string, TinodeMessageLite[]>();
   // Background subscriptions to every friend topic so a friend's messages arrive
   // even when their chat is CLOSED (BUG-17). Value = the SDK unsub (leaves the
   // topic); only invoked on full teardown — an open/closed chat just swaps
@@ -1185,6 +1196,14 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
       // for messages that happen to arrive after this point (BUG-8 / unread
       // reconciliation). `noteRead` with no seq marks up to the topic's latest.
       client.noteRead(topic);
+      // Replay call records that landed while this chat was closed. Appended at
+      // the tail, after the cached history replay above: a buffered record is
+      // newer than the history it follows in every practical case.
+      const buffered = pendingCallLines.get(peerKey(friend.hashId));
+      if (buffered?.length) {
+        pendingCallLines.delete(peerKey(friend.hashId));
+        set((s) => ({ chatMessages: [...s.chatMessages, ...buffered] }));
+      }
     },
 
     closeChat: () => {
@@ -1361,6 +1380,27 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
 
     markChatViewed: (seq) =>
       set((s) => (s.chatViewed[seq] ? s : { chatViewed: { ...s.chatViewed, [seq]: true } })),
+
+    logCall: (peer, text) => {
+      const key = peerKey(peer);
+      const line = systemMsg(text);
+      // Anon roulette chat first: while a match is live it is the only place the
+      // peer exists, and `messages` survives the screen being unmounted.
+      const match = get().activeMatch;
+      if (match && (match.peerAlias === peer || (match.peerHashId && peerKey(match.peerHashId) === key))) {
+        set((s) => ({ messages: [...s.messages, line] }));
+        return;
+      }
+      if (get().activeChat && peerKey(get().activeChat!.hashId) === key) {
+        set((s) => ({ chatMessages: [...s.chatMessages, line] }));
+        return;
+      }
+      // Friend chat is closed (a missed call is answered from the app shell) —
+      // hold the line until openChat replays it.
+      const buffered = pendingCallLines.get(key) ?? [];
+      buffered.push(line);
+      pendingCallLines.set(key, buffered);
+    },
   };
 };
 
