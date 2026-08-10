@@ -269,6 +269,10 @@ services:
       # Operator accounts + audit rows (external Supabase project).
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      # PROD: hard-coded off, exactly like COMPANION_DEV_AUTH — this is the
+      # stand-only single operator from environment variables, and .env must not
+      # be able to switch it on for a public panel.
+      ADMIN_DEV_LOGIN: "0"
       # Legacy broadcast path (admin → web /api/push/broadcast). Only used when
       # ADMIN_BACKEND is not "companion"; kept so the route does not 500 if the
       # backend is ever flipped back. Empty is fine.

@@ -22,6 +22,35 @@ export async function POST(req: Request) {
   const rlKey = `${ip}:${email}`;
   if (!loginAllowed(rlKey)) return NextResponse.json({ error: "слишком много попыток, подождите" }, { status: 429 });
 
+  // Локальный оператор — только для стенда. Учётки живут в Supabase, и когда
+  // проекта нет (локально он не резолвится вовсе), войти в панель нельзя
+  // никак: форма упирается в сеть, а не в пароль. Эта ветка даёт ОДНУ учётку
+  // из переменных окружения, и включается только явным ADMIN_DEV_LOGIN=1.
+  //
+  // Пароль хранится argon2-хешем, как и настоящие: стенд — не повод держать
+  // его открытым текстом. Прод прибивает ADMIN_DEV_LOGIN="0" в compose, где
+  // .env его не переопределит — тот же приём, что и с COMPANION_DEV_AUTH.
+  if (process.env.ADMIN_DEV_LOGIN === "1") {
+    const devEmail = (process.env.ADMIN_DEV_EMAIL || "").trim().toLowerCase();
+    const devHash = process.env.ADMIN_DEV_PASSWORD_HASH || "";
+    const devRole = (process.env.ADMIN_DEV_ROLE || "super_admin") as AdminSession["role"];
+    if (devEmail && devHash && email === devEmail) {
+      const ok = await argonVerify(devHash, password).catch(() => false);
+      if (!ok) return NextResponse.json({ error: "неверные данные" }, { status: 401 });
+      clearLogin(rlKey);
+      const token = await signSession({ sub: "dev-operator", email: devEmail, role: devRole });
+      const res = NextResponse.json({ id: "dev-operator", name: devEmail, role: devRole });
+      res.cookies.set(ADMIN_COOKIE, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: COOKIE_MAX_AGE,
+      });
+      return res;
+    }
+  }
+
   const admin = supabaseAdmin();
   const { data } = await admin.from("AdminUser").select("id,email,passwordHash,role,totpSecret").eq("email", email).maybeSingle();
   const user = data as AdminRow | null;
