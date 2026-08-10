@@ -419,12 +419,26 @@ export class TinodeClient {
    * both "sign in" and "finish signing up"; which of the two happened is
    * decided server-side, not here.
    *
+   * The secret goes over the wire BASE64. `{login}.secret` is a Go `[]byte`,
+   * which json decodes from base64 — a Google ID token is base64URL with dots,
+   * so sent verbatim it is not valid base64 and Tinode rejects the whole packet
+   * with `400 malformed`. That reply carries no request id, so the SDK cannot
+   * match it to the pending promise and simply waits: five seconds later its own
+   * expiry fires and the user is told `timeout (504)`, with nothing in any log
+   * on the server — the request never reached the auth handler at all.
+   *
+   * `loginBasic` does the same encoding for the same reason; `loginToken` gets
+   * away without it only because a Tinode auth token is already base64.
+   *
+   * `btoa` is enough here: a JWT is ASCII by construction (base64URL segments
+   * joined by dots), so there are no code points above 0xFF to trip it.
+   *
    * @returns the Tinode account uid ("usrXXXX").
    */
   async loginRest(idToken: string): Promise<string> {
     const tinode = await this.ensure(TINODE_WS_URL);
     if (!tinode.isConnected()) await tinode.connect();
-    const ctrl = await tinode.login("rest", idToken);
+    const ctrl = await tinode.login("rest", btoa(idToken));
     return this.captureUid(ctrl);
   }
 
