@@ -32,6 +32,36 @@ with `NEXT_PUBLIC_SAME_ORIGIN=1` and no backend hostnames are baked in.
    immediately on first start).
 4. Local workstation with `rsync` + ssh access to the server.
 
+## Что уже подготовлено (2026-08-08)
+
+Сделано заранее, повторять не нужно:
+
+- **`server-stack/.env.prod` создан**, 34 из 42 переменных заполнены
+  сгенерированными секретами (`rotate-secrets.sh generate`), включая пары,
+  которые обязаны совпадать: `API_KEY_SALT` ↔ `NEXT_PUBLIC_TINODE_API_KEY`,
+  `TURN_PASS` ↔ `NEXT_PUBLIC_TURN_PASS`, `ADMIN_SESSION_SECRET` ↔
+  `COMPANION_ADMIN_TOKEN_SECRET` (attested-режим). Файл **не** в git —
+  до этого он не подпадал ни под одно правило `.gitignore` (`*.env` требует
+  окончания `.env`, а тут `.prod`), дыра закрыта.
+- **Все четыре образа собраны и проверены**: `anoon-tinode:prod`,
+  `anoon-companion:prod`, `anoon-frontend:prod`, `anoon-admin:prod`.
+  Образ админки до этого **не собирался вовсе** — pnpm 10 валит установку, если
+  build-скрипт зависимости пропущен (`ERR_PNPM_IGNORED_BUILDS`), а `sharp` и
+  `unrs-resolver` в этом воркспейсе намеренно в `ignoredBuiltDependencies`.
+  Деплой остановился бы на первом же шаге сборки.
+- `docker compose -f compose.prod.yml --env-file .env.prod config` — валиден,
+  семь сервисов.
+
+**Осталось заполнить в `.env.prod` (только то, что даёт владелец):**
+`WEB_URL`, `SUPABASE_SECRET_KEY`, `ADMIN_BASIC_AUTH_HASH` (через
+`caddy hash-password`), `ADMIN_BROADCAST_SECRET`, `COMPANION_GOOGLE_CLIENT_ID`,
+`SMTP_HOST`/`SMTP_USER`/`SMTP_PASS`. Плюс `DOMAIN`, `ADMIN_DOMAIN`,
+`ACME_EMAIL` — их проверить глазами, они зависят от купленного домена.
+
+⚠️ Без живого проекта **Supabase** админка не поднимется: учётки операторов
+живут там, и кодом это не закрывается. Текущий проект из `admin/.env` мёртв
+(NXDOMAIN).
+
 ## First deploy
 
 ```bash
