@@ -78,12 +78,46 @@ git -C /opt/anoon pull && docker compose -f compose.prod.yml -f compose.behind-p
 `ADMIN_BASIC_AUTH_HASH` хранится с удвоенными `$$`: compose интерполирует `$`, и
 без экранирования bcrypt-хеш приезжал бы в контейнер порезанным.
 
+## Бэкапы и восстановление
+
+Крон: `30 3 * * * /opt/anoon/scripts/backup-db.sh` — `pg_dumpall` всего кластера
+(обе БД плюс роли), gzip, ротация 14 последних, `/var/backups/anoon` под `0700`.
+Скрипт сам бракует обрезанный дамп: проверяет `gunzip -t`, размер и хвост
+`PostgreSQL database cluster dump complete`.
+
+**Восстановление проверено 2026-08-10** — не «бэкап лежит», а дамп реально
+разворачивается. Свежий дамп штатным скриптом залит во временный
+`postgres:16-alpine`, прод не трогали:
+
+```bash
+docker run -d --name anoon-restore-test -e POSTGRES_PASSWORD=… postgres:16-alpine
+zcat /var/backups/anoon/anoon-YYYYMMDD-HHMM.sql.gz | docker exec -i anoon-restore-test psql -U postgres
+docker rm -f anoon-restore-test
+```
+
+Совпало: 19 таблиц в `anoon` и 13 в `tinode`, построчные счётчики один в один,
+`schema_migrations` до `0016_billing.sql`. Единственное сообщение —
+`ERROR: role "postgres" already exists`, оно ожидаемо: роль создаёт сам образ.
+
+## Мониторинг
+
+`*/5 * * * * /opt/anoon/scripts/healthcheck.sh` бьёт в `/api/health`. Лога на
+самой машине мало: сервер, умерший целиком, ничего в свой лог не напишет.
+Поэтому скрипт умеет **внешний dead-man's switch** — при OK пингует URL, при
+отказе `URL/fail` с кодом и телом; тревогу поднимает молчание, и решает это
+сторона снаружи. URL берётся из `HEALTHCHECK_PING_URL` или
+`/etc/anoon-healthcheck-ping` и в git не лежит — знающий его глушит алерт откуда
+угодно. Пока файла нет, поведение прежнее (только `health.log`).
+
+Включить: завести проверку на healthchecks.io (period 5m, grace 15m), затем
+`echo '<ping-url>' > /etc/anoon-healthcheck-ping && chmod 600 /etc/anoon-healthcheck-ping`.
+
 ## Следующее
 
 - Живой проект Supabase → вход в админку и первый оператор.
-- Бэкапы: ночной `pg_dump` обеих БД + выгрузка наружу (в `DEPLOY-PROD.md` есть
-  раздел, крон не заведён).
-- Внешний монитор на `/api/health` — у companion нет healthcheck (distroless).
-- Тестовые учётки `smoke.alpha`, `smoke.beta`, `smoke.test.one` и пара
-  `#00001`/`#00002` остались в базе — снести перед реальным запуском.
+- Ping-URL внешнего монитора (см. выше) — заводится владельцем.
+- Выгрузка бэкапов наружу: сейчас дампы лежат на том же диске, что и БД.
 - RAM 4 ГБ и swap 4 ГБ: при росте нагрузки первым делом апгрейд сервера.
+
+Тестовые учётки (`smoke.*`, `#00001`/`#00002`) снесены — в базе остался только
+ROOT-бот `anoonbot` и системный топик `sys`.
