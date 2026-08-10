@@ -25,9 +25,16 @@
 {
 	# ACME account contact — expiry/problem notices from Let's Encrypt.
 	email {$ACME_EMAIL}
+
+	# Which port Caddy serves plain HTTP on. 80 when Caddy is the edge and does
+	# its own TLS; something else when it sits BEHIND another reverse proxy that
+	# already owns 80/443 on the host (see compose.behind-proxy.yml). Paired
+	# with APP_SITE/ADMIN_SITE below carrying an explicit `http://` scheme,
+	# which is what tells Caddy not to try issuing a certificate it cannot get.
+	http_port {$CADDY_HTTP_PORT:80}
 }
 
-{$DOMAIN} {
+{$APP_SITE} {
 	# Compress API/HTML responses (media files are already-compressed binaries;
 	# encoders skip them by content-type automatically).
 	encode zstd gzip
@@ -103,7 +110,7 @@
 # non-guessable hostname; add `@office remote_ip a.b.c.d/32` + `abort` here the
 # day operators work from fixed addresses.
 # =============================================================================
-{$ADMIN_DOMAIN} {
+{$ADMIN_SITE} {
 	encode zstd gzip
 
 	basic_auth {

@@ -1,0 +1,32 @@
+# =============================================================================
+# anoon — overlay for a host where Caddy CANNOT own ports 80/443.
+#
+#   docker compose -f compose.prod.yml -f compose.behind-proxy.yml up -d
+#
+# Use this when the box already runs another web server on the public ports —
+# ours is shared with two unrelated production sites served by nginx, and taking
+# 80/443 away from them was never an option. nginx keeps the edge (TLS, ACME,
+# HTTP/3), and everything for our hostnames is proxied to Caddy on loopback.
+#
+# Caddy is still the router: it owns the single-origin split (/api/* → companion,
+# /v0/* → tinode, everything else → frontend) that the client depends on for
+# cookies, WebSockets and CORS. nginx must therefore pass the Host header
+# through unchanged and must not rewrite paths — see nginx-anoon.conf.
+#
+# What changes versus plain prod:
+#   * published on 127.0.0.1 only, so the app is unreachable except through the
+#     proxy in front of it;
+#   * APP_SITE / ADMIN_SITE carry an explicit `http://` scheme, which is how
+#     Caddy is told not to attempt a certificate for a port it cannot serve
+#     ACME on;
+#   * no 443 and no UDP: HTTP/3 belongs to whatever terminates TLS.
+#
+# .env must set APP_SITE=http://$DOMAIN, ADMIN_SITE=http://$ADMIN_DOMAIN and
+# CADDY_HTTP_PORT — DOMAIN/ADMIN_DOMAIN themselves stay bare hostnames, since
+# the rest of the stack builds public https:// URLs out of them.
+# =============================================================================
+
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:${CADDY_HTTP_PORT:-8080}:${CADDY_HTTP_PORT:-8080}"
