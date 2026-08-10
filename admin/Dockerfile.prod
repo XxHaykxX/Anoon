@@ -28,8 +28,15 @@ WORKDIR /app
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# `--config.strict-dep-builds=false`: pnpm 10 fails the install outright when a
+# dependency's build script is skipped (ERR_PNPM_IGNORED_BUILDS), and this
+# workspace deliberately lists sharp and unrs-resolver under
+# `ignoredBuiltDependencies` — both ship prebuilt binaries and neither is built
+# locally either. Without this the image cannot be built at all, so the flag
+# keeps the container honest to what the repository already chose rather than
+# quietly enabling scripts nobody vetted.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --config.strict-dep-builds=false
 
 COPY . .
 
@@ -49,7 +56,7 @@ RUN test "$NEXT_PUBLIC_DATA_MODE" = "api" \
 ENV ADMIN_SESSION_SECRET=build-time-placeholder-not-a-secret
 
 RUN pnpm build \
- && pnpm prune --prod
+ && pnpm prune --prod --config.strict-dep-builds=false
 
 # ---- Stage 2: runtime (non-root) --------------------------------------------
 FROM node:${NODE_VERSION} AS runner
