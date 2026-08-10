@@ -188,10 +188,13 @@ export default function AnoonFriendSearch() {
         </div>
       </div>
 
-      {/* Results */}
-      <div className="flex-1 overflow-y-auto px-5">
+      {/* Results. `px-5` lives on the children, not here: the desktop cap must
+          include it the way the header's and the search field's do — with the
+          padding on this scroller the cards were centred inside an already-inset
+          box and sat 18px left of the field they answer. */}
+      <div className="flex-1 overflow-y-auto">
         {query.trim() === "" ? (
-          <div className="flex flex-col items-center justify-center pt-20 text-center">
+          <div className="flex flex-col items-center justify-center px-5 pt-20 text-center">
             <div className="mb-3 flex size-14 items-center justify-center rounded-full bg-muted">
               <SearchIcon className="size-6 text-muted-foreground" />
             </div>
@@ -200,14 +203,14 @@ export default function AnoonFriendSearch() {
             </p>
           </div>
         ) : results.length === 0 ? (
-          <div className="flex flex-col items-center justify-center pt-20 text-center">
+          <div className="flex flex-col items-center justify-center px-5 pt-20 text-center">
             <p className="text-sm font-medium">Ничего не найдено</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Проверьте ID и попробуйте снова
             </p>
           </div>
         ) : (
-          <div className={`flex flex-col gap-2.5 ${DESKTOP_COL}`}>
+          <div className={`flex flex-col gap-2.5 px-5 ${DESKTOP_COL}`}>
             {results.map((p) => {
               const isFriend = p.relation === "friends";
               const isSent = sent[p.id] || p.relation === "request_sent";

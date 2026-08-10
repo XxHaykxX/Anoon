@@ -1053,7 +1053,7 @@ export default function AnoonAnonChat() {
       <div
         ref={threadRef}
         onScroll={onThreadScroll}
-        className={`flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 py-3 ${DESKTOP_COL}`}
+        className={`flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 py-3 lg:[.anoon-desktop_&]:justify-end ${DESKTOP_COL}`}
         onClick={() => setActionFor(null)}
       >
         {/* Desktop: pin a short thread to the bottom. A 900px-tall work area is

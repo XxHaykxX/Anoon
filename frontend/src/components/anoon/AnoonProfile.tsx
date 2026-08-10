@@ -268,7 +268,10 @@ export default function AnoonProfile() {
             <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-3">
               <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">Ваша ссылка</p>
-                <p className="truncate font-medium">{profileLink}</p>
+                {/* The link is the point of this card, and «Скопировать» is the
+                    only way to get it — so it wraps rather than truncating.
+                    On 390 it was cut at 108px of 147px. */}
+                <p className="break-all font-medium">{profileLink}</p>
               </div>
               <button
                 type="button"

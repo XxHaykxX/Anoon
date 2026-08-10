@@ -50,21 +50,51 @@ test("onboarding → register → mock onboarding chain → home", async ({ page
   assertNoErrors(guard);
 });
 
-test("register submit stays disabled until every field is valid", async ({ page }) => {
+/**
+ * Кнопка НАМЕРЕННО остаётся нажимаемой на неполной форме: выключенная кнопка не
+ * может объяснить, чего не хватает, — а пустая форма раньше молчала в ответ на
+ * тык. Проверка не ослаблена: то, что неполная форма не уходит дальше, здесь
+ * проверяется переходом (экран остаётся «Регистрация»), а не атрибутом disabled.
+ */
+test("register submit объясняет, чего не хватает, и не пускает дальше", async ({ page }) => {
   await gotoAnoon(page);
   await page.getByRole("button", { name: "Слайд 4" }).click();
   await page.getByRole("button", { name: "Начать" }).click();
 
   const submit = page.getByRole("button", { name: "Зарегистрироваться" });
-  await expect(submit).toBeDisabled();
+  const nextScreen = page.getByRole("heading", { name: "Подтвердите почту" });
 
-  // Fill everything except gender — should still be disabled.
+  // Пустая форма: тык отвечает сообщениями у каждого невалидного поля.
+  await submit.click();
+  await expect(page.getByText("Введите почту в виде you@example.com")).toBeVisible();
+  await expect(page.getByText("Пароль от 6 символов")).toBeVisible();
+  await expect(page.getByText("Введите имя")).toBeVisible();
+  await expect(page.getByText("Возраст от 18 до 100")).toBeVisible();
+  await expect(page.getByText("Выберите пол")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Регистрация" })).toBeVisible();
+  await expect(nextScreen).toHaveCount(0);
+
+  // Всё, кроме пола: жалоба ровно на пол, и дальше по-прежнему не пускает.
   await page.getByPlaceholder("you@example.com").fill("x@y.zz");
   await page.getByPlaceholder("Минимум 6 символов").fill("secret123");
   await page.getByPlaceholder("Как вас зовут").fill("Имя");
   await page.getByPlaceholder("18+").fill("30");
-  await expect(submit).toBeDisabled();
+  await submit.click();
+  await expect(page.getByText("Выберите пол")).toBeVisible();
+  await expect(page.getByText("Введите имя")).toHaveCount(0);
+  await expect(nextScreen).toHaveCount(0);
 
+  // Возраст вне 18–100 — тоже стоп (форма 18+, это не косметика).
+  await page.getByPlaceholder("18+").fill("17");
   await page.getByRole("button", { name: "Мужчина" }).click();
-  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByText("Возраст от 18 до 100")).toBeVisible();
+  await expect(nextScreen).toHaveCount(0);
+
+  // И только полностью валидная форма уходит дальше — тот же локатор,
+  // которым выше доказывалось, что перехода НЕ было.
+  await page.getByPlaceholder("18+").fill("30");
+  await expect(page.getByText("Возраст от 18 до 100")).toHaveCount(0);
+  await submit.click();
+  await expect(nextScreen).toBeVisible();
 });

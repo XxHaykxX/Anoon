@@ -103,6 +103,21 @@ const DESKTOP_COL =
   "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[36rem]";
 
 /**
+ * Header actions. These used to be bare `<svg onClick>` with an aria-label — a
+ * Tab walk over «Чаты» never stopped on them, so «Пригласить друга» and «Поиск
+ * друзей» were unreachable from the keyboard entirely. A real <button> fixes
+ * that and brings the focus ring the project rule demands wherever there's a
+ * press effect.
+ *
+ * `p-1.5 -m-1.5` grows the tap target (24→36px) and rounds the focus ring
+ * without moving anything: the negative margin cancels the padding, so the
+ * header's `gap-4` still measures 16px between the icons themselves.
+ */
+const ICON_BTN =
+  `grid place-items-center rounded-full p-1.5 -m-1.5 text-foreground ${PRESS_FX} ` +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/**
  * BUG-36: this single screen renders BOTH nav tabs — «Чаты» (route "chats",
  * the post-login landing screen, active conversations only) and «Друзья»
  * (route "friends", the full contact list + search/requests/add-by-#ID).
@@ -110,8 +125,21 @@ const DESKTOP_COL =
  * `mode` for the title, the empty-state copy, the list filter, and which
  * bottom-nav tab lights up. Defaults to "friends" so `SCREENS.friends =
  * AnoonFriends` (no wrapper needed there) keeps working with zero props.
+ *
+ * `onOpen`/`selectedId` are the desktop two-pane hook-up (#34): with `onOpen`
+ * the list reports the tapped row to its parent instead of navigating to the
+ * chat route, and `selectedId` marks which row the right pane is showing. Both
+ * absent = the phone behaviour, a push to "private-chat".
  */
-export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "friends" }) {
+export default function AnoonFriends({
+  mode = "friends",
+  selectedId = null,
+  onOpen,
+}: {
+  mode?: "chats" | "friends";
+  selectedId?: string | null;
+  onOpen?: (id: string) => void;
+}) {
   const isChats = mode === "chats";
   const nav = useAnoonNav();
   const [mockFriends, setMockFriends] = useState<Friend[]>(INITIAL_FRIENDS);
@@ -168,8 +196,15 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
       // Opening here (before the screen mounts) races the screen's own
       // unmount-cleanup under React StrictMode and leaves activeChat null.
       setChatTarget(sf);
-      nav.push("private-chat");
+    } else if (USE_TINODE) {
+      // Real mode with no store friend behind the row: nothing to open.
+      return;
     }
+    // Mock mode falls through with chatTarget untouched — the chat screen then
+    // renders its own mock thread. Before this, the mock branch bailed out here
+    // and a tapped row simply did nothing.
+    if (onOpen) onOpen(id);
+    else nav.push("private-chat");
   };
 
   const visible = useMemo(() => {
@@ -197,30 +232,39 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
         <h1 className="text-2xl font-bold">{isChats ? "Чаты" : "Контакты"}</h1>
         <div className="flex items-center gap-4">
           {!searchOpen && (
-            <ForwardIcon
-              className={`size-6 text-foreground ${PRESS_FX}`}
+            <button
+              type="button"
+              className={ICON_BTN}
               aria-label="Пригласить друга"
               onClick={() => nav.push("invite")}
-            />
+            >
+              <ForwardIcon className="size-6" />
+            </button>
           )}
           {searchOpen ? (
-            <CloseIcon
-              className={`size-6 text-foreground ${PRESS_FX}`}
+            <button
+              type="button"
+              className={ICON_BTN}
               aria-label="Закрыть поиск"
               onClick={() => {
                 setSearchOpen(false);
                 setQuery("");
               }}
-            />
+            >
+              <CloseIcon className="size-6" />
+            </button>
           ) : (
-            <SearchIcon
-              className={`size-6 text-foreground ${PRESS_FX}`}
+            <button
+              type="button"
+              className={ICON_BTN}
               aria-label="Поиск друзей"
               onClick={() => {
                 setSearchOpen(true);
                 nav.push("friend-search");
               }}
-            />
+            >
+              <SearchIcon className="size-6" />
+            </button>
           )}
         </div>
       </div>
@@ -285,16 +329,32 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
               data-testid="friend-row"
               data-topic={f.topic}
               data-fid={f.id}
-              className={`anoon-cv-row flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-muted active:bg-muted/40 active:scale-[0.99] motion-reduce:transition-none ${DESKTOP_COL} lg:[.anoon-desktop_&]:rounded-2xl lg:[.anoon-desktop_&]:py-3 ${
-                USE_TINODE ? "cursor-pointer" : ""
+              className={`anoon-cv-row relative flex cursor-pointer items-center gap-3 px-5 py-2.5 transition-colors hover:bg-muted active:bg-muted/40 active:scale-[0.99] motion-reduce:transition-none ${DESKTOP_COL} lg:[.anoon-desktop_&]:rounded-2xl lg:[.anoon-desktop_&]:py-3 ${
+                selectedId === f.id ? "bg-muted" : ""
               }`}
-              // Real mode: the row IS the chat. Mock mode (showcase): the row
-              // body owns the actions menu — «Убрать» has no other entry point
-              // — and the chevron below is what opens the chat.
-              onClick={() =>
-                USE_TINODE ? openFriend(f.id) : setMenuFor((cur) => (cur === f.id ? null : f.id))
-              }
+              // The row IS the chat, in both modes. The mock-only actions menu
+              // («Убрать» has no other entry point) moved onto the context
+              // menu — right-click on desktop, long-press on touch — so that
+              // tapping the row can open the chat like it does in real mode.
+              // The click itself lives on the stretched button below, not here:
+              // a <div onClick> is invisible to Tab, and the row can't BE a
+              // button because it contains one («Убрать»).
+              onContextMenu={(e) => {
+                if (USE_TINODE) return;
+                e.preventDefault();
+                setMenuFor((cur) => (cur === f.id ? null : f.id));
+              }}
             >
+              {/* The row's click target, stretched over the whole row: one Tab
+                  stop per conversation, Enter/Space for free, and a focus ring
+                  that outlines the row itself. */}
+              <button
+                type="button"
+                onClick={() => openFriend(f.id)}
+                aria-label={`Открыть чат: ${f.name || f.hashId}`}
+                className="absolute inset-0 z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring lg:[.anoon-desktop_&]:rounded-2xl"
+              />
+
               <div className="relative shrink-0">
                 <FriendAvatar topic={f.topic} initials={f.initials} tone={f.tone} size={48} />
                 <StatusDot online={f.online} className="absolute bottom-0 right-0" />
@@ -344,7 +404,9 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
                     e.stopPropagation();
                     removeFriend(f.id);
                   }}
-                  className={`shrink-0 rounded-full bg-destructive px-3 py-1.5 text-xs font-semibold text-white ${PRESS_FX}`}
+                  // z-[2]: above the row-wide open-chat button, or the click
+                  // that should remove the friend would open the chat instead.
+                  className={`relative z-[2] shrink-0 rounded-full bg-destructive px-3 py-1.5 text-xs font-semibold text-white ${PRESS_FX} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                 >
                   Убрать
                 </button>
@@ -355,22 +417,12 @@ export default function AnoonFriends({ mode = "friends" }: { mode?: "chats" | "f
                       {capBadge(f.unread)}
                     </span>
                   )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Mock mode has no store friend to open, so it can't go
-                      // through openFriend — it shows the standalone mock
-                      // thread instead. Without this the private chat is
-                      // unreachable in the showcase and in mock QA.
-                      if (USE_TINODE) openFriend(f.id);
-                      else nav.push("private-chat");
-                    }}
-                    className={`grid size-7 place-items-center text-muted-foreground ${PRESS_FX}`}
-                    aria-label="Открыть чат"
-                  >
+                  {/* Decoration only: the whole row is the button now, so a
+                      second control doing the same thing would just be a second
+                      Tab stop per conversation for screen-reader users. */}
+                  <span className="grid size-7 place-items-center text-muted-foreground" aria-hidden="true">
                     <ChevronRightIcon className="size-5" />
-                  </button>
+                  </span>
                 </div>
               )}
             </div>

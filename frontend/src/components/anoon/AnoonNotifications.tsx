@@ -12,6 +12,16 @@ import type {
   Notification as StoreNotification,
 } from "@/types/companion";
 
+/**
+ * Desktop clamp for the feed column — and for the header above it whenever the
+ * feed is the only column. Both halves of the variant are load-bearing: `lg:`
+ * alone would also fire in the showcase (it draws this screen in a fixed 390px
+ * frame on a wide monitor), and `.anoon-desktop` alone sits on the app root at
+ * every width and would restyle the phone. See docs/DESKTOP-LAYOUT.md.
+ */
+const FEED_COL =
+  "lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[34rem]";
+
 /* ── Friend requests ───────────────────────────────────────── */
 
 interface FriendRequest {
@@ -231,8 +241,15 @@ export default function AnoonNotifications() {
 
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-4 pb-2 lg:[.anoon-desktop_&]:px-8">
+      {/* Header. It follows whichever layout the body picks below: across the
+          full work area while there are two columns, and on the feed's own
+          34rem clamp when the feed is alone — otherwise the title and
+          «Прочитать все» sat 148px away from the rows they label. */}
+      <div
+        className={`flex items-center justify-between px-5 pt-4 pb-2 ${
+          twoColumnDesktop ? "lg:[.anoon-desktop_&]:px-8" : FEED_COL
+        }`}
+      >
         <h1 className="text-3xl font-bold">Уведомления</h1>
         {unreadCount > 0 ? (
           <button
@@ -272,7 +289,10 @@ export default function AnoonNotifications() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">Включите уведомления</p>
-                <p className="truncate text-xs text-muted-foreground">
+                {/* `truncate` is a phone measure — 233px of text in a 202px
+                    slot. On desktop the banner has room to spare, so the line
+                    is allowed to finish. */}
+                <p className="truncate text-xs text-muted-foreground lg:[.anoon-desktop_&]:overflow-visible lg:[.anoon-desktop_&]:whitespace-normal">
                   Не пропускайте новые сообщения и заявки
                 </p>
               </div>
@@ -342,7 +362,7 @@ export default function AnoonNotifications() {
 
         {/* Feed. The width cap only bites in the single-column fallback above —
             in the two-column layout this wrapper is already narrower than it. */}
-        <div className="lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:w-full lg:[.anoon-desktop_&]:max-w-[34rem]">
+        <div className={FEED_COL}>
           <h2 className="px-5 pb-1 pt-1 text-sm font-semibold text-muted-foreground">Лента</h2>
           <div className="divide-y divide-border">
             {feed.map((item) => (

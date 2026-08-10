@@ -109,8 +109,14 @@ export default function AnoonHome() {
         </div>
       </header>
 
-      {/* Scrollable content */}
-      <div className={`flex-1 overflow-y-auto px-5 pb-4 pt-4 ${DESKTOP_COL}`}>
+      {/* Scrollable content. On the phone this box eats the leftover height so
+          «Начать чат» sits above the nav bar. On a 900px-tall desktop that same
+          rule left 560px of nothing between the age filter and the button, so
+          there the box is only as tall as its content and the button follows it
+          — this screen is three short blocks, it never needs the scroll. */}
+      <div
+        className={`flex-1 overflow-y-auto px-5 pb-4 pt-4 lg:[.anoon-desktop_&]:flex-none ${DESKTOP_COL}`}
+      >
         {/* Own card */}
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
           {cardAvatarRef && cardAvatarBroken !== cardAvatarRef ? (

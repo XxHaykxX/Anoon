@@ -130,14 +130,18 @@ export default function AnoonFriendRequests() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5">
+      {/* `px-5` sits on the children, not here: the desktop cap has to include
+          that padding, exactly as the header's does. With the padding on this
+          scroller the cards were centred inside an already-inset box and landed
+          18px left of the heading above them. */}
+      <div className="flex-1 overflow-y-auto">
         {pendingCount === 0 && (
-          <p className="pt-4 text-center text-xs text-muted-foreground">
+          <p className="px-5 pt-4 text-center text-xs text-muted-foreground">
             Новых заявок нет
           </p>
         )}
 
-        <div className={`flex flex-col gap-2.5 ${DESKTOP_COL}`}>
+        <div className={`flex flex-col gap-2.5 px-5 ${DESKTOP_COL}`}>
           {rows.map((r) => {
             const status = statuses[r.id] ?? "pending";
             return (

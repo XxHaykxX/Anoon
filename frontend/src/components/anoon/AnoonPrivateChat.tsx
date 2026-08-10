@@ -349,7 +349,15 @@ const PrivateBubble = memo(function PrivateBubble({
   );
 });
 
-export default function AnoonPrivateChat() {
+/**
+ * `onBack` decouples the screen from the router (#34). As a route it pops the
+ * stack; as the right pane of the desktop two-pane «Чаты» it clears the
+ * parent's selection instead — there is nothing to pop, the list never left.
+ * The live topic follows the mount either way: the effect below opens
+ * chatTarget and closes it on unmount AND on a peer switch, so the pane can
+ * swap conversations (or go empty) without leaking a subscription.
+ */
+export default function AnoonPrivateChat({ onBack }: { onBack?: () => void } = {}) {
   const nav = useAnoonNav();
   const real = USE_TINODE;
 
@@ -839,14 +847,20 @@ export default function AnoonPrivateChat() {
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
       {/* Header */}
       <div className={`flex items-center gap-3 border-b border-border px-4 py-2.5 ${DESKTOP_COL_PX}`}>
-        <ChevronLeftIcon
-          className={`size-6 shrink-0 text-foreground ${PRESS_FX}`}
-          aria-label="Назад"
-          onClick={() => {
-            if (real) closeChat();
-            nav.back();
-          }}
-        />
+        {/* `onBack` is only passed by the desktop two-pane «Чаты», where this
+            chevron went nowhere — it emptied the pane the user was reading.
+            There the way out is picking another row, so the chevron is a phone
+            affordance only. */}
+        {!onBack && (
+          <ChevronLeftIcon
+            className={`size-6 shrink-0 text-foreground ${PRESS_FX}`}
+            aria-label="Назад"
+            onClick={() => {
+              if (real) closeChat();
+              nav.back();
+            }}
+          />
+        )}
         <div className="relative shrink-0">
           <AnoonAvatar initials={peerInitials} tone={peerTone} size={38} />
           {peerOnline && (
@@ -924,7 +938,7 @@ export default function AnoonPrivateChat() {
       <div
         ref={threadRef}
         onScroll={onThreadScroll}
-        className={`flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-4 py-3 ${DESKTOP_COL}`}
+        className={`flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-4 py-3 lg:[.anoon-desktop_&]:justify-end ${DESKTOP_COL}`}
         onClick={() => {
           setActionFor(null);
         }}
@@ -1068,9 +1082,14 @@ export default function AnoonPrivateChat() {
         @media (prefers-reduced-motion: reduce) { .anoon-quote-flash { animation: none; } }
       `}</style>
 
-      {/* Hint */}
+      {/* Hint. The gestures are pointer events (onDoubleClick / onPointerDown),
+          so a mouse drives them fine — only the wording was touch-only. Desktop
+          gets the same two affordances named the way a mouse does them. */}
       <p className="px-4 pb-1 text-center text-[10px] text-muted-foreground">
-        Двойной тап — ❤️, долгий тап — меню
+        <span className="lg:[.anoon-desktop_&]:hidden">Двойной тап — ❤️, долгий тап — меню</span>
+        <span className="hidden lg:[.anoon-desktop_&]:inline">
+          Двойной клик — ❤️, зажать — меню
+        </span>
       </p>
 
       {/* View-once armed hint */}

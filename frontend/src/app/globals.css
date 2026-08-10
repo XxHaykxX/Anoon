@@ -117,10 +117,21 @@
   --popover-foreground: #ffffff;
   --primary: #FDBF2D;
   --primary-foreground: #000000;
-  --secondary: #1c1c1e;
+  /* Ступень поверхностей: фон #000 → карточка/поповер #1c1c1e → заполнение
+     #2c2c2e. `--muted`/`--secondary` держали ровно цвет карточки, и всё, что
+     стоит НА карточке, растворялось: поля ввода (`border-transparent bg-muted`
+     — рамки нет, различает только заливка), плашки статусов, кнопка
+     «Отклонить», а `hover:bg-muted` внутри карточек и меню не давал никакой
+     реакции — контраст был 1.00:1. Шаг взят системный (iOS
+     tertiarySystemBackground): 1.22:1 к карточке — больше, чем ступень светлой
+     темы (#f2f2f7 на #ffffff = 1.12:1), которая читается нормально. */
+  --secondary: #2c2c2e;
   --secondary-foreground: #ffffff;
-  --muted: #1c1c1e;
-  --muted-foreground: #8e8e93;
+  --muted: #2c2c2e;
+  /* Подтянут вслед за фоном: на #2c2c2e прежний #8e8e93 давал 4.27:1 —
+     ниже AA для мелкого текста плашек. #9a9aa0 → 4.98:1 на заливке и выше
+     прежнего на карточке (5.99:1) и на фоне (7.40:1). */
+  --muted-foreground: #9a9aa0;
   --accent: #FDBF2D;
   --accent-foreground: #000000;
   --destructive: #ff453a;

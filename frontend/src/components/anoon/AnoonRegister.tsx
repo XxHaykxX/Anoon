@@ -70,18 +70,47 @@ export default function AnoonRegister() {
   const signInWithBasic = useAnoonStore((s) => s.signInWithBasic);
   const authError = useAnoonStore((s) => s.authError);
 
+  // Which fields are wrong, and — the part that was missing — what to say about
+  // it. Before this the button simply sat there disabled: an empty form gave no
+  // hint at all about what the screen wanted, and a keyboard/screen-reader user
+  // got nothing whatsoever on pressing it.
+  const [showErrors, setShowErrors] = useState(false);
   const ageNum = Number(age);
   const ageValid = Number.isInteger(ageNum) && ageNum >= 18 && ageNum <= 100;
   const emailValid = /\S+@\S+\.\S+/.test(email);
-  const canSubmit =
-    emailValid &&
-    password.length >= 6 &&
-    name.trim().length > 0 &&
-    ageValid &&
-    !!gender &&
-    !submitting;
+  const errors = {
+    email: emailValid ? null : "Введите почту в виде you@example.com",
+    password: password.length >= 6 ? null : "Пароль от 6 символов",
+    name: name.trim().length > 0 ? null : "Введите имя",
+    age: ageValid ? null : "Возраст от 18 до 100",
+    gender: gender ? null : "Выберите пол",
+  };
+  const complete = !Object.values(errors).some(Boolean);
+  const canSubmit = complete && !submitting;
+
+  /**
+   * Field error line. `role="alert"` so it's spoken the moment it appears —
+   * the whole point is that pressing the button now answers "what's missing?".
+   */
+  const errorFor = (key: keyof typeof errors) =>
+    showErrors && errors[key] ? (
+      <p role="alert" id={`err-${key}`} className="mt-1 text-xs text-destructive">
+        {errors[key]}
+      </p>
+    ) : null;
+  /** Props that mark an input invalid and tie it to its message. */
+  const invalidProps = (key: keyof typeof errors) =>
+    showErrors && errors[key]
+      ? { "aria-invalid": true, "aria-describedby": `err-${key}` }
+      : {};
 
   const handleSubmit = async () => {
+    // The button stays enabled while the form is incomplete — a dead button
+    // can't explain itself. Pressing it reveals the messages instead.
+    if (!complete) {
+      setShowErrors(true);
+      return;
+    }
     // Mock flow (default): step through the onboarding screens
     // (register → verify email → gender → profile setup).
     if (!USE_TINODE) {
@@ -118,7 +147,7 @@ export default function AnoonRegister() {
           type="button"
           onClick={() => nav.back()}
           aria-label="Назад"
-          className="-ml-5 grid size-12 shrink-0 place-items-center rounded-full text-foreground transition-transform active:scale-95 cursor-pointer"
+          className="-ml-5 grid size-12 shrink-0 place-items-center rounded-full text-foreground transition-transform active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronLeftIcon className="size-6" />
         </button>
@@ -143,8 +172,10 @@ export default function AnoonRegister() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-transparent bg-muted px-4 py-3 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground focus:border-primary focus:ring-2"
+              {...invalidProps("email")}
+              className="w-full rounded-xl border border-transparent bg-muted px-4 py-3 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground focus:border-primary focus:ring-2 aria-invalid:border-destructive"
             />
+            {errorFor("email")}
           </div>
 
           {/* Password */}
@@ -152,19 +183,24 @@ export default function AnoonRegister() {
             <label className="mb-1.5 block text-xs text-muted-foreground">
               Пароль
             </label>
-            <div className="flex items-center gap-2 rounded-xl border border-transparent bg-muted px-4 py-3 ring-primary/40 transition-shadow focus-within:border-primary focus-within:ring-2">
+            <div
+              className={`flex items-center gap-2 rounded-xl border bg-muted px-4 py-3 ring-primary/40 transition-shadow focus-within:border-primary focus-within:ring-2 ${
+                showErrors && errors.password ? "border-destructive" : "border-transparent"
+              }`}
+            >
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder="Минимум 6 символов"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                {...invalidProps("password")}
                 className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
               />
               <button
                 type="button"
                 aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
                 onClick={() => setShowPassword((v) => !v)}
-                className="shrink-0 text-muted-foreground transition-transform active:scale-95 cursor-pointer"
+                className="shrink-0 rounded-full text-muted-foreground transition-transform active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {showPassword ? (
                   <EyeOffIcon className="size-5" />
@@ -173,6 +209,7 @@ export default function AnoonRegister() {
                 )}
               </button>
             </div>
+            {errorFor("password")}
           </div>
 
           {/* Name */}
@@ -185,8 +222,10 @@ export default function AnoonRegister() {
               placeholder="Как вас зовут"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl border border-transparent bg-muted px-4 py-3 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground focus:border-primary focus:ring-2"
+              {...invalidProps("name")}
+              className="w-full rounded-xl border border-transparent bg-muted px-4 py-3 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground focus:border-primary focus:ring-2 aria-invalid:border-destructive"
             />
+            {errorFor("name")}
           </div>
 
           {/* Age */}
@@ -202,8 +241,10 @@ export default function AnoonRegister() {
               placeholder="18+"
               value={age}
               onChange={(e) => setAge(e.target.value)}
-              className="w-full rounded-xl border border-transparent bg-muted px-4 py-3 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground focus:border-primary focus:ring-2"
+              {...invalidProps("age")}
+              className="w-full rounded-xl border border-transparent bg-muted px-4 py-3 text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground focus:border-primary focus:ring-2 aria-invalid:border-destructive"
             />
+            {errorFor("age")}
           </div>
 
           {/* Gender segment */}
@@ -211,7 +252,11 @@ export default function AnoonRegister() {
             <label className="mb-1.5 block text-xs text-muted-foreground">
               Пол
             </label>
-            <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted p-1">
+            <div
+              className={`grid grid-cols-2 gap-2 rounded-xl border bg-muted p-1 ${
+                showErrors && errors.gender ? "border-destructive" : "border-transparent"
+              }`}
+            >
               {(
                 [
                   { id: "male", label: "Мужчина" },
@@ -223,8 +268,9 @@ export default function AnoonRegister() {
                   <button
                     key={g.id}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => setGender(g.id)}
-                    className={`rounded-lg py-2.5 text-sm font-medium transition-transform active:scale-95 cursor-pointer ${
+                    className={`rounded-lg py-2.5 text-sm font-medium transition-transform active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       active
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground"
@@ -235,15 +281,18 @@ export default function AnoonRegister() {
                 );
               })}
             </div>
+            {errorFor("gender")}
           </div>
         </div>
 
         <button
           type="button"
-          disabled={!canSubmit}
+          // Only a request in flight disables it. While the form is merely
+          // incomplete the button stays pressable and answers the question.
+          disabled={submitting}
           onClick={handleSubmit}
-          className={`mt-7 w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer ${
-            canSubmit ? "" : "cursor-not-allowed opacity-50"
+          className={`mt-7 w-full rounded-xl bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+            canSubmit ? "" : "opacity-50"
           }`}
           style={
             canSubmit
@@ -263,7 +312,7 @@ export default function AnoonRegister() {
           <button
             type="button"
             onClick={() => nav.back()}
-            className="font-medium text-primary transition-transform active:scale-95 cursor-pointer"
+            className="rounded font-medium text-primary transition-transform active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Войти
           </button>

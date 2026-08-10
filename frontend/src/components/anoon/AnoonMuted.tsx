@@ -56,7 +56,12 @@ export default function AnoonMuted() {
       </div>
 
       {/* Thread (read-only) */}
-      <div className={`flex-1 space-y-2 overflow-y-auto px-4 py-4 ${DESKTOP_THREAD}`}>
+      {/* A thread hugs the bottom, not the top: on a 900px desktop these four
+          bubbles left ~500px of nothing above the «нельзя писать» notice.
+          Desktop-only — on the phone the layout is unchanged. */}
+      <div
+        className={`flex-1 space-y-2 overflow-y-auto px-4 py-4 lg:[.anoon-desktop_&]:flex lg:[.anoon-desktop_&]:flex-col lg:[.anoon-desktop_&]:justify-end ${DESKTOP_THREAD}`}
+      >
         {thread.map((b) => (
           <div key={b.id} className={`flex ${b.side === "out" ? "justify-end" : "justify-start"}`}>
             <div

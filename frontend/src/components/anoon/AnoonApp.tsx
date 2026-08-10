@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { ChevronLeftIcon } from "@/components/icons";
+import { ChatIcon, ChevronLeftIcon } from "@/components/icons";
 import { USE_TINODE } from "@/lib/tinode";
 import { useAnoonStore } from "@/store";
 import { hasPersistedSession } from "@/store/slices";
@@ -79,12 +79,68 @@ function ReportScreen() {
 }
 
 /**
+ * Is the app running on the desktop branch (≥1024px)? A JS media query, not a
+ * CSS one, because the two-pane «Чаты» below is a different TREE, not different
+ * styling — CSS can't mount a second component.
+ *
+ * It lives here, in AnoonApp, and the answer is handed to screens as a PROP:
+ * the showcase (`src/app/page.tsx`) renders those same screens inside fixed
+ * 390px frames on a wide monitor, where a media query of their own would answer
+ * "desktop" and give a phone frame two panes. See docs/DESKTOP-LAYOUT.md.
+ *
+ * Starts false so SSR and first paint are the phone tree; the effect corrects it
+ * before anything is interactive.
+ */
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setIsDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return isDesktop;
+}
+
+/**
  * «Чаты» (BUG-36) — active conversations only, the post-login landing
  * screen. Reuses AnoonFriends' rendering with `mode="chats"`; the "friends"
  * route below renders the same component with the (default) full-list mode.
+ *
+ * Desktop (#34): the same list becomes the left pane of a Telegram-style
+ * two-pane layout, with the conversation on the right. The selection is local
+ * state here rather than a route, which is what keeps the rail, the list and
+ * the thread all on screen at once — pushing "private-chat" would replace the
+ * whole work area. `key={selectedId}` remounts the thread per peer, so
+ * AnoonPrivateChat's own openChat/closeChat effect tears the previous
+ * subscription down before opening the next one.
  */
 function ChatsScreen() {
-  return <AnoonFriends mode="chats" />;
+  const desktop = useIsDesktop();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  if (!desktop) return <AnoonFriends mode="chats" />;
+
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="flex w-[22rem] min-h-0 shrink-0 flex-col border-r border-border">
+        <AnoonFriends mode="chats" selectedId={selectedId} onOpen={setSelectedId} />
+      </div>
+      <div className="min-h-0 min-w-0 flex-1">
+        {selectedId ? (
+          <AnoonPrivateChat key={selectedId} onBack={() => setSelectedId(null)} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+            <div className="flex size-14 items-center justify-center rounded-full bg-muted">
+              <ChatIcon className="size-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm text-muted-foreground">Выберите чат, чтобы начать переписку</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ConversationEndedScreen() {
@@ -177,18 +233,23 @@ const SIDE_NAV_TAB: Partial<Record<AnoonRoute, AnoonTab>> = {
   profile: "profile",
   settings: "profile",
   invite: "profile",
-  install: "profile",
+  // «Установить» is reached from the roulette header (AnoonHome), not from the
+  // profile — highlighting «Профиль» told the user they were somewhere they
+  // had not been.
+  install: "home",
 };
 
 /**
  * Desktop only: routes that get the FULL work area instead of the centred
- * `--anoon-content-max` column — for layouts that genuinely use the width
- * (e.g. a future list+conversation two-pane «Чаты»). Empty today: every screen
- * is still a phone layout, and clamping is the safer default. A screen cannot
- * opt out from the inside — the clamp is on its parent — so widening one is a
- * one-line entry here.
+ * `--anoon-content-max` column — for layouts that genuinely use the width.
+ * Every other screen is still a phone layout, where clamping is the safer
+ * default. A screen cannot opt out from the inside — the clamp is on its parent
+ * — so widening one is a one-line entry here.
+ *
+ * «Чаты» (#34) is the two-pane list+conversation layout: 60rem would leave the
+ * thread barely wider than the list beside it.
  */
-const WIDE_ROUTES: Partial<Record<AnoonRoute, true>> = {};
+const WIDE_ROUTES: Partial<Record<AnoonRoute, true>> = { chats: true };
 
 /**
  * Viewport-fit for the fixed 390x844 phone frame. Same technique as the
@@ -325,10 +386,21 @@ export default function AnoonApp() {
   // straight to Чаты. `booting` starts true ONLY when a stored session exists,
   // so first-time visitors go straight to onboarding with no splash flash.
   const restoreSession = useAnoonStore((s) => s.restoreSession);
-  const [booting, setBooting] = useState(() => USE_TINODE && hasPersistedSession());
+  // Starts true for EVERYONE, including the server render. Reading
+  // `hasPersistedSession()` in the initialiser instead — as this did — makes the
+  // first client render disagree with the server one for anybody who is logged
+  // in (the server has no localStorage, so it renders onboarding while the
+  // browser renders the splash), and React reports that as a hydration text
+  // mismatch: `Minified React error #418`, twice per load, on every reload.
+  // The splash is the one screen both sides can agree on before the browser has
+  // been consulted, so the decision moves into the effect below.
+  const [booting, setBooting] = useState(true);
   useEffect(() => {
-    if (!booting) return;
     let cancelled = false;
+    if (!USE_TINODE || !hasPersistedSession()) {
+      setBooting(false);
+      return;
+    }
     void (async () => {
       const ok = await restoreSession().catch(() => false);
       if (cancelled) return;

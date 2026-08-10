@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [
     "*.trycloudflare.com",
     "conclusion-bathrooms-prices-weblogs.trycloudflare.com",
+    // The stand addresses companion as 127.0.0.1 (localhost resolves to ::1
+    // first, where docker's IPv6 relay is dead), so the app gets opened there
+    // too. Without this entry `next dev` on 127.0.0.1 blocks its own chunks and
+    // the page never hydrates — the same dead-buttons symptom as the tunnel.
+    "127.0.0.1",
   ],
   // The dev indicator badge renders bottom-left, exactly on top of the phone
   // frame's bottom nav — it swallows clicks on «Чаты» and breaks the e2e suite

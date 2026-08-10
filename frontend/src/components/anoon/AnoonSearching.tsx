@@ -69,9 +69,12 @@ export default function AnoonSearching() {
   };
 
   return (
-    <div className="relative flex h-full w-full flex-col items-center justify-between bg-background text-foreground">
+    // `justify-between` on a 900px desktop parked «Отмена» at the very bottom,
+    // 250px below the text. There the two blocks are centred as one group
+    // instead; the phone keeps the spread-out layout.
+    <div className="relative flex h-full w-full flex-col items-center justify-between bg-background text-foreground lg:[.anoon-desktop_&]:justify-center">
       {/* Centered pulsing rings around avatar */}
-      <div className="flex flex-1 flex-col items-center justify-center px-6">
+      <div className="flex flex-1 flex-col items-center justify-center px-6 lg:[.anoon-desktop_&]:flex-none">
         <div className="relative flex size-56 items-center justify-center">
           {/* Concentric pinging rings (staggered) */}
           <span className="absolute size-56 rounded-full bg-primary/10 animate-ping [animation-duration:2.4s] motion-reduce:animate-none" />
@@ -97,7 +100,7 @@ export default function AnoonSearching() {
           whole viewport and a full-width button would be a 1400px bar.
           `lg:[.anoon-desktop_&]:` — both halves needed: `lg:` alone fires in the
           showcase's 390px frames, the class alone is on the root at every width. */}
-      <div className="w-full px-5 pb-8 lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:max-w-[22rem]">
+      <div className="w-full px-5 pb-8 lg:[.anoon-desktop_&]:mx-auto lg:[.anoon-desktop_&]:mt-10 lg:[.anoon-desktop_&]:max-w-[22rem]">
         <button
           type="button"
           onClick={cancel}

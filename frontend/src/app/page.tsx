@@ -11,6 +11,10 @@ import ContactsScreen from "@/components/screens/ContactsScreen";
 import ContactsSheetScreen from "@/components/screens/ContactsSheetScreen";
 import AccountScreen from "@/components/screens/AccountScreen";
 import DesktopScreen from "@/components/screens/DesktopScreen";
+import ChatInfoScreen from "@/components/screens/ChatInfoScreen";
+import NewChatScreen from "@/components/screens/NewChatScreen";
+import NotificationsSettingsScreen from "@/components/screens/NotificationsSettingsScreen";
+import SearchScreen from "@/components/screens/SearchScreen";
 // anoon — anonymous chat-roulette app screens
 import AnoonLogin from "@/components/anoon/AnoonLogin";
 import AnoonRegister from "@/components/anoon/AnoonRegister";
@@ -69,6 +73,13 @@ const PHONE_SCREENS = {
   Contacts: ContactsScreen,
   "Contacts sheet": ContactsSheetScreen,
   Account: AccountScreen,
+  // Legacy clone screens with no entry point in the app itself; kept per the
+  // owner's call not to delete `screens/*`, listed here so they are at least
+  // reachable for design review instead of being dead files.
+  "Chat info": ChatInfoScreen,
+  "New chat": NewChatScreen,
+  "Notif. settings": NotificationsSettingsScreen,
+  Search: SearchScreen,
   // anoon
   "a/Вход": AnoonLogin,
   "a/Регистр.": AnoonRegister,
@@ -116,6 +127,10 @@ const TABS: TabName[] = [
   "Contacts",
   "Contacts sheet",
   "Account",
+  "Chat info",
+  "New chat",
+  "Notif. settings",
+  "Search",
   "Desktop",
   "a/Вход",
   "a/Регистр.",
