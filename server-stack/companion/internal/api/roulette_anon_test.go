@@ -231,6 +231,71 @@ func TestMessagePushBodyNamesSenderByAliasWhileAnon(t *testing.T) {
 	}
 }
 
+// nextFrame pops one frame off a fake socket's send queue. Hub.Send writes to
+// the buffered channel synchronously, so a frame that isn't there by now never
+// left.
+func nextFrame(t *testing.T, c *wsClient) map[string]any {
+	t.Helper()
+	select {
+	case raw := <-c.send:
+		var f map[string]any
+		if err := json.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("unmarshal %s: %v", raw, err)
+		}
+		return f
+	default:
+		t.Fatal("nothing was delivered to the peer")
+		return nil
+	}
+}
+
+// TestSendPeerLeftFrame pins the frame every "the other side is gone" path now
+// goes through (#40). The bug it closes: only the person who pressed «Завершить»
+// saw the chat end, because the sole signal to the peer was the leaver's own
+// best-effort "peer:leaving" — nothing a closed tab or a dead network ever sends.
+//
+// Two things are pinned here. `reason` must be ABSENT on a deliberate leave, not
+// an empty string: the client tells the two cases apart by its presence. And the
+// leaver is named by their per-match alias, because a chat can end mid-anon and
+// the exit must not be what hands over a real #ID (H2).
+func TestSendPeerLeftFrame(t *testing.T) {
+	s := &Server{Hub: NewHub()}
+	peer := &wsClient{send: make(chan []byte, 4)}
+	s.Hub.add(bobID, peer)
+
+	m := anonMatch()
+	alice := store.User{ID: aliceID, HashID: aliceHash}
+
+	// handleEnd / relayPeerLeave: someone pressed the button.
+	s.sendPeerLeft(m.Peer(aliceID), m.Topic, peerFacingHandle(alice, m), "")
+	f := nextFrame(t, peer)
+	if f["type"] != peerLeftType || f["topic"] != m.Topic {
+		t.Fatalf("frame = %v, want a %s for %s", f, peerLeftType, m.Topic)
+	}
+	if f["from"] != aliceAlias {
+		t.Errorf("from = %v, want the per-match alias %q", f["from"], aliceAlias)
+	}
+	if _, ok := f["reason"]; ok {
+		t.Errorf("a deliberate leave must carry no reason: %v", f)
+	}
+
+	// endMatchOnDisconnect: the socket died and never came back.
+	s.sendPeerLeft(m.Peer(aliceID), m.Topic, peerFacingHandle(alice, m), "peer_disconnected")
+	if f := nextFrame(t, peer); f["reason"] != "peer_disconnected" {
+		t.Errorf("reason = %v, want peer_disconnected", f["reason"])
+	}
+
+	// A match the caller isn't a member of yields peer id 0 — that must not
+	// become a broadcast to user 0.
+	s.sendPeerLeft(m.Peer(999), m.Topic, aliceAlias, "")
+	s.sendPeerLeft(bobID, "", aliceAlias, "")
+	select {
+	case raw := <-peer.send:
+		t.Fatalf("an unresolved peer/topic still sent a frame: %s", raw)
+	default:
+	}
+}
+
 // --- authorization sweep: S2 / S5 -------------------------------------------
 
 // TestRelayLinkLivenessByMatchStatus pins the liveness rule the two authorization

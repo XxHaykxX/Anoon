@@ -389,6 +389,12 @@ export default function AnoonAnonChat() {
   const respondReveal = useAnoonStore((s) => s.respondReveal);
   const resyncAnonReveal = useAnoonStore((s) => s.resyncAnonReveal);
   const anonRevealAsksLeft = useAnoonStore((s) => s.anonRevealAsksLeft);
+  // The other side walked out (BUG-15 relay) or dropped off the socket long
+  // enough for companion to end the match. Until now this only injected a
+  // system line into the thread: the chat froze with no way forward, and the
+  // rating screen was shown ONLY to whoever tapped "Завершить разговор" (#40).
+  const anonPeerLeft = useAnoonStore((s) => s.anonPeerLeft);
+  const joinQueue = useAnoonStore((s) => s.joinQueue);
   // Both asks used and declined: the server refuses any further request in this
   // match, so disable before the tap rather than explaining after it.
   const revealAsksExhausted = real && anonRevealAsksLeft === 0;
@@ -408,6 +414,14 @@ export default function AnoonAnonChat() {
   const [editTarget, setEditTarget] = useState<{ seq: number; text: string } | null>(null);
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
   const [ended, setEnded] = useState(false);
+  // `ended` wins: it means THIS user pressed «Завершить разговор» and is looking
+  // at their own rating screen. The peer's departure lands moments later (they
+  // leave the dead chat too, and companion tells us), and without this guard the
+  // screen relabels itself under the user's finger — «Разговор завершён» becomes
+  // «Собеседник вышел из чата», «Пропустить» becomes «На главную». Caught by
+  // roulette-end.spec's third case, which reached for a button that had just
+  // been renamed.
+  const peerLeft = real && !!anonPeerLeft && !ended;
   // In mock mode the reveal card shows immediately; in real mode it appears only
   // when the peer actually asks (anonRevealState === "peer_requested").
   const [showReveal, setShowReveal] = useState(!USE_TINODE);
@@ -643,12 +657,31 @@ export default function AnoonAnonChat() {
   };
 
   // End → rating → rate (real) or just close the overlay (mock).
+  //
+  // rateMatch reads activeMatch synchronously before its first await, so it must
+  // be called BEFORE closeAnon() nulls the match — the order here is load-bearing.
   const finishRating = (rating?: number) => {
     setEnded(false);
     if (!real) return;
     if (rating) void rateMatch(rating);
     closeAnon();
     nav.go("home");
+  };
+
+  // "Новый собеседник" on the peer-left screen: leave this match and go straight
+  // back into the queue with the filters the user already picked, so the way out
+  // of an interrupted chat is one tap instead of a trip through Home.
+  //
+  // getLastPrefs is empty when this session never enqueued (a reload lands here
+  // with the match restored but the filters gone) — then Home is the honest
+  // destination, because searching with invented filters is worse than asking.
+  const startNextMatch = (rating?: number) => {
+    finishRating(rating);
+    if (!real) return;
+    const prefs = getCompanionClient().getLastPrefs();
+    if (!prefs) return;
+    void joinQueue(prefs).catch(() => nav.go("home"));
+    nav.push("searching");
   };
 
   // Tap "Раскрыть профиль": ask the peer to reveal (real) or preview the card.
@@ -1389,10 +1422,12 @@ export default function AnoonAnonChat() {
         <AttachMenu onSelect={sendAttachment} onClose={() => setAttachOpen(false)} />
       )}
 
-      {ended && (
+      {(ended || peerLeft) && (
         <AnoonConversationEnded
+          peerLeft={peerLeft}
           onSubmit={(rating) => finishRating(rating)}
-          onSkip={() => finishRating()}
+          onSkip={(rating) => finishRating(rating)}
+          onNext={(rating) => startNextMatch(rating)}
         />
       )}
     </div>

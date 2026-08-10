@@ -115,7 +115,13 @@ services:
       # e.g. "*.trycloudflare.com"). Unset in dev falls back to localhost +
       # *.trycloudflare.com (phone-testing tunnels); required in prod.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
-      ROULETTE_RECENT_WINDOW: ${ROULETTE_RECENT_WINDOW:-2h}
+      # Off by default, same as prod and as the code (d086980): on a small user
+      # base "don't re-match a recent partner" is indistinguishable from a broken
+      # roulette — both sides queue and nobody is paired. The dev stand kept 2h
+      # after prod was switched off, which meant e2e specs that end a match and
+      # re-queue could not be paired again for two hours. Set a duration here to
+      # get the exclusion back; blocks are unaffected either way.
+      ROULETTE_RECENT_WINDOW: ${ROULETTE_RECENT_WINDOW:-0}
       # Web Push (VAPID). Empty keys disable push entirely (no-op + one log
       # line) — generate a real P-256 keypair before relying on this in prod.
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}

@@ -373,7 +373,67 @@ func (s *Server) handleEnd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "store_failed", "could not record leave")
 		return
 	}
+	// Tell the peer from the server, not from the leaver's browser. The client
+	// does emit "peer:leaving" (see relayPeerLeave), but that frame races this
+	// request and never arrives at all if the tab is closing — which is why only
+	// the person who pressed «Завершить» saw the chat end. `m` is the row as read
+	// BEFORE EndMatch: it is the only handle on the pair we still have here, and
+	// peerFacingHandle needs its status and aliases to name the leaver.
+	s.sendPeerLeft(m.Peer(u.ID), req.Topic, peerFacingHandle(u, m), "")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// wsDisconnectGrace is how long a user's last socket may stay gone before their
+// anon chat counts as abandoned. A page reload, an app backgrounded on a phone
+// or a brief network blip all tear the socket down and get it back within
+// seconds; ending a live chat under someone who is merely reloading is a far
+// worse bug than the peer waiting this long to be told.
+const wsDisconnectGrace = 20 * time.Second
+
+// endMatchOnDisconnect closes out an anonymous chat whose member's last socket
+// died and did not come back, and tells the peer with reason "peer_disconnected".
+//
+// POST /roulette/end is the deliberate path and now notifies the peer itself;
+// this covers everything that never reaches it — a closed tab, a killed app, a
+// phone that lost signal. Without it the remaining user sits in a chat with
+// nobody on the other end and no signal that will ever arrive: anon topics carry
+// no P access bit, so Tinode delivers them no presence either.
+//
+// Only ANON matches are ended. A revealed pair are friends by then; their chat
+// is an ordinary conversation that outlives any socket, and hanging it up
+// because someone's phone slept would tear down a real relationship's room.
+//
+// Runs in its own goroutine off the socket teardown (see handleWS), so it takes
+// a fresh context — the request's is cancelled the moment that handler returns.
+func (s *Server) endMatchOnDisconnect(u store.User) {
+	if s.Hub.Online(u.ID) {
+		return // another tab or device is still connected: nothing was lost
+	}
+	time.Sleep(wsDisconnectGrace)
+	if s.Hub.Online(u.ID) {
+		return // they reconnected within the grace period
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	m, err := s.Store.CurrentMatchForUser(ctx, u.ID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNoMatch) {
+			log.Printf("roulette: disconnect match lookup for %d: %v", u.ID, err)
+		}
+		return // no open chat behind this socket: nothing to end
+	}
+	if !m.Anon() {
+		return
+	}
+	if err := s.Store.EndActiveMatchesForUser(ctx, u.ID); err != nil {
+		// Still tell the peer: the frozen chat in front of them is the symptom
+		// this exists to fix, and the stale row is cleared by whichever side
+		// enqueues next (handleEnqueue ends it on the way in).
+		log.Printf("roulette: end match on disconnect for %d: %v", u.ID, err)
+	}
+	s.sendPeerLeft(m.Peer(u.ID), m.Topic, peerFacingHandle(u, m), "peer_disconnected")
 }
 
 // handleRate stores a 1..5 rating for the caller's peer in the given chat.

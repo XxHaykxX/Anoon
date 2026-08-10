@@ -80,6 +80,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.Hub.remove(u.ID, client)
 		conn.Close()
+		// This socket is gone; if it does not come back, the anon chat behind it
+		// has to be closed out and the peer told — a client that was killed never
+		// sends "peer:leaving". Own goroutine: it sleeps through a grace period
+		// waiting for a reconnect and must not hold the handler open.
+		go s.endMatchOnDisconnect(u)
 	}()
 
 	// Inbound budget for this socket (#33): a size cap per frame and token

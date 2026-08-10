@@ -13,7 +13,19 @@ const RATINGS: { value: number; emoji: string; label: string }[] = [
 
 export interface AnoonConversationEndedProps {
   onSubmit?: (rating: number) => void;
-  onSkip?: () => void;
+  /** Leave without rating — or, in `peerLeft` mode, "На главную" with whatever was picked. */
+  onSkip?: (rating?: number) => void;
+  /**
+   * The chat ended from the OTHER side (they left, or their connection dropped
+   * and companion ended the match). The screen is then news rather than a
+   * confirmation: the user did not ask for it and has nothing to confirm, so
+   * the primary action is the one they actually want next — another match.
+   * Rating stays optional here; gating the way out on it would hold the exit
+   * hostage to a favour.
+   */
+  peerLeft?: boolean;
+  /** `peerLeft` only: straight back into the queue with the same filters. */
+  onNext?: (rating?: number) => void;
 }
 
 /**
@@ -23,6 +35,8 @@ export interface AnoonConversationEndedProps {
 export default function AnoonConversationEnded({
   onSubmit,
   onSkip,
+  peerLeft = false,
+  onNext,
 }: AnoonConversationEndedProps) {
   const [rating, setRating] = useState<number | null>(null);
 
@@ -40,7 +54,7 @@ export default function AnoonConversationEnded({
         <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-muted-foreground/30 lg:[.anoon-desktop_&]:hidden" />
 
         <h2 className="text-center text-lg font-bold text-foreground">
-          Разговор завершён
+          {peerLeft ? "Собеседник вышел из чата" : "Разговор завершён"}
         </h2>
         <p className="mt-1 text-center text-sm text-muted-foreground">
           Оцените собеседника — это поможет находить лучших людей.
@@ -76,18 +90,25 @@ export default function AnoonConversationEnded({
         <div className="mt-6 flex flex-col gap-2">
           <button
             type="button"
-            disabled={rating === null}
-            onClick={() => rating !== null && onSubmit?.(rating)}
+            disabled={!peerLeft && rating === null}
+            onClick={() =>
+              peerLeft
+                ? onNext?.(rating ?? undefined)
+                : rating !== null && onSubmit?.(rating)
+            }
             className={`w-full rounded-full bg-primary py-3 text-sm font-semibold text-primary-foreground ${PRESS_FX} disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100`}
           >
-            Отправить оценку
+            {peerLeft ? "Новый собеседник" : "Отправить оценку"}
           </button>
           <button
             type="button"
-            onClick={() => onSkip?.()}
+            // "Пропустить" means exactly that — a picked-then-skipped rating is
+            // not sent. In peerLeft mode the same slot is "На главную", which is
+            // an exit, not a refusal, so it carries the rating along.
+            onClick={() => onSkip?.(peerLeft ? rating ?? undefined : undefined)}
             className={`w-full rounded-full py-2.5 text-sm font-medium text-muted-foreground ${PRESS_FX}`}
           >
-            Пропустить
+            {peerLeft ? "На главную" : "Пропустить"}
           </button>
         </div>
       </div>

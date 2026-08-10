@@ -52,6 +52,31 @@ const peerLeavingType = "peer:leaving"
 // peerLeftType is the outbound frame companion sends to the remaining peer.
 const peerLeftType = "peer:left"
 
+// sendPeerLeft tells peerID that the other member is out of the chat. It is the
+// single outbound path for peerLeftType, whatever ended the chat: the leaver's
+// own "peer:leaving" frame, POST /roulette/end, or a socket that died with an
+// anon match still open (endMatchOnDisconnect). The frame:
+//
+//	{ "type":"peer:left", "topic":"grpXXX", "from":"~K7X2QM", "reason":"peer_disconnected" }
+//
+// reason is OMITTED when empty rather than sent as "": "they closed the chat"
+// and "they dropped off the network" are different things to say to the user,
+// and an absent key is the deliberate-leave case the client already handles.
+//
+// "from" is stamped by the caller via peerFacingHandle, never taken from a
+// client frame. Fire-and-forget: a peer with no live socket has no conns in the
+// Hub, so Send drops it there — they re-derive the chat state on reconnect.
+func (s *Server) sendPeerLeft(peerID int64, topic, from, reason string) {
+	if peerID == 0 || topic == "" {
+		return
+	}
+	frame := map[string]any{"type": peerLeftType, "topic": topic, "from": from}
+	if reason != "" {
+		frame["reason"] = reason
+	}
+	s.Hub.Send(peerID, frame)
+}
+
 // activityType is an ephemeral "peer is doing X" hint (BUG-18) — currently
 // kind:"media" ("отправляет медиа"). Typing itself rides Tinode's native kp
 // note; this covers signals Tinode has no frame for. Relayed to the peer,
@@ -155,16 +180,14 @@ func (s *Server) relayActivity(ctx context.Context, u store.User, frame map[stri
 //	{ "type":"peer:leaving", "topic":"grpXXX" }
 //
 // It resolves topic → match → the OTHER member (the sender must be a member, so
-// nobody can spoof a leave in a chat they aren't in) and, if that peer has a
-// live socket, sends them:
+// nobody can spoof a leave in a chat they aren't in) and hands them to
+// sendPeerLeft with no reason — this is the deliberate-leave case.
 //
-//	{ "type":"peer:left", "topic":"grpXXX", "from":"#00042" }
-//
-// "from" is stamped by companion (not trusted from the client). If the peer is
-// offline the signal is dropped — they'll re-derive the chat state on reconnect
-// and there's no live chat to inject into. Only grp (roulette/revealed) topics
-// resolve as matches; p2p friend chats aren't tracked here (same scope as the
-// msg:del relay).
+// Best-effort by nature: the frame only exists if the leaver's client was alive
+// enough to send it, so a closed tab or a dropped connection produces nothing
+// here. That half is covered server-side by handleEnd and endMatchOnDisconnect.
+// Only grp (roulette/revealed) topics resolve as matches; p2p friend chats
+// aren't tracked here (same scope as the msg:del relay).
 func (s *Server) relayPeerLeave(ctx context.Context, u store.User, frame map[string]any) {
 	topic, _ := frame["topic"].(string)
 	if topic == "" {
@@ -175,16 +198,7 @@ func (s *Server) relayPeerLeave(ctx context.Context, u store.User, frame map[str
 	if err != nil || !m.Has(u.ID) {
 		return // unknown topic, or sender isn't a member (anti-spoof)
 	}
-	peerID := m.Peer(u.ID)
-	if peerID == 0 || !s.Hub.Online(peerID) {
-		return // no peer, or peer offline: drop
-	}
-
-	s.Hub.Send(peerID, map[string]any{
-		"type":  peerLeftType,
-		"topic": topic,
-		"from":  peerFacingHandle(u, m),
-	})
+	s.sendPeerLeft(m.Peer(u.ID), topic, peerFacingHandle(u, m), "")
 }
 
 // relayMsgDel forwards a message-delete to the other member of the chat
