@@ -29,6 +29,8 @@
 #   rsync -av --exclude .env "server-stack/" root@SERVER_IP:/opt/anoon/server-stack/
 #   rsync -av --exclude node_modules --exclude .next --exclude ".env*" \
 #       "../frontend/" root@SERVER_IP:/opt/anoon/frontend/
+#   rsync -av --exclude node_modules --exclude .next --exclude ".env*" \
+#       "admin/" root@SERVER_IP:/opt/anoon/admin/
 # Then on the server:
 #   bash /opt/anoon/server-stack/deploy-hetzner.sh
 # =============================================================================
@@ -107,7 +109,7 @@ docker compose version >/dev/null 2>&1 || die "docker compose plugin missing"
 log "3/6 Code layout under $ANOON_ROOT"
 mkdir -p "$ANOON_ROOT"
 missing=0
-for d in server server-stack frontend; do
+for d in server server-stack frontend admin; do
   if [ ! -d "$ANOON_ROOT/$d" ]; then
     echo "  MISSING: $ANOON_ROOT/$d"
     missing=1
@@ -130,11 +132,20 @@ if [ ! -f "$STACK_DIR/.env" ]; then
   Created server-stack/.env from .env.prod.example.
 
   >>> STOP HERE. Edit /opt/anoon/server-stack/.env and fill in REAL values:
-      - DOMAIN, ACME_EMAIL, CORS_ALLOWED_ORIGINS
+      - DOMAIN, ADMIN_DOMAIN (own DNS A record!), ACME_EMAIL,
+        CORS_ALLOWED_ORIGINS
       - POSTGRES_PASSWORD, API_KEY_SALT (+ matching TINODE_API_KEY via keygen),
         AUTH_TOKEN_KEY, UID_ENCRYPTION_KEY
       - COMPANION_ROOT_SECRET, COMPANION_ADMIN_SECRET, VAPID keys
-      (generation commands are in the comments of the file itself)
+      - ADMIN_SESSION_SECRET *and* COMPANION_ADMIN_TOKEN_SECRET — the SAME
+        value on both (attested admin mode; empty = legacy header trust)
+      - SUPABASE_URL / SUPABASE_SECRET_KEY (admin operator accounts)
+      - ADMIN_BASIC_AUTH_HASH:
+          docker run --rm caddy:2-alpine caddy hash-password --plaintext '...'
+
+  Fastest path — generate a full fresh set and paste it in:
+      bash /opt/anoon/server-stack/rotate-secrets.sh generate
+  (generation commands are also in the comments of .env itself)
 
   Then re-run this script — it will refuse to deploy while any CHANGE_ME
   placeholder remains.
@@ -165,16 +176,19 @@ $COMPOSE ps
 # -----------------------------------------------------------------------------
 log "6/6 Post-deploy checklist"
 DOMAIN_VAL="$(grep -E '^DOMAIN=' "$STACK_DIR/.env" | cut -d= -f2-)"
+ADMIN_DOMAIN_VAL="$(grep -E '^ADMIN_DOMAIN=' "$STACK_DIR/.env" | cut -d= -f2-)"
 SERVER_IP="$(curl -fsS -4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')"
 cat <<EOF
 
-  1. DNS: A record  ${DOMAIN_VAL:-<DOMAIN>}  ->  ${SERVER_IP}
-     (if not done yet — Caddy retries certificate issuance automatically once
-      DNS resolves; watch it with: $COMPOSE logs -f caddy)
+  1. DNS: A records  ${DOMAIN_VAL:-<DOMAIN>}  and  ${ADMIN_DOMAIN_VAL:-<ADMIN_DOMAIN>}  ->  ${SERVER_IP}
+     (both are needed — Caddy issues a certificate per hostname. If not done
+      yet, it retries automatically once DNS resolves; watch it with:
+      $COMPOSE logs -f caddy)
 
   2. Health checks:
        curl -sSf https://${DOMAIN_VAL:-<DOMAIN>}/api/health        # companion
        curl -sSI https://${DOMAIN_VAL:-<DOMAIN>}/                  # frontend
+       curl -sSI https://${ADMIN_DOMAIN_VAL:-<ADMIN_DOMAIN>}/      # admin -> expect 401
        $COMPOSE ps                                # all services healthy/up
 
   3. ROOT bot (one-time, after first start):
@@ -195,12 +209,21 @@ cat <<EOF
           add  turn:${DOMAIN_VAL:-<DOMAIN>}:3478  + TURN_USER/TURN_PASS from .env,
           Gather candidates → a row of type "relay" must appear.
 
-  5. Backups (do this BEFORE inviting users):
+  5. Admin panel (one-time): create the first operator (argon2id hash stored,
+     never the plaintext) — see DEPLOY-PROD.md "Админка: бутстрап":
+       $COMPOSE exec -e ADMIN_EMAIL='you@example.com' \\
+         -e ADMIN_PASSWORD='<strong>' -e ADMIN_ROLE=super_admin \\
+         admin node scripts/create-admin.mjs
+     Then log in at https://${ADMIN_DOMAIN_VAL:-<ADMIN_DOMAIN>}/ (basic-auth first,
+     then the panel's own login) and open the reports list — it loading means
+     companion accepted the attested operator token.
+
+  6. Backups (do this BEFORE inviting users):
        - Hetzner console: enable server Backups (+20%)
        - nightly pg_dump of both DBs + anoon_uploads to Object Storage
          (see DEPLOY-PROD.md §Backups)
 
-  6. Uptime monitoring: point UptimeRobot/BetterStack at
+  7. Uptime monitoring: point UptimeRobot/BetterStack at
        https://${DOMAIN_VAL:-<DOMAIN>}/api/health
 
   Update later:   cd $STACK_DIR && docker compose -f compose.prod.yml up -d --build

@@ -4,7 +4,9 @@
 # Mounted read-only into the caddy service by compose.prod.yml. {$VAR} values
 # come from the container environment (DOMAIN, ACME_EMAIL — set in prod .env).
 #
-# One public origin, three backends (same routing model as Caddyfile.phone):
+# The user-facing app is ONE public origin with three backends (same routing
+# model as Caddyfile.phone); the admin panel gets a second hostname of its own
+# ({$ADMIN_DOMAIN}, at the bottom of this file):
 #   /api/auth/rest*  → 404     server-to-server only, never exposed
 #   /api/*  → companion:8080   REST + /ws event socket ( /api prefix stripped )
 #   /v0/*   → tinode:6060      Tinode WS /v0/channels + media /v0/file/*
@@ -79,6 +81,44 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# =============================================================================
+# Admin panel — its own hostname, two locks in front of it.
+#
+# Lock 1 (here): HTTP basic auth. Cheap, stops every drive-by scanner and any
+# bug in the panel's own login flow from ever being reachable. The hash is a
+# bcrypt digest produced by `docker run --rm caddy:2-alpine caddy hash-password`
+# and passed in via ADMIN_BASIC_AUTH_HASH — the plaintext never lands in a file.
+# Lock 2 (the app): the panel's own argon2id login + httpOnly session cookie,
+# whose signing key is also what makes the companion trust operator identity
+# (attested mode). See compose.prod.yml, service `admin`.
+#
+# ADMIN_DOMAIN needs its own DNS A record before first start, same as DOMAIN,
+# or Let's Encrypt cannot issue for it and Caddy will retry in a loop.
+#
+# ponytail: no IP allowlist. Two locks are enough for a panel behind a
+# non-guessable hostname; add `@office remote_ip a.b.c.d/32` + `abort` here the
+# day operators work from fixed addresses.
+# =============================================================================
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+
+	basic_auth {
+		{$ADMIN_BASIC_AUTH_USER} {$ADMIN_BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy admin:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The panel is never legitimately framed, and never wants to be indexed.
+		X-Frame-Options "DENY"
+		X-Robots-Tag "noindex, nofollow"
 		-Server
 	}
 }

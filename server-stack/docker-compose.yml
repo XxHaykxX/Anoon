@@ -112,6 +112,15 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@anoon.app}
       # Temp-ban expiry sweep interval; <=0 disables the background job.
       BAN_SWEEP_INTERVAL: ${BAN_SWEEP_INTERVAL:-60s}
+      # Payments (#14). Unset BILLING_PROVIDER = billing is off entirely and the
+      # /billing/* routes do not exist — the default, since no provider has been
+      # signed yet (docs/PAYMENTS-PLAN.md §5-6). "fake" is the local sandbox and
+      # is refused outright when ENV=prod. Real provider keys land here as their
+      # own vars; none of them ever go in the repo.
+      BILLING_PROVIDER: ${BILLING_PROVIDER:-}
+      BILLING_FAKE_SECRET: ${BILLING_FAKE_SECRET:-}
+      BILLING_BASE_URL: ${BILLING_BASE_URL:-http://127.0.0.1:6062}
+      BILLING_ORDER_TTL: ${BILLING_ORDER_TTL:-30m}
     ports:
       - "6062:8080"
     restart: unless-stopped

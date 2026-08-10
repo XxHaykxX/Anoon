@@ -8,8 +8,10 @@ Architecture and cost rationale: `../DEPLOY-PLAN.md`. This file is the
 
 | File | Purpose |
 |---|---|
-| `compose.prod.yml` | Prod compose: caddy + frontend + companion + tinode + postgres + coturn. Public ports: caddy 80/443, coturn 3478/5349/49160-49200. |
-| `Caddyfile.prod` | Single-origin reverse proxy + automatic Let's Encrypt: `/api/*`→companion, `/v0/*`→tinode, else→frontend. |
+| `compose.prod.yml` | Prod compose: caddy + frontend + admin + companion + tinode + postgres + coturn. Public ports: caddy 80/443, coturn 3478/5349/49160-49200. Per-service memory/CPU/pids ceilings. |
+| `Caddyfile.prod` | Single-origin reverse proxy + automatic Let's Encrypt: `/api/*`→companion, `/v0/*`→tinode, else→frontend. Plus a separate `$ADMIN_DOMAIN` host behind basic-auth → admin. |
+| `rotate-secrets.sh` | Secret generation (`generate`), rotation order + what to restart (`plan`), generator self-check (`selfcheck`). |
+| `../admin/Dockerfile.prod` | Admin panel prod image (`next start`, non-root, `NEXT_PUBLIC_DATA_MODE=api` baked in). |
 | `coturn/turnserver.conf` | TURN relay config (WebRTC calls behind NAT): auth, quotas, relay range, denied internal peer ranges. |
 | `.env.prod.example` | Template for the server's `.env` — every var documented, placeholders only. |
 | `deploy-hetzner.sh` | Bootstrap script for a fresh Ubuntu 24.04 VPS (docker, ufw, fail2ban, first `up -d --build`). |
@@ -83,19 +85,100 @@ docker compose -f compose.prod.yml up -d --build   # rebuilds/restarts only what
 - Changed `TINODE_API_KEY`/salt → the **frontend image must be rebuilt** (the
   key is baked in at build time): `docker compose -f compose.prod.yml build frontend`.
 
-## Rollback
+## Чеклист выката
 
-Images are built locally, so keep the previous code tree until the new one is
-verified. Two options:
+Каждый шаг — с проверкой. Не переходи к следующему, пока проверка не прошла.
+Все команды выполняются в `/opt/anoon/server-stack`.
 
-1. **Code rollback:** rsync the previous tree back, `up -d --build` again.
-2. **Image tag rollback (better, once images are pushed to GHCR):** retag
-   the compose `image:` entries to the previous tag and `up -d` — no rebuild.
-   (Publishing `anoon-*:v<N>` tags to a private GHCR is the planned next step —
-   see DEPLOY-PLAN §7.)
+**Перед выкатом**
 
-Database: schema rollbacks are not automated — restore from the nightly dump
-if a migration must be undone. **Always `pg_dump` before an upgrade.**
+1. `docker compose -f compose.prod.yml config >/dev/null` — compose валиден
+   (проверка: команда молча вернула 0).
+2. `pg_dump` обеих БД + том медиа — три команды из раздела «Backups» ниже.
+   Проверка: файлы существуют и не нулевого размера
+   (`ls -l /root/backup/*$(date +%F)*`).
+3. Записать текущее состояние для отката:
+   `docker compose -f compose.prod.yml images > /root/rollback-$(date +%F-%H%M).txt`
+   и `git -C /opt/anoon rev-parse HEAD` (если код под git).
+   Проверка: файл непустой, в нём image ID всех семи сервисов.
+4. `cp .env .env.bak-$(date +%F-%H%M)` — снимок конфигурации.
+
+**Выкат**
+
+5. Синхронизировать код с рабочей станции (`rsync`, шаг 0 из «First deploy»).
+   Проверка: `git status` / время файлов на сервере обновилось.
+6. `docker compose -f compose.prod.yml build` — собрать образы ДО остановки
+   чего-либо. Проверка: сборка завершилась без ошибок; старые контейнеры всё
+   ещё работают и сайт открывается.
+7. `docker compose -f compose.prod.yml up -d` — пересоздаются только
+   изменившиеся сервисы. Проверка: `docker compose -f compose.prod.yml ps` —
+   все `running`, у db и caddy `healthy`.
+
+**Проверки после выката (все обязательны)**
+
+8. `curl -fsS https://<DOMAIN>/api/health` → 200.
+9. `curl -fsS -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/` → 200
+   (фронт отдаётся).
+10. `curl -fsS -o /dev/null -w '%{http_code}\n' https://<ADMIN_DOMAIN>/` → 401
+    (basic-auth стоит), и с `-u admin:<пароль>` → 200.
+11. `curl -fsS -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/api/auth/rest`
+    → 404 (внутренний хук наружу не торчит).
+12. Логи на ошибки старта:
+    `docker compose -f compose.prod.yml logs --since 5m companion tinode admin | grep -iE 'panic|fatal|refus'`
+    — пусто.
+13. Живой прогон в браузере: вход → рулетка → сообщение доходит → медиа
+    открывается. Вход в админку и открытие списка жалоб.
+14. Если менялась схема БД: `docker compose -f compose.prod.yml logs companion
+    | grep -i migrat` — миграции применились без ошибок.
+
+## Чеклист отката
+
+Откат — это решение, которое принимают за минуту, а не за полчаса
+диагностики. Критерий: любая из проверок 8–13 не прошла и не чинится одной
+очевидной правкой `.env`.
+
+**A. Откат кода/образов (данные не трогаем) — основной путь**
+
+1. `docker compose -f compose.prod.yml down` — остановить стек.
+   Проверка: `docker compose -f compose.prod.yml ps` пуст.
+2. Вернуть предыдущее дерево кода: `rsync` прошлой версии с рабочей станции,
+   либо `git -C /opt/anoon checkout <SHA из шага 3>`.
+   Проверка: версия файлов совпадает с записанной.
+3. Вернуть конфигурацию: `cp .env.bak-<метка> .env`.
+   Проверка: `diff` показывает ожидаемые различия.
+4. `docker compose -f compose.prod.yml up -d --build`.
+   Проверка: заново пройти шаги 8–13.
+
+Если образы уже публикуются в GHCR (планируемый шаг, DEPLOY-PLAN §7), откат
+короче и надёжнее: подставить прошлый тег в `image:` и `up -d` без пересборки.
+Теги не перезаписывать никогда.
+
+**B. Откат БД — только если миграция испортила данные**
+
+Автоматического отката схемы нет. Порядок:
+
+1. `docker compose -f compose.prod.yml stop tinode companion admin frontend`
+   — оставить только `db`. Проверка: `ps` показывает работающим только db
+   (и caddy, если хочешь отдавать страницу-заглушку).
+2. `docker exec -i anoon-prod-db psql -U postgres -c 'DROP DATABASE anoon;'`
+   и `CREATE DATABASE anoon;` — затем
+   `docker exec -i anoon-prod-db pg_restore -U postgres -d anoon < anoon-<дата>.dump`.
+   Проверка: `psql -U postgres -d anoon -c '\dt'` показывает таблицы.
+   То же для `tinode`, если испорчена и она.
+3. Откатить код по пути A (иначе новая версия снова накатит ту же миграцию).
+4. Поднять стек, пройти проверки 8–13.
+
+**Чего откат НЕ вернёт**
+
+- `UID_ENCRYPTION_KEY`: если его меняли — идентификаторы пользователей уже
+  сломаны, восстановление только из дампа ВМЕСТЕ со старым ключом.
+- Медиа: тома `anoon_uploads` дампы БД не покрывают, у них отдельный бэкап.
+- Сертификаты: не удаляй том `caddy_data` при откате, иначе Let's Encrypt
+  может упереться в rate limit при перевыпуске.
+
+**Полный откат машины** — снапшот Hetzner (если включены Backups): восстанавливает
+всё вместе с данными, но теряет всё, что произошло после снимка. Это последний
+рубеж, а не первый.
 
 ## Backups (do before inviting users)
 
@@ -154,10 +237,52 @@ can only talk through a relay. Without TURN those calls **never establish**.
   `docker compose -f compose.prod.yml logs coturn` (look for `401` = wrong
   creds, or allocation errors = relay range/NAT problems).
 
+## Админка: бутстрап и attested-режим
+
+Панель ходит в companion не как «доверенный клиент с общим секретом», а с
+подписанным токеном оператора. Это работает, только если два ключа совпадают
+байт в байт:
+
+```
+ADMIN_SESSION_SECRET          (сервис admin — подписывает сессию оператора)
+COMPANION_ADMIN_TOKEN_SECRET  (companion — проверяет X-Admin-Token)
+```
+
+`./rotate-secrets.sh generate ADMIN_SESSION_SECRET` выдаёт обе строки сразу —
+именно поэтому парой. Если ключ пуст, companion откатывается в legacy-режим,
+где роль оператора приходит обычным заголовком `X-Admin-Role`: любой, у кого
+есть `COMPANION_ADMIN_SECRET`, объявляет себя `super_admin`, а авторство в
+журнале модерации становится справочным. На стенде так и было. В проде — нет.
+
+Шаги (один раз, после первого `up -d`):
+
+1. Создать проект Supabase (учётки операторов живут там), взять URL и
+   secret-ключ → в `.env`.
+2. Завести первого оператора — пароль хешируется argon2id, в открытом виде
+   нигде не сохраняется:
+   ```bash
+   docker compose -f compose.prod.yml exec -e ADMIN_EMAIL='you@example.com' \
+     -e ADMIN_PASSWORD='<надёжный пароль>' -e ADMIN_ROLE=super_admin \
+     admin node scripts/create-admin.mjs
+   ```
+   Проверка: скрипт напечатал созданного оператора; `history -d` или
+   `unset HISTFILE`, чтобы пароль не остался в истории shell.
+3. Задать basic-auth Caddy (второй замок):
+   ```bash
+   docker run --rm caddy:2-alpine caddy hash-password --plaintext '<пароль>'
+   ```
+   → `ADMIN_BASIC_AUTH_HASH` в `.env`, затем
+   `docker compose -f compose.prod.yml up -d caddy`.
+   Проверка: `https://<ADMIN_DOMAIN>/` без креды → 401, с кредами → форма входа.
+4. Войти в панель, убедиться, что список жалоб грузится (значит, companion
+   принял токен оператора, а не отверг с 401).
+
 ## Not covered here (known gaps)
 
-- **Admin panel container** (`admin.<domain>` + basic-auth) — deferred; add as
-  a fourth backend in `Caddyfile.prod` + a service in compose when it ships.
+- **Companion healthcheck** — образ distroless, внутри нет shell/curl, поэтому
+  `healthcheck:` в compose задать нечем. Живость закрыта внешним монитором на
+  `https://<DOMAIN>/api/health` (см. DEPLOY-PLAN §7). Понадобится настоящий
+  healthcheck — добавить в companion флаг self-probe и вызывать сам бинарник.
 - **GHCR image publishing / CI** — currently images build on the server itself.
 - **S3 media storage** — start on the `fs` handler + volume; switch
   `MEDIA_HANDLER=s3` when the disk passes ~50% (see DEPLOY-PLAN §4).

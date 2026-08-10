@@ -34,6 +34,17 @@ x-logging: &default-logging
     max-size: "20m"
     max-file: "5"
 
+# Resource ceilings — sized for a Hetzner CX32 (4 vCPU / 8 GB). These are
+# `mem_limit`/`cpus`, NOT `deploy.resources`: the deploy key is a Swarm
+# construct that plain `docker compose up` ignores on several versions, so a
+# limit written there would silently not exist. The sum of the limits below is
+# ~5.9 GB, leaving ~2 GB for the host (kernel, docker, backup cron, ssh).
+#
+# The point is blast-radius containment, not tuning: one leaking container
+# (a runaway Tinode session table, a Next.js memory leak) must get OOM-killed
+# and restarted by its own restart policy instead of taking the whole VPS down
+# with it. pids_limit does the same for fork bombs / thread leaks.
+
 services:
   # ---------------------------------------------------------------------------
   # Postgres — holds BOTH databases: `tinode` (created by Tinode's init-db) and
@@ -63,6 +74,9 @@ services:
       retries: 12
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 512
 
   # ---------------------------------------------------------------------------
   # anoon engine — built FROM SOURCE (../server, incl. the anon patch).
@@ -111,6 +125,9 @@ services:
     # NO ports: — Caddy reaches tinode:6060 by service name; gRPC stays internal.
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 1280m
+    cpus: 2.0
+    pids_limit: 1024
 
   # ---------------------------------------------------------------------------
   # Companion — anoon business logic (Go). Auth, roulette, friends, moderation,
@@ -175,6 +192,9 @@ services:
     # NO ports: — Caddy reaches companion:8080 by service name.
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 640m
+    cpus: 1.5
+    pids_limit: 512
 
   # ---------------------------------------------------------------------------
   # Frontend — frontend (Next.js standalone). NEXT_PUBLIC_* values are BAKED
@@ -205,6 +225,62 @@ services:
     # NO ports: — Caddy reaches frontend:3000 by service name.
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 640m
+    cpus: 1.0
+    pids_limit: 256
+
+  # ---------------------------------------------------------------------------
+  # Admin panel (Next.js). Served on its OWN hostname ($ADMIN_DOMAIN), not a
+  # path of the app origin — separate cookie scope, separate basic-auth lock in
+  # Caddy, and no chance of an admin route being reachable from the user app.
+  #
+  # ATTESTED MODE (the whole reason this runs here): the panel signs operator
+  # sessions with ADMIN_SESSION_SECRET, and the companion verifies the
+  # X-Admin-Token it forwards with the SAME key (COMPANION_ADMIN_TOKEN_SECRET).
+  # Both env vars must hold one identical value — see .env.prod.example. With
+  # the key absent, companion falls back to legacy header mode, where anyone
+  # holding COMPANION_ADMIN_SECRET can simply claim super_admin. Acceptable on
+  # a local stand, not in production.
+  #
+  # Operator accounts live in Supabase (external, owner-provisioned), with
+  # argon2id password hashes written by admin/scripts/create-admin.mjs.
+  # ---------------------------------------------------------------------------
+  admin:
+    build:
+      # Server layout: /opt/anoon/admin (sibling of server-stack).
+      context: ${ADMIN_DIR:-../admin}
+      dockerfile: Dockerfile.prod
+      args:
+        # Real backend, never fixtures — the image build refuses anything else.
+        NEXT_PUBLIC_DATA_MODE: "api"
+    image: anoon-admin:prod
+    container_name: anoon-prod-admin
+    depends_on:
+      companion:
+        condition: service_started
+    environment:
+      # Read the panel's data from the companion, not the legacy Supabase path.
+      ADMIN_BACKEND: "companion"
+      # Internal docker DNS — the admin API is never reached over the internet.
+      COMPANION_ADMIN_URL: "http://companion:8080"
+      COMPANION_ADMIN_SECRET: ${COMPANION_ADMIN_SECRET}
+      # MUST equal COMPANION_ADMIN_TOKEN_SECRET above (attested operator ids).
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
+      # Operator accounts + audit rows (external Supabase project).
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      # Legacy broadcast path (admin → web /api/push/broadcast). Only used when
+      # ADMIN_BACKEND is not "companion"; kept so the route does not 500 if the
+      # backend is ever flipped back. Empty is fine.
+      ADMIN_BROADCAST_SECRET: ${ADMIN_BROADCAST_SECRET:-}
+      WEB_URL: ${WEB_URL:-https://${DOMAIN}}
+      NODE_ENV: "production"
+    # NO ports: — Caddy reaches admin:3000 by service name.
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 640m
+    cpus: 1.0
+    pids_limit: 256
 
   # ---------------------------------------------------------------------------
   # Caddy — the single public entrypoint. Terminates TLS (automatic Let's
@@ -222,19 +298,35 @@ services:
       - frontend
       - companion
       - tinode
+      - admin
     ports:
       - "80:80"       # ACME HTTP-01 challenge + redirect to HTTPS
       - "443:443"     # HTTPS
       - "443:443/udp" # HTTP/3 (QUIC)
     environment:
       DOMAIN: ${DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
+      # bcrypt hash for the admin-host basic-auth gate (`caddy hash-password`).
+      ADMIN_BASIC_AUTH_USER: ${ADMIN_BASIC_AUTH_USER:-admin}
+      ADMIN_BASIC_AUTH_HASH: ${ADMIN_BASIC_AUTH_HASH}
     volumes:
       - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    healthcheck:
+      # Caddy's admin API on :2019 answers only inside the container; a healthy
+      # response means the config loaded and the process is serving.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 256
 
   # ---------------------------------------------------------------------------
   # coturn — TURN/STUN relay for WebRTC calls (W3-3). Roughly 10–20% of peer
@@ -281,6 +373,9 @@ services:
       - --pkey=/certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${DOMAIN}/${DOMAIN}.key
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
 
 volumes:
   anoon_pgdata:   # Postgres data (tinode + anoon databases)
