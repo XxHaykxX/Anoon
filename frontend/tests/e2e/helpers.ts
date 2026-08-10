@@ -105,12 +105,12 @@ export async function switchTab(
  */
 export async function signInMock(page: Page): Promise<void> {
   await gotoAnoon(page);
-  // The bottom "Войти" link on onboarding (exact, so it never matches
-  // "Войти через Google" on the next screen).
-  await page.getByRole("button", { name: "Войти", exact: true }).click();
+  // «Пропустить» goes straight to login. The onboarding CTA also lands there
+  // now, but skipping is one click instead of walking the carousel.
+  await page.getByRole("button", { name: "Пропустить" }).click();
 
-  await page.getByPlaceholder("you@example.com").fill("tester@anoon.chat");
-  await page.getByPlaceholder("Ваш пароль").fill("secret123");
+  await page.getByPlaceholder("Почта или ник").fill("tester@anoon.chat");
+  await page.getByPlaceholder("Пароль").fill("secret123");
   await page.getByRole("button", { name: "Войти", exact: true }).click();
 
   await expectChats(page);

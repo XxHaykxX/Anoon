@@ -11,10 +11,13 @@ test("onboarding → register → mock onboarding chain → home", async ({ page
   const guard = attachErrorGuard(page);
   await gotoAnoon(page);
 
-  // Advance the carousel to the last slide, then «Начать» → register.
-  // Jumping via the last progress dot is the most robust way to reach it.
+  // Advance the carousel to the last slide, then «Начать» → LOGIN. Signing in
+  // is the commoner intent after onboarding, and «Войти через Google» skips the
+  // form entirely; registration is one link below. Jumping via the last
+  // progress dot is the most robust way to reach the last slide.
   await page.getByRole("button", { name: "Слайд 4" }).click();
   await page.getByRole("button", { name: "Начать" }).click();
+  await page.getByRole("button", { name: "Зарегистрироваться" }).click();
 
   await expect(page.getByRole("heading", { name: "Регистрация" })).toBeVisible();
 
@@ -60,6 +63,7 @@ test("register submit объясняет, чего не хватает, и не 
   await gotoAnoon(page);
   await page.getByRole("button", { name: "Слайд 4" }).click();
   await page.getByRole("button", { name: "Начать" }).click();
+  await page.getByRole("button", { name: "Зарегистрироваться" }).click();
 
   const submit = page.getByRole("button", { name: "Зарегистрироваться" });
   const nextScreen = page.getByRole("heading", { name: "Подтвердите почту" });

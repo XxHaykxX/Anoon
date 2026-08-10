@@ -52,10 +52,10 @@ test.describe("smoke", () => {
 
     // Onboarding → Login → Forgot-password + Register entry points render.
     await gotoAnoon(page);
-    await page.getByRole("button", { name: "Войти", exact: true }).click();
-    await expect(page.getByText("Анонимный чат-рулетка", { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: "Пропустить" }).click();
+    await expect(page.getByRole("heading", { name: "Добро пожаловать в Anoon" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Забыл пароль?" }).click();
+    await page.getByRole("button", { name: "Забыли пароль?" }).click();
     await expect(page.getByRole("heading", { name: "Восстановление пароля" })).toBeVisible();
 
     // Fresh boot → sign in (mock) to reach the authed tabs (avoids fragile

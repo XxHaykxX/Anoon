@@ -63,9 +63,11 @@ export const ACCOUNTS = {
 export async function loginReal(page: Page, who: keyof typeof ACCOUNTS): Promise<void> {
   const acc = ACCOUNTS[who];
   await gotoAnoon(page);
-  await page.getByRole("button", { name: "Войти", exact: true }).click();
-  await page.getByPlaceholder("you@example.com").fill(acc.login);
-  await page.getByPlaceholder("Ваш пароль").fill(acc.password);
+  // «Пропустить» is the shortest path to the login screen; the onboarding CTA
+  // reaches the same place after the carousel.
+  await page.getByRole("button", { name: "Пропустить" }).click();
+  await page.getByPlaceholder("Почта или ник").fill(acc.login);
+  await page.getByPlaceholder("Пароль").fill(acc.password);
   const submit = page.getByRole("button", { name: "Войти", exact: true });
   await expect(submit).toBeEnabled();
   await submit.click();

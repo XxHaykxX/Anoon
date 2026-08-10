@@ -49,7 +49,11 @@ export default function AnoonOnboarding() {
 
   const handleNext = () => {
     if (isLastSlide) {
-      nav.push("auth-register");
+      // Вход, не регистрация: заводить аккаунт — это одна из двух вещей, которые
+      // человек может хотеть после онбординга, и меньшая по частоте, а «Войти
+      // через Google» вообще снимает вопрос анкеты. Форма входа сама уводит на
+      // регистрацию по email ссылкой внизу, так что путь для новых не длиннее.
+      nav.push("auth-login");
       return;
     }
     goToSlide(activeSlide + 1);
@@ -127,14 +131,17 @@ export default function AnoonOnboarding() {
         >
           {isLastSlide ? "Начать" : "Далее"}
         </button>
+        {/* Зеркало кнопки выше: раз «Начать» ведёт на вход, здесь стоит второй
+            путь, а не тот же самый — «Уже есть аккаунт? Войти» после кнопки,
+            которая и так открывает вход, отправляла бы в одно и то же место. */}
         <p className="text-sm text-muted-foreground">
-          Уже есть аккаунт?{" "}
+          Нет аккаунта?{" "}
           <button
             type="button"
-            onClick={() => nav.push("auth-login")}
+            onClick={() => nav.push("auth-register")}
             className="cursor-pointer font-medium text-primary transition-transform active:scale-95"
           >
-            Войти
+            Зарегистрироваться
           </button>
         </p>
       </div>
