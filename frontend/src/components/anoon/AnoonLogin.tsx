@@ -238,12 +238,11 @@ export default function AnoonLogin() {
             NEXT_PUBLIC_GOOGLE_CLIENT_ID; Apple и Facebook не заведены и на
             бэкенде, поэтому честно выключены — нажимаемая кнопка, которая
             ничего не делает, хуже видимо недоступной. */}
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex items-center justify-center gap-4">
           {GOOGLE_ENABLED ? (
             <GoogleSignInButton
               onCredential={(t) => void handleGoogle(t)}
               disabled={googleBusy || submitting}
-              mark={<GoogleMark />}
             />
           ) : (
             <button
@@ -252,7 +251,7 @@ export default function AnoonLogin() {
               aria-disabled="true"
               aria-label="Войти через Google — скоро"
               title="Скоро"
-              className="grid flex-1 cursor-not-allowed place-items-center rounded-xl border border-border py-3 opacity-50"
+              className="grid size-12 cursor-not-allowed place-items-center rounded-full border border-border opacity-50"
             >
               <GoogleMark />
             </button>
@@ -268,7 +267,7 @@ export default function AnoonLogin() {
               aria-disabled="true"
               aria-label={`${p.label} — скоро`}
               title="Скоро"
-              className="grid flex-1 cursor-not-allowed place-items-center rounded-xl border border-border py-3 opacity-50"
+              className="grid size-12 cursor-not-allowed place-items-center rounded-full border border-border opacity-50"
             >
               {p.mark}
             </button>

@@ -3,13 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Google Identity Services, wired to the icon-only slot in the login screen's
- * provider row.
+ * Google Identity Services, rendered as Google's own button in the login
+ * screen's provider row.
  *
- * Google's own script renders the button. That is not a styling preference: the
- * ID token we need is only handed to a callback registered by GIS, and Google
- * requires its own button for that flow. `type: "icon"` gives a square mark
- * that fits the existing row, so the design survives.
+ * Google's script draws the button, inside its own iframe, and that is not a
+ * styling preference: the ID token is only handed to a callback GIS registers,
+ * and Google requires their button for that flow.
+ *
+ * It is shown at its natural size rather than stretched. The first version laid
+ * an invisible, 3x-scaled copy over our own glyph so the row would read as three
+ * identical buttons — but a transform only stretches the hit area on paper: the
+ * iframe stays 40px, the container clips whatever overflows, and a tap landing
+ * outside the intersection does nothing at all. Reported as "often does not
+ * react", which is exactly what a partly-live target feels like. A circular
+ * Google button next to two circular placeholders keeps the row honest and every
+ * pixel of it clickable.
  *
  * Env: NEXT_PUBLIC_GOOGLE_CLIENT_ID. Unset → this component renders nothing and
  * the caller keeps showing its disabled placeholder; a build with no client id
@@ -71,13 +79,10 @@ function loadGsi(): Promise<GsiId> {
 export default function GoogleSignInButton({
   onCredential,
   disabled,
-  mark,
 }: {
   /** Called with the Google ID token once the person has signed in. */
   onCredential: (idToken: string) => void;
   disabled?: boolean;
-  /** Our own Google glyph, drawn in place of Google's button (see below). */
-  mark: React.ReactNode;
 }) {
   const slot = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -107,7 +112,7 @@ export default function GoogleSignInButton({
         });
         id.renderButton(slot.current, {
           type: "icon",
-          shape: "square",
+          shape: "circle",
           theme: "filled_black",
           size: "large",
         });
@@ -125,32 +130,12 @@ export default function GoogleSignInButton({
 
   return (
     <div
-      className={`relative grid flex-1 place-items-center overflow-hidden rounded-xl border border-border py-3 ${
+      className={`grid size-12 place-items-center ${
         disabled || failed ? "pointer-events-none opacity-50" : ""
       }`}
     >
-      {/* Our glyph, so the row reads as three identical buttons instead of two
-          of ours plus a white slab of Google's. Google's button cannot be
-          restyled — it renders inside their own iframe — so it is kept, made
-          invisible, and laid on top as the actual hit target. */}
-      {mark}
-      {/*
-        The real button, transparent and covering the slot.
-
-        Scaling is what covers it: Google's icon button is a fixed ~40px square
-        and our slot is wider, so an un-scaled overlay would leave dead corners
-        that look clickable and are not. The scale only stretches an invisible
-        hit area — nothing distorts on screen — and `overflow-hidden` above
-        clips the overspill.
-
-        Clicks land on Google's own element. No synthetic click, no reaching
-        into their DOM: both would break the day they change the markup.
-      */}
-      <div
-        ref={slot}
-        aria-label="Войти через Google"
-        className="absolute inset-0 grid scale-[3] place-items-center opacity-0"
-      />
+      {/* Google's own button, at its own size. Nothing is laid over it. */}
+      <div ref={slot} aria-label="Войти через Google" />
     </div>
   );
 }
