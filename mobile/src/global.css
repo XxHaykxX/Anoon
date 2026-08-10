@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@import "nativewind/theme";
+
+/* ===== Anoon design tokens — one theme, and it is the dark one =====
+
+   Mirrors `frontend/src/app/globals.css`: same names, same values, so a screen
+   ported from the web keeps its classes (`bg-background`, `text-muted-foreground`,
+   `bg-bubble-out`, …) instead of being rewritten. When a colour changes there,
+   change it here too — there is no shared source yet.
+
+   Web-only tokens are deliberately absent: elevations/glows (React Native has
+   no box-shadow), the chart/sidebar leftovers from shadcn, and the desktop
+   layout variables. */
+@theme {
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+  --color-card: #1c1c1e;
+  --color-card-foreground: #ffffff;
+  --color-popover: #1c1c1e;
+  --color-popover-foreground: #ffffff;
+  --color-primary: #fdbf2d;
+  --color-primary-foreground: #000000;
+  /* Surface ladder: background #000 → card/popover #1c1c1e → fill #2c2c2e.
+     `muted`/`secondary` must not equal `card`, or anything sitting ON a card
+     (inputs, status pills) has 1.00:1 against it. */
+  --color-secondary: #2c2c2e;
+  --color-secondary-foreground: #ffffff;
+  --color-muted: #2c2c2e;
+  --color-muted-foreground: #9a9aa0;
+  --color-accent: #fdbf2d;
+  --color-accent-foreground: #000000;
+  --color-destructive: #ff453a;
+  /* One step above `--color-muted`, and deliberately not equal to it: a
+     hairline that claims "visible at all", not WCAG 3:1. */
+  --color-border: #3a3a3c;
+  --color-input: #2c2c2e;
+  --color-ring: #fdbf2d;
+  --color-bubble-in: #262628;
+  --color-bubble-in-foreground: #ffffff;
+  --color-bubble-out: #fdbf2d;
+  --color-bubble-out-foreground: #000000;
+  --color-online: #32d74b;
+  --color-read-tick: #3898ff; /* status blue — read receipts / verified / links (NOT the yellow primary) */
+  /* The same tick drawn INSIDE the outgoing bubble, which is brand yellow: the
+     status blue above is 1.78:1 on that yellow. Do not use it anywhere else —
+     on a dark surface it is nearly invisible. */
+  --color-read-tick-on-primary: #1d4ed8;
+  --color-verified: #3898ff;
+  --color-info: #3898ff;
+}
