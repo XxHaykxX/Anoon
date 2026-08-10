@@ -251,6 +251,10 @@ func (s *Server) Handler() http.Handler {
 	// Broadcast (#117): fan a webpush out to every subscription.
 	mux.HandleFunc("POST /admin/broadcast", s.adminOnly(s.handleAdminBroadcast))
 
+	// Payments (#14): products, orders and the provider callback. Mounts
+	// nothing unless BILLING_PROVIDER is set — see billing.go / internal/billing.
+	s.registerBilling(mux)
+
 	// Realtime anoon events (match found, friend request, reveal, ban).
 	mux.HandleFunc("GET /ws", s.handleWS)
 

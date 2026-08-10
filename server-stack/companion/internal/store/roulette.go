@@ -724,3 +724,145 @@ func (s *Store) Priority(ctx context.Context, userID int64) (int, error) {
 		return priorityFree, nil
 	}
 }
+
+// --- persisted queue --------------------------------------------------------
+//
+// roulette_queue (migration 0015) is the durable mirror of the in-memory
+// matchmaker queue. It exists so a companion restart does not silently drop
+// everyone who was waiting; it is NOT part of the matching hot path. Pairing
+// still runs entirely against the process's (gender, age) buckets — these four
+// calls are the only ones that touch the table, at enqueue, at cancel/match, at
+// startup, and on the stale sweep.
+
+// QueuedUser is one persisted waiter, read back at startup. It carries exactly
+// the fields the restore cannot recompute (the user's own bucket, their desired
+// peer buckets and the original wait start) plus the identity columns joined
+// from users. Priority and the exclude set are deliberately absent — see the
+// migration's comment on why they are re-derived rather than stored.
+type QueuedUser struct {
+	UserID        int64
+	HashID        int64
+	Gender        string
+	AgeRange      string
+	PeerAgeRanges []string
+	EnqueuedAt    time.Time
+}
+
+// EnqueueRoulette records (or refreshes) a waiter. Upsert rather than insert:
+// re-enqueueing is idempotent from the client's view — the handler cancels and
+// re-adds the in-memory entry, and this row has to follow it, not collide with
+// itself.
+//
+// enqueuedAt is passed in rather than defaulted to now() so the row carries the
+// exact timestamp the in-memory entry was built with: the two feed the same
+// fairness ordering and softening clock, and a restart must not shuffle the
+// queue because the DB rounded differently.
+func (s *Store) EnqueueRoulette(ctx context.Context, userID int64, ageRange string, peerAgeRanges []string, enqueuedAt time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO roulette_queue (user_id, age_range, peer_age_ranges, enqueued_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id) DO UPDATE SET
+			age_range       = EXCLUDED.age_range,
+			peer_age_ranges = EXCLUDED.peer_age_ranges,
+			enqueued_at     = EXCLUDED.enqueued_at`,
+		userID, ageRange, strings.Join(peerAgeRanges, ","), enqueuedAt)
+	if err != nil {
+		return fmt.Errorf("store: enqueue roulette %d: %w", userID, err)
+	}
+	return nil
+}
+
+// DequeueRoulette drops a waiter's row. Called when they cancel, and when a
+// pass takes them out of the queue for a pairing. Deleting a row that is not
+// there is a no-op, so callers need not know which case they are in.
+func (s *Store) DequeueRoulette(ctx context.Context, userID int64) error {
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM roulette_queue WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("store: dequeue roulette %d: %w", userID, err)
+	}
+	return nil
+}
+
+// QueuedRoulette lists everyone still waiting, oldest first, for the startup
+// restore. Soft-deleted accounts are excluded here as well as by the sweep:
+// restoring one would put an account that can no longer authenticate into the
+// queue, where the only thing it can do is get paired with a live user and open
+// a chat with nobody in it.
+//
+// Ordered by enqueued_at so the sequence numbers Enqueue hands out on restore
+// run in the same direction as the timestamps, keeping the final tie-break of
+// matchmaker.less consistent with the order people actually joined.
+func (s *Store) QueuedRoulette(ctx context.Context) ([]QueuedUser, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT q.user_id, u.hash_id, u.gender, q.age_range, q.peer_age_ranges, q.enqueued_at
+		FROM roulette_queue q
+		JOIN users u ON u.id = q.user_id
+		WHERE u.deleted_at IS NULL
+		ORDER BY q.enqueued_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list roulette queue: %w", err)
+	}
+	defer rows.Close()
+
+	var out []QueuedUser
+	for rows.Next() {
+		var q QueuedUser
+		var peers string
+		if err := rows.Scan(&q.UserID, &q.HashID, &q.Gender, &q.AgeRange, &peers, &q.EnqueuedAt); err != nil {
+			return nil, fmt.Errorf("store: scan roulette queue row: %w", err)
+		}
+		// "" is "any age", and Split would turn it into a one-element slice
+		// holding "" — a peer bucket nobody is ever in, i.e. a waiter who can
+		// never be matched until softening bails them out.
+		if peers != "" {
+			q.PeerAgeRanges = strings.Split(peers, ",")
+		}
+		out = append(out, q)
+	}
+	return out, rows.Err()
+}
+
+// PruneRouletteQueue deletes waiters who must not be matched any more and
+// returns their ids so the caller can evict them from the in-memory queue too.
+//
+// Three kinds of row go:
+//   - the account was deleted;
+//   - the account is banned (a ban does not reach into the live matcher — the
+//     admin handler has no way to — so this sweep is what takes a banned user
+//     out of the queue);
+//   - nothing has been heard from the client since staleBefore. users.last_seen
+//     is the companion presence heartbeat: every authenticated REST call and
+//     every WS pong stamps it, and a client that is actually searching polls
+//     /roulette/status throughout. So a waiter whose last_seen has gone quiet
+//     has closed the tab, and without this they would be restored on the next
+//     restart as a ghost nobody can ever complete a chat with.
+//
+// COALESCE against enqueued_at covers the narrow window where the presence
+// write for a brand-new waiter has not landed yet (it is fired asynchronously
+// and throttled), so a fresh row is never mistaken for a silent one.
+func (s *Store) PruneRouletteQueue(ctx context.Context, staleBefore time.Time) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		DELETE FROM roulette_queue q
+		USING users u
+		WHERE u.id = q.user_id
+		  AND (
+		        u.deleted_at IS NOT NULL
+		     OR (u.state = 'susp' AND (u.ban_until IS NULL OR u.ban_until > now()))
+		     OR COALESCE(u.last_seen, q.enqueued_at) < $1
+		  )
+		RETURNING q.user_id`, staleBefore)
+	if err != nil {
+		return nil, fmt.Errorf("store: prune roulette queue: %w", err)
+	}
+	defer rows.Close()
+
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("store: scan pruned waiter: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

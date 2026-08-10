@@ -332,3 +332,31 @@ func TestCancelClearsAnInFlightMark(t *testing.T) {
 		t.Fatal("cancelled user must not read as queued")
 	}
 }
+
+// The stale-waiter sweep must not be able to un-pend a pair mid-pairing: that
+// window is what the double-match bug lived in. It also has to still evict
+// someone who is genuinely just waiting.
+func TestCancelWaitingLeavesAnInFlightPairAlone(t *testing.T) {
+	m := New(0)
+	_ = m.Enqueue(male(1, Age22_25))
+	_ = m.Enqueue(female(2, Age22_25))
+	_ = m.Enqueue(male(3, Age22_25)) // no partner left; stays waiting
+
+	pair, ok := m.TryMatch(time.Now())
+	if !ok {
+		t.Fatal("expected a match")
+	}
+	if m.CancelWaiting(pair.A.UserID) || m.CancelWaiting(pair.B.UserID) {
+		t.Fatal("CancelWaiting removed an in-flight user")
+	}
+	if !m.Contains(pair.A.UserID) || !m.Contains(pair.B.UserID) {
+		t.Fatal("sweep cleared the pending mark — a poll here would read as forgotten")
+	}
+
+	if !m.CancelWaiting(3) {
+		t.Fatal("CancelWaiting should evict a user who is only waiting")
+	}
+	if m.Contains(3) || m.Len() != 0 {
+		t.Fatalf("user 3 still queued: contains=%v len=%d", m.Contains(3), m.Len())
+	}
+}

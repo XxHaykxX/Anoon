@@ -172,6 +172,28 @@ func (m *Matcher) Cancel(userID int64) bool {
 	return m.removeLocked(userID) || wasPending
 }
 
+// CancelWaiting removes a user only if they are WAITING in line, and never
+// touches the in-flight pending mark. It returns true when an entry was
+// actually taken out.
+//
+// This is the eviction path for background sweeps — the stale/banned waiter
+// prune, which decides who to drop from a database read taken outside the lock.
+// By the time it acts, TryMatch may already have pulled that user out for a
+// pairing the rest of the system cannot see yet; clearing their pending mark
+// there would answer the poll with "neither queued nor matched", the exact
+// combination that made a client re-enqueue and get paired twice (see pending).
+// A user mid-pairing is not waiting for anything, so there is nothing for a
+// sweep to cancel: Cancel stays the honest answer for a user who *asked* to
+// leave, this one for a sweep that merely noticed they went quiet.
+func (m *Matcher) CancelWaiting(userID int64) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.pending[userID]; ok {
+		return false
+	}
+	return m.removeLocked(userID)
+}
+
 // Release clears the in-flight mark TryMatch set on a pair, once their match is
 // observable elsewhere (persisted and announced) or definitively abandoned.
 // Callers should defer it right after TryMatch so no early return can strand a

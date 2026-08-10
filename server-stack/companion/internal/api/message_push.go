@@ -96,6 +96,9 @@ func (s *Server) onTinodeData(ev tinode.DataEvent) {
 	if s.Hub.Online(recipientID) {
 		return
 	}
+	if !s.senderMayPush(ctx, sender.ID) {
+		return
+	}
 
 	s.Push.SendPush(ctx, recipientID, push.PushPayload{
 		Title: "anoon",
@@ -115,7 +118,7 @@ func (s *Server) onTinodeData(ev tinode.DataEvent) {
 const msgSentType = "msg:sent"
 
 // onMessageSent pushes to the recipient of a p2p friend-chat message whose
-// sender just told us about it. Three things keep this honest:
+// sender just told us about it. Four things keep this honest:
 //
 //   - Spoofing: the target is resolved by resolveRelayTarget, so a sender can
 //     only ever reach someone they have an accepted friendship or a live match
@@ -131,6 +134,14 @@ const msgSentType = "msg:sent"
 //     Companion tracks no finer per-chat "currently viewing" signal, so this is
 //     as precise as it gets: a push is suppressed while they have the app open
 //     on ANY screen, never delivered twice, and never sent to someone reading.
+//   - Moderation: a banned or muted sender gets no notification out of this at
+//     all — see senderMayPush.
+//
+// The blacklist needs no clause of its own: a block outranks 'accepted' in
+// store.Relations and is symmetric, so AreFriends (and with it
+// resolveRelayTarget) already returns false for a pair where either side has
+// blocked the other. The push toggle needs none either — turning it off is an
+// unsubscribe, and SendPush to a user with no subscription is a no-op.
 func (s *Server) onMessageSent(ctx context.Context, u store.User, frame map[string]any) {
 	to, _ := frame["to"].(string)
 	if to == "" {
@@ -150,6 +161,9 @@ func (s *Server) onMessageSent(ctx context.Context, u store.User, frame map[stri
 	if s.Hub.Online(link.peerID) {
 		return
 	}
+	if !s.senderMayPush(ctx, u.ID) {
+		return
+	}
 
 	preview, _ := frame["preview"].(string)
 	body := "New message"
@@ -167,6 +181,33 @@ func (s *Server) onMessageSent(ctx context.Context, u store.User, frame map[stri
 		// burst of messages collapses into one notification instead of stacking.
 		Tag: "msg:" + u.TinodeUID,
 	})
+}
+
+// senderMayPush reports whether a message from this user is still allowed to
+// wake somebody else's device. A ban or a live mute takes that away.
+//
+// Mute is the product's "you don't get to interrupt people" lever — it already
+// closes the roulette queue (roulette.go) — and a lock-screen notification is
+// the most intrusive thing a muted account can still do. It is NOT a claim that
+// the message is suppressed: mute is companion-side only (users.mute_until, not
+// a Tinode ACL), so the message itself keeps arriving in the chat. What stops
+// here is the interruption, which is the part mute is about.
+//
+// Ban is belt and braces. A suspended account's Tinode token stops resolving, so
+// in production a banned sender cannot authenticate a new socket at all — but a
+// socket opened just before the ban lands stays connected, and this closes that
+// window without waiting for it to time out.
+//
+// Called last on both push paths, after the offline and membership checks, so
+// the extra lookup is only paid on a message that is genuinely about to push.
+// Fail-open on a lookup error: a DB hiccup must silence nobody's notifications.
+func (s *Server) senderMayPush(ctx context.Context, senderID int64) bool {
+	banned, muted, err := s.Store.ModerationStatus(ctx, senderID)
+	if err != nil {
+		log.Printf("message-push: moderation lookup for sender %d: %v", senderID, err)
+		return true
+	}
+	return !banned && !muted
 }
 
 // messagePushBody renders the notification body for an observed chat message:

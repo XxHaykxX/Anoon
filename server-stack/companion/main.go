@@ -119,6 +119,9 @@ func run() error {
 	}
 
 	// Roulette match loop: drains the queue and creates anon topics.
+	// Roulette queue survives the restart: rebuild the in-memory queue from
+	// roulette_queue before the loop starts draining it (§4.4).
+	apiSrv.RestoreQueue(ctx)
 	go apiSrv.RunMatchLoop(ctx)
 
 	// Message-push: re-subscribe the ROOT bot to anon chats that were live before

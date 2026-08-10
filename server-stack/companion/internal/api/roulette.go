@@ -78,25 +78,10 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "store_failed", "priority lookup failed")
 		return
 	}
-	// A non-positive window disables the recent-partner exclusion entirely
-	// (useful for testing with only a couple of accounts), so skip the lookup.
-	exclude := make(map[int64]bool)
-	if s.RecentMatchWindow > 0 {
-		exclude, err = s.Store.RecentPartnerIDs(ctx, u.ID, time.Now().Add(-s.RecentMatchWindow))
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "store_failed", "exclude lookup failed")
-			return
-		}
-	}
-	// Anti-abuse: never re-match anyone the caller has blocked (or who blocked
-	// the caller). Merge the blocked set into the recent-partner exclude set.
-	blocked, err := s.Store.BlockedUserIDs(ctx, u.ID)
+	exclude, err := s.excludeFor(ctx, u.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "store_failed", "block lookup failed")
+		writeError(w, http.StatusInternalServerError, "store_failed", "exclude lookup failed")
 		return
-	}
-	for id := range blocked {
-		exclude[id] = true
 	}
 
 	entry := &matchmaker.Entry{
@@ -109,14 +94,63 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 		EnqueuedAt:    time.Now(),
 		Exclude:       exclude,
 	}
+	// Mirror the entry into roulette_queue so a restart does not drop this user
+	// (§4.4). The row goes in BEFORE the in-memory entry, and the order is the
+	// whole point: the moment Enqueue returns, the match loop may pull this user
+	// into a pairing, and onMatch's dropQueueRow would then delete a row that
+	// has not been written yet — the insert lands afterwards and strands a queue
+	// row on someone who is already in a chat. No sweep clears it (their client
+	// is alive and stamping presence), so it survives to the next restart, where
+	// RestoreQueue puts them back in the queue mid-match, bypassing the
+	// EndActiveMatchesForUser that only this handler runs. Persist first and the
+	// window does not exist: there is never an entry the matcher can see without
+	// a row behind it. On a write failure we answer the failure rather than
+	// "queued" — a queue the database does not know about is exactly the state
+	// this is here to end, and the client will simply try again.
+	if err := s.Store.EnqueueRoulette(ctx, u.ID, entry.AgeRange, entry.PeerAgeRanges, entry.EnqueuedAt); err != nil {
+		log.Printf("roulette: persist queue entry for %d: %v", u.ID, err)
+		writeError(w, http.StatusInternalServerError, "store_failed", "could not persist queue entry")
+		return
+	}
 	// Re-enqueue is idempotent from the client's view: replace any stale entry.
 	s.Matcher.Cancel(u.ID)
 	if err := s.Matcher.Enqueue(entry); err != nil {
+		// Nobody is waiting behind this row now — take it back out, or the next
+		// restore would resurrect a waiter who never got into the queue.
+		s.dropQueueRow(ctx, u.ID)
 		writeError(w, http.StatusConflict, "already_queued", err.Error())
 		return
 	}
 	s.nudgeMatch()
 	writeJSON(w, http.StatusOK, map[string]any{"queued": true})
+}
+
+// excludeFor builds the set of users the caller must not be paired with:
+// peers they matched inside RecentMatchWindow (no immediate repeats) plus
+// everyone either side has blocked. A non-positive window disables the
+// recent-partner half entirely, which is what makes testing with a couple of
+// accounts possible.
+//
+// Shared by the enqueue handler and the startup restore. The restore rebuilds
+// this rather than reading a stored copy, so blocks placed while the process
+// was down are honoured on the very first pass after it comes back.
+func (s *Server) excludeFor(ctx context.Context, userID int64) (map[int64]bool, error) {
+	exclude := make(map[int64]bool)
+	if s.RecentMatchWindow > 0 {
+		var err error
+		exclude, err = s.Store.RecentPartnerIDs(ctx, userID, time.Now().Add(-s.RecentMatchWindow))
+		if err != nil {
+			return nil, err
+		}
+	}
+	blocked, err := s.Store.BlockedUserIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for id := range blocked {
+		exclude[id] = true
+	}
+	return exclude, nil
 }
 
 // handleCancel removes the caller from the roulette queue.
@@ -126,6 +160,13 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Matcher.Cancel(u.ID)
+	// The caller is already out of the live queue, so this reports success
+	// whatever the row does — but a row left behind would be restored as a
+	// waiter who never asked to wait, so it is logged, and the stale sweep
+	// clears it once their client stops stamping presence.
+	if err := s.Store.DequeueRoulette(r.Context(), u.ID); err != nil {
+		log.Printf("roulette: drop queue row for %d: %v", u.ID, err)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -491,17 +532,119 @@ func (s *Server) emitRevealed(ctx context.Context, m store.Match) {
 
 // --- match loop ------------------------------------------------------------
 
+// queueStaleAfter is how long a waiter may go without stamping presence before
+// the sweep treats them as gone. users.last_seen is written on every
+// authenticated REST call and every WS pong, and a searching client polls
+// /roulette/status throughout, so silence this long means the tab is closed.
+//
+// Comfortably above presenceThrottle (30s), which is the most a live client's
+// last_seen can lag behind its actual traffic — anything near that window would
+// evict people who are still right there looking at the searching screen.
+const queueStaleAfter = 2 * time.Minute
+
+// queuePruneEvery is how often the stale/banned sweep runs. Cheap (one indexed
+// DELETE over a table the size of the queue) and it only has to be prompt
+// relative to queueStaleAfter.
+const queuePruneEvery = 30 * time.Second
+
+// RestoreQueue rebuilds the in-memory queue from roulette_queue, so a restart
+// no longer empties it (§4.4). Called once at startup, before the match loop.
+//
+// It sweeps first: whatever was persisted is now as old as the downtime, and
+// re-adding waiters whose clients left during it would fill the queue with
+// ghosts that pair with live users and then never speak. What survives is
+// re-derived, not replayed — priority and the exclude set come from the same
+// store calls the enqueue handler makes, so a subscription that lapsed or a
+// block placed while the process was down takes effect immediately.
+//
+// Best-effort by design: a user who cannot be restored is dropped with a log
+// line rather than blocking startup. The client-side poller is still there as
+// the second net for that case.
+//
+// ponytail: per-user Priority + exclude lookups, so restoring N waiters costs
+// ~3N queries. Startup-only and the queue is tens of rows; batch them if it
+// ever grows into the thousands.
+func (s *Server) RestoreQueue(ctx context.Context) {
+	s.pruneQueue(ctx)
+
+	rows, err := s.Store.QueuedRoulette(ctx)
+	if err != nil {
+		log.Printf("roulette: restore queue: %v", err)
+		return
+	}
+	restored := 0
+	for _, q := range rows {
+		priority, err := s.Store.Priority(ctx, q.UserID)
+		if err != nil {
+			log.Printf("roulette: restore %d: priority: %v", q.UserID, err)
+			continue
+		}
+		exclude, err := s.excludeFor(ctx, q.UserID)
+		if err != nil {
+			log.Printf("roulette: restore %d: exclude: %v", q.UserID, err)
+			continue
+		}
+		err = s.Matcher.Enqueue(&matchmaker.Entry{
+			UserID:        q.UserID,
+			HashID:        q.HashID,
+			Gender:        q.Gender,
+			AgeRange:      q.AgeRange,
+			PeerAgeRanges: q.PeerAgeRanges,
+			Priority:      priority,
+			EnqueuedAt:    q.EnqueuedAt,
+			Exclude:       exclude,
+		})
+		if err != nil {
+			log.Printf("roulette: restore %d: %v", q.UserID, err)
+			continue
+		}
+		restored++
+	}
+	if restored > 0 {
+		log.Printf("roulette: restored %d waiting user(s) from the database", restored)
+	}
+}
+
+// pruneQueue drops waiters who left, were banned, or deleted their account —
+// from the table and from the live queue, so the two stay in step.
+//
+// Eviction goes through CancelWaiting, not Cancel: the id list is a database
+// read taken outside the matcher's lock, so by now TryMatch may have pulled
+// that user out for a pairing that is still being built. Clearing their pending
+// mark would reopen the double-match window (see matchmaker's pending field).
+func (s *Server) pruneQueue(ctx context.Context) {
+	ids, err := s.Store.PruneRouletteQueue(ctx, time.Now().Add(-queueStaleAfter))
+	if err != nil {
+		log.Printf("roulette: prune queue: %v", err)
+		return
+	}
+	evicted := 0
+	for _, id := range ids {
+		if s.Matcher.CancelWaiting(id) {
+			evicted++
+		}
+	}
+	if len(ids) > 0 {
+		log.Printf("roulette: pruned %d stale queue row(s), %d still waiting in memory", len(ids), evicted)
+	}
+}
+
 // RunMatchLoop drains the matcher on a ticker (and on enqueue nudges) until ctx
-// is cancelled, turning each produced pair into a live anon topic + events.
+// is cancelled, turning each produced pair into a live anon topic + events. It
+// also runs the stale-waiter sweep on its own, slower ticker.
 func (s *Server) RunMatchLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	prune := time.NewTicker(queuePruneEvery)
+	defer prune.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		case <-s.matchNudge:
+		case <-prune.C:
+			s.pruneQueue(ctx)
 		}
 		for {
 			match, ok := s.Matcher.TryMatch(time.Now())
@@ -530,6 +673,12 @@ func (s *Server) onMatch(ctx context.Context, m matchmaker.Match) {
 	// must clear the mark too, or that user reads as queued forever and their
 	// client never re-enters the queue.
 	defer s.Matcher.Release(m.A.UserID, m.B.UserID)
+	// Both are out of the queue as of TryMatch, so their rows go now rather than
+	// after the chat is built: a crash in the middle must not leave behind two
+	// waiters who are about to be — or already are — in a chat together. The
+	// re-queue path below puts the row back when the pairing falls through.
+	s.dropQueueRow(ctx, m.A.UserID)
+	s.dropQueueRow(ctx, m.B.UserID)
 	// Live lookups. handleDeleteMe evicts the caller from the matcher, so a
 	// deleted account should never reach here — but the queue is in memory and
 	// the delete is a database write, so the two can cross. Pairing someone with
@@ -544,8 +693,8 @@ func (s *Server) onMatch(ctx context.Context, m matchmaker.Match) {
 	topic, err := s.Tinode.CreateAnonTopic(ctx, a.TinodeUID, b.TinodeUID)
 	if err != nil {
 		log.Printf("roulette: create anon topic failed, re-queuing pair: %v", err)
-		s.requeue(m.A)
-		s.requeue(m.B)
+		s.requeue(ctx, m.A)
+		s.requeue(ctx, m.B)
 		return
 	}
 	// The match row also mints the pair's anon aliases, so a failure here is no
@@ -565,8 +714,8 @@ func (s *Server) onMatch(ctx context.Context, m matchmaker.Match) {
 			// logged loudly for manual reconciliation rather than swallowed.
 			log.Printf("roulette: ORPHAN TOPIC %s — created but neither persisted nor deleted: %v", topic, delErr)
 		}
-		s.requeue(m.A)
-		s.requeue(m.B)
+		s.requeue(ctx, m.A)
+		s.requeue(ctx, m.B)
 		return
 	}
 	// Keep the ROOT bot subscribed to this topic so it observes the pair's chat
@@ -583,10 +732,30 @@ func (s *Server) onMatch(ctx context.Context, m matchmaker.Match) {
 	log.Printf("roulette: matched #%05d <-> #%05d on %s", a.HashID, b.HashID, topic)
 }
 
-// requeue puts an entry back with a fresh timestamp (best-effort).
-func (s *Server) requeue(e *matchmaker.Entry) {
+// requeue puts an entry back with a fresh timestamp (best-effort), restoring
+// its persisted row alongside it so the two views of the queue agree.
+//
+// Row first, same as handleEnqueue and for the same reason: this pair is being
+// put back into a live queue that the match loop is draining, so an entry the
+// matcher can see before its row exists can be re-matched in that gap and leave
+// the row behind it stranded.
+func (s *Server) requeue(ctx context.Context, e *matchmaker.Entry) {
 	e.EnqueuedAt = time.Now()
-	_ = s.Matcher.Enqueue(e)
+	if err := s.Store.EnqueueRoulette(ctx, e.UserID, e.AgeRange, e.PeerAgeRanges, e.EnqueuedAt); err != nil {
+		log.Printf("roulette: re-persist queue entry for %d: %v", e.UserID, err)
+	}
+	if err := s.Matcher.Enqueue(e); err != nil {
+		s.dropQueueRow(ctx, e.UserID)
+	}
+}
+
+// dropQueueRow removes a waiter's persisted row, logging rather than failing:
+// the caller has already taken them out of the live queue, and a row left
+// behind is picked up by the stale sweep.
+func (s *Server) dropQueueRow(ctx context.Context, userID int64) {
+	if err := s.Store.DequeueRoulette(ctx, userID); err != nil {
+		log.Printf("roulette: drop queue row for %d: %v", userID, err)
+	}
 }
 
 // decodeTopic decodes a topicRequest and validates topic presence. It writes an
