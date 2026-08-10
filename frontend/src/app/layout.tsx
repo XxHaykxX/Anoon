@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Website Clone",
-  description: "Pixel-perfect website clone",
+  title: "Anoon — анонимная чат-рулётка",
+  description:
+    "Анонимный чат с новым человеком в один тап. Без имён и фото — профиль виден, только если оба захотели открыться.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

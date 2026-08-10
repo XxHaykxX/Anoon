@@ -46,6 +46,11 @@ services:
       API_KEY_SALT: ${API_KEY_SALT}
       AUTH_TOKEN_KEY: ${AUTH_TOKEN_KEY}
       UID_ENCRYPTION_KEY: ${UID_ENCRYPTION_KEY}
+      # `rest` auth scheme → companion, which brokers Google sign-in (the login
+      # secret is the Google ID token and only companion can verify it). The
+      # shared secret rides in the URL's userinfo — the sole credential slot
+      # Tinode's rest handler offers — and must equal COMPANION_REST_SECRET.
+      REST_AUTH_URL: "http://tinode:${COMPANION_REST_SECRET:-}@companion:8080/auth/rest"
       # No bundled web client: frontend (separate Next.js app) is the only frontend.
       # Tinode runs as a pure chat engine (HTTP API + WebSocket + gRPC), no static UI.
       MEDIA_HANDLER: fs
@@ -100,6 +105,12 @@ services:
       # default locally: nothing calls it until the Tinode rest auth block is
       # configured. See companion/internal/api/rest.go (restOnly).
       COMPANION_REST_SECRET: ${COMPANION_REST_SECRET:-}
+      # Google sign-in. Empty → POST /auth/oauth/google answers 503 and the
+      # login screen keeps its disabled placeholder. Must match the client id
+      # baked into the frontend bundle (NEXT_PUBLIC_GOOGLE_CLIENT_ID): a token
+      # minted for one "aud" is refused by the other, and the refusal reads as
+      # "invalid token" rather than as the config mismatch it is.
+      COMPANION_GOOGLE_CLIENT_ID: ${COMPANION_GOOGLE_CLIENT_ID:-}
       # Comma-separated CORS allowlist (exact origins or "*.suffix" wildcards,
       # e.g. "*.trycloudflare.com"). Unset in dev falls back to localhost +
       # *.trycloudflare.com (phone-testing tunnels); required in prod.

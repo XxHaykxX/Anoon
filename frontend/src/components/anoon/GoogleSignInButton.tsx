@@ -71,10 +71,13 @@ function loadGsi(): Promise<GsiId> {
 export default function GoogleSignInButton({
   onCredential,
   disabled,
+  mark,
 }: {
   /** Called with the Google ID token once the person has signed in. */
   onCredential: (idToken: string) => void;
   disabled?: boolean;
+  /** Our own Google glyph, drawn in place of Google's button (see below). */
+  mark: React.ReactNode;
 }) {
   const slot = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -122,13 +125,32 @@ export default function GoogleSignInButton({
 
   return (
     <div
-      className={`grid flex-1 place-items-center rounded-xl border border-border py-2.5 ${
+      className={`relative grid flex-1 place-items-center overflow-hidden rounded-xl border border-border py-3 ${
         disabled || failed ? "pointer-events-none opacity-50" : ""
       }`}
     >
-      {/* Google draws into this slot. Empty until the script lands — the border
-          keeps the row's geometry stable so the other two buttons don't jump. */}
-      <div ref={slot} aria-label="Войти через Google" />
+      {/* Our glyph, so the row reads as three identical buttons instead of two
+          of ours plus a white slab of Google's. Google's button cannot be
+          restyled — it renders inside their own iframe — so it is kept, made
+          invisible, and laid on top as the actual hit target. */}
+      {mark}
+      {/*
+        The real button, transparent and covering the slot.
+
+        Scaling is what covers it: Google's icon button is a fixed ~40px square
+        and our slot is wider, so an un-scaled overlay would leave dead corners
+        that look clickable and are not. The scale only stretches an invisible
+        hit area — nothing distorts on screen — and `overflow-hidden` above
+        clips the overspill.
+
+        Clicks land on Google's own element. No synthetic click, no reaching
+        into their DOM: both would break the day they change the markup.
+      */}
+      <div
+        ref={slot}
+        aria-label="Войти через Google"
+        className="absolute inset-0 grid scale-[3] place-items-center opacity-0"
+      />
     </div>
   );
 }

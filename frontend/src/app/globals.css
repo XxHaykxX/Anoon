@@ -41,6 +41,7 @@
   --color-bubble-out-foreground: var(--bubble-out-foreground);
   --color-online: var(--online);
   --color-read-tick: var(--read-tick);
+  --color-read-tick-on-primary: var(--read-tick-on-primary);
   --color-verified: var(--verified);
   --color-info: var(--info);
   --color-popover-foreground: var(--popover-foreground);
@@ -83,6 +84,12 @@
   --bubble-out-foreground: #000000;
   --online: #34c759;
   --read-tick: #0a84ff;   /* status blue — read receipts / verified / links (NOT the yellow primary) */
+  /* Same tick, drawn INSIDE the outgoing bubble, which is brand yellow. The
+     status blue above sits at 1.78:1 on that yellow — the one delivery state
+     that matters most was the least visible one in the whole thread. This is
+     the darker blue that clears 3:1 on yellow while still reading as blue.
+     Do not use it anywhere else: on a dark surface it is nearly invisible. */
+  --read-tick-on-primary: #1D4ED8;
   --verified: #0a84ff;
   --info: #0a84ff;
   --hairline: rgba(0,0,0,0.06);
@@ -135,7 +142,12 @@
   --accent: #FDBF2D;
   --accent-foreground: #000000;
   --destructive: #ff453a;
-  --border: #2c2c2e;
+  /* One step above `--muted`, and deliberately not equal to it. They were the
+     same value, so any bordered element sitting on a muted fill had a border
+     of exactly 1.00:1 — no border at all. Same failure the surface ladder above
+     was introduced to fix, one layer up. This is a hairline, not a control
+     boundary: it does not claim WCAG 3:1, it claims "visible at all". */
+  --border: #3a3a3c;
   --input: #2c2c2e;
   --ring: #FDBF2D;
   --bubble-in: #262628;
@@ -144,6 +156,9 @@
   --bubble-out-foreground: #000000;
   --online: #32d74b;
   --read-tick: #3898ff;   /* status blue (lighter for dark) */
+  /* Read tick on the yellow outgoing bubble — see the light-theme note. The
+     bubble is the same brand yellow in both themes, so this value is too. */
+  --read-tick-on-primary: #1D4ED8;
   --verified: #3898ff;
   --info: #3898ff;
   --hairline: rgba(255,255,255,0.08);
@@ -170,9 +185,94 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
+  /*
+    The app is dark, but nothing told the browser that: `.dark` sits on a div
+    inside AnoonApp, not on <html>, so every UA-drawn surface — document
+    scrollbar, overscroll rubber-band, autofill and password dropdowns, form
+    controls — was rendered in the light scheme over a black app.
+    `color-scheme` has to be on the root element to reach them; setting it on
+    `.dark` would not, for exactly the reason above.
+
+    The document background moves with it. `--background` is #ffffff at :root
+    (the light theme), and <body> applies it, so the page behind the app was
+    white: visible as a white flash before paint and as a white rubber-band
+    when overscrolling on a phone.
+  */
+  :root {
+    color-scheme: dark;
+    /* The canvas behind the app. Its own token, not `--background`: that one
+       flips with the theme (and is white at :root), while this surface is
+       always the dark one the product ships on. */
+    --canvas: #000000;
   }
+  html,
+  body {
+    background-color: var(--canvas);
+  }
+  body {
+    @apply text-foreground;
+  }
+
+  /* Dark scrollbars for the document itself. `.anoon-noscroll` already hides
+     them inside the phone frames; this covers everything outside one. */
+  * {
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /* Selection: the UA blue over a yellow-and-black app reads as a rendering
+     glitch. Brand yellow with black text is the same pairing as every primary
+     control, so a selected #ID looks selected rather than broken. */
+  ::selection {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  /* Edge draws its own eye (::-ms-reveal) and Safari its own key
+     (::-webkit-credentials-auto-fill-button) INSIDE password fields, on top of
+     the show/hide button every one of our eight password inputs already has.
+     Two eyes side by side, one of them unstyled. Ours stays. */
+  input::-ms-reveal,
+  input::-ms-clear,
+  input::-webkit-credentials-auto-fill-button,
+  input::-webkit-strong-password-auto-fill-button {
+    display: none !important;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  /* Chrome paints autofilled fields its own pale blue with near-black text,
+     and it wins over any background-color we set — on a dark app that turns a
+     filled login form into two white slabs. `background-color` cannot override
+     it; a large inset box-shadow can, because the UA style paints behind the
+     shadow. `-webkit-text-fill-color` is likewise the only way to move the
+     text colour, and the 9999s transition keeps Chrome from re-applying its
+     own background for the one frame after autofill.
+     Applies on focus and hover too — Chrome re-asserts the style on each. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--foreground);
+    -webkit-box-shadow: 0 0 0 1000px var(--muted) inset;
+    box-shadow: 0 0 0 1000px var(--muted) inset;
+    caret-color: var(--foreground);
+    transition: background-color 9999s ease-in-out 0s;
+  }
+
+  /* Number inputs: the UA spinner is a light-on-light widget we cannot theme,
+     and it steals width from short fields (age). Removed — the field stays a
+     number field for the mobile keypad and validation, without the arrows. */
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
   html {
     @apply font-sans;
     /* Compact type scale for the phone frame: shrink the rem baseline so

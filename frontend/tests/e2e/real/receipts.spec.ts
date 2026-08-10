@@ -13,7 +13,7 @@ skipUnlessReal(test);
 /**
  * Delivered/read receipt ticks in the friend chat (Wave-2 #82 MSG-1).
  * AnoonPrivateChat's `StatusTicks`: single check = sent, double check = delivered,
- * double check tinted `text-read-tick` = read. `noteRead`/`noteRecv` fire
+ * double check tinted `text-read-tick-on-primary` = read. `noteRead`/`noteRecv` fire
  * automatically while the peer's chat is open (see store/slices.ts), so no
  * explicit "mark as read" UI action exists to drive — the receipt just
  * follows from B having the thread open when A's message lands.
@@ -56,23 +56,23 @@ test.describe.serial("friend chat: delivered/read receipts", () => {
     await expect(pageA.getByText(draft, { exact: true })).toBeVisible();
   });
 
-  test("read tick (text-read-tick) appears once the peer has the chat open", async () => {
+  test("read tick (text-read-tick-on-primary) appears once the peer has the chat open", async () => {
     const draft = `Прочитано ли ${Date.now()} ${ACCOUNTS.a.hashId}`;
     await pageA.getByPlaceholder("Сообщение").fill(draft);
     await pageA.getByRole("button", { name: "Отправить" }).click();
     await expect(pageB.getByText(draft, { exact: true })).toBeVisible({ timeout: 15_000 });
 
     // B's chat is already open/subscribed, so the read receipt round-trips
-    // back to A automatically. `text-read-tick` is only ever applied to the
+    // back to A automatically. `text-read-tick-on-primary` is only ever applied to the
     // DoubleCheckIcon in the "read" branch of StatusTicks — but that class
     // alone is NOT a usable anchor: these are persistent seeded accounts, so
     // every earlier run's message is still in the thread wearing the same
-    // class, and a bare `svg.text-read-tick` resolved to 26 elements (strict
+    // class, and a bare `svg.text-read-tick-on-primary` resolved to 26 elements (strict
     // mode violation) rather than "no read tick yet". Scope it to THIS
     // message's own bubble — `anoon-msg-in` is the bubble div that holds both
     // the text span and the status ticks (AnoonPrivateChat.tsx's PrivateBubble).
     const bubble = pageA.locator("div.anoon-msg-in").filter({ hasText: draft });
-    await expect(bubble.locator("svg.text-read-tick")).toBeVisible({ timeout: 15_000 });
+    await expect(bubble.locator("svg.text-read-tick-on-primary")).toBeVisible({ timeout: 15_000 });
   });
 
   /**
@@ -99,16 +99,16 @@ test.describe.serial("friend chat: delivered/read receipts", () => {
     const bubble = pageA.locator("div.anoon-msg-in").filter({ hasText: draft });
     // StatusTicks renders CheckIcon at `size-3.5` for sent and DoubleCheckIcon
     // at `size-4` for both delivered and read — so `size-4` present AND
-    // `text-read-tick` absent is exactly "delivered", the one combination the
+    // `text-read-tick-on-primary` absent is exactly "delivered", the one combination the
     // read-tick assertion below cannot also satisfy.
     await expect(bubble.locator("svg.size-4")).toBeVisible({ timeout: 15_000 });
-    await expect(bubble.locator("svg.text-read-tick")).toHaveCount(0);
+    await expect(bubble.locator("svg.text-read-tick-on-primary")).toHaveCount(0);
 
     // Not flaky by construction: with B's chat closed nothing can fire
     // noteRead, so the tick cannot tint until B actually opens the thread —
     // which is the other half of the contract, asserted here so a regression
     // that never advances past 'delivered' fails too.
     await openFirstFriendChat(pageB);
-    await expect(bubble.locator("svg.text-read-tick")).toBeVisible({ timeout: 15_000 });
+    await expect(bubble.locator("svg.text-read-tick-on-primary")).toBeVisible({ timeout: 15_000 });
   });
 });

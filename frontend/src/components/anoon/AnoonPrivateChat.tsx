@@ -176,7 +176,7 @@ function StatusTicks({ status }: { status?: DeliveryStatus }) {
   if (status === "delivered") {
     return <DoubleCheckIcon className="size-4 text-bubble-out-foreground/60" />;
   }
-  return <DoubleCheckIcon className="size-4 text-read-tick" />;
+  return <DoubleCheckIcon className="size-4 text-read-tick-on-primary" />;
 }
 
 /**

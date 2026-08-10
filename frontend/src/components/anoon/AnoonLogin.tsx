@@ -244,6 +244,7 @@ export default function AnoonLogin() {
             <GoogleSignInButton
               onCredential={(t) => void handleGoogle(t)}
               disabled={googleBusy || submitting}
+              mark={<GoogleMark />}
             />
           ) : (
             <button
