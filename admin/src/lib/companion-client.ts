@@ -405,7 +405,8 @@ function mapMediaAsset(r: any): MediaAssetRow {
     id: String(r.id),
     ownerProfileId: String(r.ownerProfileId ?? r.owner_id ?? ""),
     kind: r.kind === "video" ? "video" : "image",
-    url: r.url ?? "",
+    // Через свой роут — иначе тайл галереи просит файл у админки (404). См. proxiedFileUrl.
+    url: proxiedFileUrl(r.url ?? "") ?? "",
     ephemeral: Boolean(r.ephemeral),
     expiresAt: r.expiresAt ?? r.expires_at ?? null,
     deletedAt: r.deletedAt ?? r.deleted_at ?? null,
@@ -484,6 +485,29 @@ export async function companionBroadcast(payload: CompanionBroadcastPayload): Pr
   return { sent: Number(body?.sent ?? 0), failed: Number(body?.failed ?? 0) };
 }
 
+// --- Вложения. ---
+// Tinode-ref (`/v0/file/s/<id>`) — путь на ОРIGIN Tinode, не на нашем: браузер
+// оператора запросит его у админки и получит 404, а у Tinode — 403 (тот требует
+// apikey и залогиненную сессию, которой у оператора нет). Поэтому все ссылки на
+// вложения переписываются на собственный роут, который тянет файл через companion
+// (тот ходит в Tinode ROOT-ботом). Абсолютные и data:-URL не трогаем.
+export function proxiedFileUrl(ref: string | null): string | null {
+  if (!ref || !ref.startsWith("/v0/file/")) return ref;
+  return `/api/admin/file?ref=${encodeURIComponent(ref)}`;
+}
+
+/** Поток одного вложения из companion — тело и content-type как есть. */
+export async function companionFile(ref: string): Promise<Response> {
+  const res = await fetch(`${baseUrl()}/admin/file?ref=${encodeURIComponent(ref)}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new CompanionHttpError(res.status, `companion ${res.status}`);
+  }
+  return res;
+}
+
 // --- Чаты (раздел «Чаты»). ---
 // Единственный раздел, чьи данные лежат не в БД companion, а в Tinode-топиках:
 // companion читает их ROOT-ботом (COMPANION-ADMIN-API.md §3) и сам считает live/
@@ -556,7 +580,7 @@ export async function companionChatMessages(topic: string): Promise<{ messages: 
       text: m.text ?? null,
       status: String(m.status ?? "sent"),
       createdAt: m.createdAt ?? m.created_at ?? "",
-      mediaUrl: m.mediaUrl ?? m.media_url ?? null,
+      mediaUrl: proxiedFileUrl(m.mediaUrl ?? m.media_url ?? null),
       mediaKind: m.mediaKind ?? m.media_kind ?? null,
     })),
   };

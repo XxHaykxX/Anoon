@@ -90,6 +90,12 @@ services:
       COMPANION_ADDR: ":8080"
       COMPANION_DB_DSN: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/anoon?sslmode=disable&connect_timeout=10"
       TINODE_GRPC_ADDR: "tinode:16060"
+      # Tinode's HTTP side, used for exactly one thing: streaming an attachment
+      # to the admin panel as ROOT (companion/internal/tinode/file.go). The api
+      # key must be the one this server accepts — the same value the frontend
+      # bundle carries as NEXT_PUBLIC_TINODE_API_KEY.
+      TINODE_HTTP_URL: "http://tinode:6060"
+      TINODE_API_KEY: ${TINODE_API_KEY:-AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K}
       COMPANION_ROOT_LOGIN: ${COMPANION_ROOT_LOGIN}
       COMPANION_ROOT_SECRET: ${COMPANION_ROOT_SECRET}
       # Dev-only auth bypass (X-Anoon-Uid / X-Anoon-Hash-Id). Off by default;

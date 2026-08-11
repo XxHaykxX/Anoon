@@ -98,6 +98,34 @@ test.describe("admin panel: чтение переписок", () => {
     await ctx.close();
   });
 
+  test("an attachment actually loads (the panel proxies it, Tinode refuses direct)", async ({ browser }) => {
+    // A message's attachment is a path on TINODE's origin. Rendered as-is it
+    // asks the panel for a file the panel does not have, and asking Tinode
+    // directly is a 403 — the operator has no Tinode account. Both failures
+    // look identical in the UI: a broken image where the evidence should be.
+    const ctx = await browser.newContext();
+    await loginAs(ctx, "super_admin");
+
+    const media = (await (await ctx.request.get("/api/admin/media?all=1&pageSize=5")).json()) as {
+      files: { url: string }[];
+    };
+    const url = media.files?.[0]?.url;
+    expect(url, "the stand has uploaded media to serve").toBeTruthy();
+    expect(url, "attachment URLs must be rewritten onto the panel's own route").toContain(
+      "/api/admin/file?ref=",
+    );
+
+    const file = await ctx.request.get(url);
+    expect(file.status()).toBe(200);
+    expect((await file.body()).length, "an empty 200 is a broken image with better manners").toBeGreaterThan(0);
+
+    // The ref is data out of a chat message, so the path it points at is not
+    // ours to trust.
+    const traversal = await ctx.request.get("/api/admin/file?ref=%2Fetc%2Fpasswd");
+    expect(traversal.status()).toBe(400);
+    await ctx.close();
+  });
+
   test("a moderator may read chats too — the section is not super_admin-only", async ({ browser }) => {
     // Q7a is about what a moderator sees; gating the section to super_admins
     // would make the decision meaningless in practice.

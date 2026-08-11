@@ -157,6 +157,11 @@ services:
       COMPANION_ADDR: ":8080"
       COMPANION_DB_DSN: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/anoon?sslmode=disable&connect_timeout=10"
       TINODE_GRPC_ADDR: "tinode:16060"
+      # Tinode's HTTP side, for streaming an attachment to the admin panel as
+      # ROOT (companion/internal/tinode/file.go). Container-internal — the file
+      # never leaves the stack except through the panel's own authenticated route.
+      TINODE_HTTP_URL: "http://tinode:6060"
+      TINODE_API_KEY: ${TINODE_API_KEY:-AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K}
       # Prod mode + safety gate (W3-1): refuses to start with dev shortcuts on.
       ENV: "prod"
       # PROD: hard-coded off — the X-Anoon-Uid header bypass must never ship.

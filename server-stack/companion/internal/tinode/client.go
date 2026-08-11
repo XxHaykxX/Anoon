@@ -73,6 +73,11 @@ type Client struct {
 	watchedMu sync.Mutex
 	watched   map[string]struct{}
 
+	// fileBase / apiKey reach Tinode's HTTP file endpoint (file.go). Set once at
+	// startup via FileEndpoint, read-only afterwards.
+	fileBase string
+	apiKey   string
+
 	// metaSink / dataSink route the answers to an in-flight ROOT read (chats.go)
 	// back to the caller: a {meta} carries the request id, a {data} does not and
 	// is therefore keyed by topic. Both guarded by mu; readMu serializes the

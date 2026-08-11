@@ -249,6 +249,9 @@ func (s *Server) Handler() http.Handler {
 	// (?id=<topic>). Read-only, and the only admin section whose data lives in
 	// Tinode rather than in companion's DB — see chats.go.
 	mux.HandleFunc("GET /admin/chats", s.adminOnly(s.handleAdminChats))
+	// One attachment, streamed from Tinode as ROOT (file.go) — the only way an
+	// operator's browser can load a chat/gallery attachment at all.
+	mux.HandleFunc("GET /admin/file", s.adminOnly(s.handleAdminFile))
 	mux.HandleFunc("GET /admin/media/folders", s.adminOnly(s.handleAdminMediaFolders))
 	mux.HandleFunc("GET /admin/media", s.adminOnly(s.handleAdminListMedia))
 	mux.HandleFunc("PATCH /admin/media/{id}", s.adminOnly(s.handleAdminPatchMedia))

@@ -79,6 +79,17 @@ type Config struct {
 	RootLogin  string
 	RootSecret string
 
+	// TinodeHTTPURL / TinodeAPIKey reach Tinode's file endpoint, which is HTTP
+	// and not gRPC: the admin panel's media proxy (api/file.go) streams
+	// attachments from there as ROOT. Tinode refuses a download without BOTH an
+	// api key and an authenticated session, so neither has a useful zero value —
+	// empty TinodeHTTPURL disables the proxy (the section then shows the same
+	// broken attachment it did before), and the api key defaults to the same
+	// stock one the frontend bundle carries.
+	// Env: TINODE_HTTP_URL (default "http://tinode:6060") / TINODE_API_KEY.
+	TinodeHTTPURL string
+	TinodeAPIKey  string
+
 	// GoogleClientID is the OAuth client id whose tokens we accept (the "aud"
 	// claim of Google ID tokens). Empty disables Google sign-in.
 	// Env: COMPANION_GOOGLE_CLIENT_ID.
@@ -213,6 +224,8 @@ func Load() (*Config, error) {
 		Addr:                 envOr("COMPANION_ADDR", ":8080"),
 		DBDSN:                os.Getenv("COMPANION_DB_DSN"),
 		TinodeGRPCAddr:       envOr("TINODE_GRPC_ADDR", "tinode:16060"),
+		TinodeHTTPURL:        envOr("TINODE_HTTP_URL", "http://tinode:6060"),
+		TinodeAPIKey:         envOr("TINODE_API_KEY", "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K"),
 		RootLogin:            os.Getenv("COMPANION_ROOT_LOGIN"),
 		RootSecret:           os.Getenv("COMPANION_ROOT_SECRET"),
 		GoogleClientID:       os.Getenv("COMPANION_GOOGLE_CLIENT_ID"),

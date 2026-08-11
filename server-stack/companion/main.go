@@ -57,6 +57,9 @@ func run() error {
 
 	// --- Tinode ROOT bot --------------------------------------------------
 	tn := tinode.New(cfg.TinodeGRPCAddr, cfg.RootLogin, cfg.RootSecret)
+	// The file endpoint is HTTP, not gRPC: it is how the admin panel loads an
+	// attachment (internal/tinode/file.go).
+	tn.FileEndpoint(cfg.TinodeHTTPURL, cfg.TinodeAPIKey)
 	go tn.Run(ctx) // reconnecting loop; returns when ctx is cancelled.
 
 	// --- OAuth (Google) ---------------------------------------------------
