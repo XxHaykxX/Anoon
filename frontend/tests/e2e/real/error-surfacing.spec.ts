@@ -1,5 +1,5 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
-import { skipUnlessReal, loginReal } from "./helpers";
+import { skipUnlessReal, loginReal, switchTab } from "./helpers";
 
 skipUnlessReal(test);
 
@@ -37,8 +37,11 @@ test.describe.serial("refused companion calls surface to the user", () => {
     );
     await loginReal(page, "a");
 
-    // Same bare-svg-aria-label entry point friends-directory.spec.ts uses.
-    await page.locator('[aria-label="Поиск друзей"]').click();
+    // Same bare-svg-aria-label entry point friends-directory.spec.ts uses — and
+    // the same tab: finding a stranger by #ID lives on «Контакты», while the
+    // magnifier on «Чаты» filters the existing conversations.
+    await switchTab(page, "Контакты");
+    await page.locator('[aria-label="Найти друга по #ID"]').click();
     await expect(page.getByRole("heading", { name: "Найти друга" })).toBeVisible();
     // Any seeded #ID that is not already a friend of admin1 — the row only has
     // to offer «Добавить»; whether the request would succeed is beside the

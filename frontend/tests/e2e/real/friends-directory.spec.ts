@@ -58,9 +58,13 @@ test.describe.serial("real: friends list, #ID search, reopen by topic", () => {
   });
 
   test("friend search by #ID finds the peer and reports the existing friendship", async () => {
-    await switchTab(pageA, "Чаты");
+    // «Контакты», not «Чаты»: the header's magnifier now does the thing the tab
+    // is about — filtering the chat list on «Чаты», finding a stranger by #ID on
+    // «Контакты». It used to fire both at once (open the inline filter AND push
+    // the search screen), so the push always won and the filter was dead code.
+    await switchTab(pageA, "Контакты");
     // Same bare-svg-aria-label caveat as the invite icon in home-and-pages.spec.ts.
-    await pageA.locator('[aria-label="Поиск друзей"]').click();
+    await pageA.locator('[aria-label="Найти друга по #ID"]').click();
 
     await expect(pageA.getByRole("heading", { name: "Найти друга" })).toBeVisible();
     // BUG-45 rewrote this screen's copy: the placeholder was «#ID или ник»,

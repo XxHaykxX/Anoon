@@ -83,11 +83,24 @@ test.describe.serial("anon roulette: calling by alias", () => {
   });
 
   test.afterAll(async () => {
-    // Leave the match rather than just closing the browser: `closeAnon` fires
-    // /roulette/end, so the next spec (and the next run of this one) starts
-    // without an active match hanging off these two accounts.
-    await pageA?.getByLabel("Назад").click().catch(() => {});
-    await pageB?.getByLabel("Назад").click().catch(() => {});
+    // End the match rather than just closing the browser, and end it the way
+    // the UI does — «Меню чата» → «Завершить разговор», which is what fires
+    // /roulette/end. Tapping «Назад» only walks off the screen: the pairing
+    // stays open, and the server's own cleanup gives up the moment these
+    // accounts sign in again, which is precisely what the next spec does.
+    //
+    // This file runs FIRST in the suite, so the row it left was inherited by
+    // everything after it. Once a reload restores an unfinished anonymous chat,
+    // that meant an unrelated friend-chat test reloaded straight into this
+    // conversation — call records and all — and timed out looking for a nav bar.
+    await pageA
+      ?.getByRole("button", { name: "Меню чата" })
+      .click({ timeout: 5_000 })
+      .catch(() => {});
+    await pageA
+      ?.getByRole("button", { name: "Завершить разговор" })
+      .click({ timeout: 5_000 })
+      .catch(() => {});
     await contextA?.close();
     await contextB?.close();
   });
