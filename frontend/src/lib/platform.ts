@@ -36,6 +36,12 @@ export interface PlatformAdapter {
   effectiveTinodeWsUrl(configured: string): string;
   /** API key the Tinode server accepts. */
   readonly tinodeApiKey: string;
+  /**
+   * Origin that a Tinode file ref (`/v0/file/s/…`) has to be resolved against.
+   * Empty on the web, where a relative URL already resolves against the page;
+   * the phone has no page, so an `<Image>` given a bare path loads nothing.
+   */
+  readonly fileBaseUrl: string;
   /** Feature flag: talk to the real backend instead of the in-memory mock driver. */
   readonly useTinode: boolean;
   readonly storage: PlatformStorage;
@@ -113,6 +119,12 @@ export const webPlatform: PlatformAdapter = {
 
   tinodeApiKey:
     process.env.NEXT_PUBLIC_TINODE_API_KEY ?? "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K",
+
+  // Relative on purpose: same-origin mode serves the files through the same
+  // proxy as the page, and the absolute-host mode needs no prefix either — the
+  // browser resolves `/v0/file/s/…` against the origin the page came from,
+  // which is where the proxy lives.
+  fileBaseUrl: "",
 
   useTinode: process.env.NEXT_PUBLIC_USE_TINODE === "1",
 

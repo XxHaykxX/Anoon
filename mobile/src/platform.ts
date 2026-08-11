@@ -71,6 +71,9 @@ export const nativePlatform: PlatformAdapter = {
   tinodeApiKey:
     (Constants.expoConfig?.extra?.tinodeApiKey as string | undefined) ??
     'AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K',
+  // A file ref is a path on the server, and the phone has nothing to resolve a
+  // path against: an `<Image>` handed `/v0/file/s/…` loads nothing, silently.
+  fileBaseUrl: BACKEND_URL,
   // There is no mock driver worth shipping on the phone: the app is only ever
   // pointed at a real backend.
   useTinode: true,

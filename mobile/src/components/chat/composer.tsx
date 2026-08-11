@@ -1,0 +1,251 @@
+import * as ImagePicker from 'expo-image-picker';
+import { Modal, Pressable, Text, TextInput, View } from 'react-native';
+
+import { CloseIcon, PlusIcon, SendIcon, TrashIcon } from '@/components/icons';
+import { uploadFile, type MediaKind, type UploadedMedia } from '@/lib/tinode';
+
+import { CHAT_COLORS, EditIcon, MicOffIcon, ReplyIcon } from './icons';
+import type { ChatRow } from './thread';
+
+/** Быстрые реакции — тот же набор и порядок, что в `ReactionBar` на вебе. */
+const QUICK_EMOJIS = ['\u{1F44D}', '❤️', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F525}'];
+
+/**
+ * Выбрать фото/видео в галерее и загрузить на Tinode. Возвращает всё, что
+ * нужно `sendAnonMedia`/`sendFriendMedia`, или `null`, если пользователь
+ * отменил выбор либо не дал доступ.
+ *
+ * Камеры здесь нет намеренно: `expo-camera` не установлен, а
+ * `launchCameraAsync` из image-picker — это ещё одно разрешение и отдельная
+ * ветка обработки; галереи хватает, чтобы отправка медиа работала.
+ */
+export async function pickAndUpload(): Promise<{
+  up: UploadedMedia;
+  kind: MediaKind;
+  extra: { width?: number; height?: number; duration?: number };
+} | null> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) return null;
+
+  const res = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images', 'videos'],
+    quality: 0.8,
+  });
+  if (res.canceled || !res.assets[0]) return null;
+
+  const asset = res.assets[0];
+  const kind: MediaKind = asset.type === 'video' ? 'video' : 'image';
+  const mime = asset.mimeType ?? (kind === 'video' ? 'video/mp4' : 'image/jpeg');
+  const name = asset.fileName ?? `${kind}-${Date.now()}.${kind === 'video' ? 'mp4' : 'jpg'}`;
+  // Tinode-загрузчик умеет File | Blob; у телефона есть только `file://`-путь,
+  // поэтому читаем его в Blob — единственный способ отдать байты, не трогая
+  // общий `lib/tinode.ts`.
+  const blob = await (await fetch(asset.uri)).blob();
+  const up = await uploadFile(blob, name, mime);
+  return {
+    up,
+    kind,
+    extra: {
+      width: asset.width,
+      height: asset.height,
+      // expo-image-picker отдаёт длительность в миллисекундах, Drafty ждёт секунды.
+      duration: asset.duration ? Math.round(asset.duration / 1000) : undefined,
+    },
+  };
+}
+
+/** Полоска над композером: цитата ответа или подсказка о правке. */
+export function ReplyPreview({
+  text,
+  mode = 'reply',
+  onCancel,
+}: {
+  text: string;
+  mode?: 'reply' | 'edit';
+  onCancel: () => void;
+}) {
+  const editing = mode === 'edit';
+  return (
+    <View className="flex-row items-center gap-2 border-t border-border bg-card px-3 py-2">
+      {editing ? (
+        <EditIcon size={16} color={CHAT_COLORS.primary} />
+      ) : (
+        <ReplyIcon size={16} color={CHAT_COLORS.primary} />
+      )}
+      <View className="flex-1 border-l-2 border-primary pl-2">
+        <Text className="text-[11px] font-medium text-primary">
+          {editing ? 'Редактирование' : 'Ответ'}
+        </Text>
+        <Text numberOfLines={1} className="text-xs text-muted-foreground">
+          {text}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={editing ? 'Отменить редактирование' : 'Отменить ответ'}
+        onPress={onCancel}
+        className="h-6 w-6 items-center justify-center rounded-full">
+        <CloseIcon size={16} color={CHAT_COLORS.muted} />
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Строка ввода. Отличия от веба, все — вынужденные:
+ *  • нет кнопки эмодзи: на телефоне эмодзи даёт системная клавиатура, а свой
+ *    пикер занял бы пол-экрана ради того же самого;
+ *  • кнопка микрофона выключена: запись требует `expo-audio`, которого нет в
+ *    зависимостях. Выключенная кнопка честнее нажимаемой, которая ничего не
+ *    делает (то же решение, что с Google-входом на экране логина).
+ */
+export function Composer({
+  draft,
+  onDraftChange,
+  onSend,
+  editing,
+  onAttach,
+  viewOnceArmed,
+  onToggleViewOnce,
+}: {
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  editing: boolean;
+  onAttach: () => void;
+  viewOnceArmed: boolean;
+  onToggleViewOnce: () => void;
+}) {
+  const canSend = draft.trim().length > 0;
+  return (
+    <View className="flex-row items-center gap-2 border-t border-border px-3 py-2.5">
+      <Pressable accessibilityRole="button" accessibilityLabel="Прикрепить" onPress={onAttach}>
+        <PlusIcon size={24} color={CHAT_COLORS.muted} />
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Фото на один просмотр"
+        accessibilityState={{ selected: viewOnceArmed }}
+        onPress={onToggleViewOnce}
+        className="h-6 w-6 items-center justify-center">
+        <Text className={`text-sm ${viewOnceArmed ? 'text-primary' : 'text-muted-foreground/70'}`}>
+          👁
+        </Text>
+      </Pressable>
+
+      <TextInput
+        value={draft}
+        onChangeText={onDraftChange}
+        onSubmitEditing={() => canSend && onSend()}
+        placeholder={editing ? 'Изменить сообщение' : 'Сообщение'}
+        placeholderTextColor={CHAT_COLORS.muted}
+        multiline
+        className="max-h-24 flex-1 rounded-3xl bg-muted px-4 py-2 text-sm text-foreground"
+      />
+
+      {canSend ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Отправить" onPress={onSend}>
+          <SendIcon size={24} color={CHAT_COLORS.primary} />
+        </Pressable>
+      ) : (
+        <View
+          accessibilityRole="button"
+          accessibilityState={{ disabled: true }}
+          accessibilityLabel="Голосовое сообщение — недоступно"
+          className="opacity-50">
+          <MicOffIcon size={24} color={CHAT_COLORS.muted} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Действия над сообщением. На вебе это поповер, приклеенный к пузырю; на
+ * телефоне — нижний лист: попасть пальцем в маленький поповер над пузырём у
+ * края экрана тяжело, а лист всегда в зоне большого пальца.
+ *
+ * «Копировать» не портировано: `Clipboard` выпилен из ядра React Native, а
+ * `expo-clipboard` в зависимостях нет.
+ */
+export function MessageActions({
+  row,
+  onReact,
+  onReply,
+  onEdit,
+  onDeleteMine,
+  onDeleteAll,
+  onClose,
+}: {
+  row: ChatRow | null;
+  onReact: (row: ChatRow, emoji: string) => void;
+  onReply: (row: ChatRow) => void;
+  onEdit: (row: ChatRow) => void;
+  onDeleteMine: (row: ChatRow) => void;
+  onDeleteAll: (row: ChatRow) => void;
+  onClose: () => void;
+}) {
+  if (!row) return null;
+  const canEdit = row.own && !!row.text && !row.media?.length && row.seq != null;
+  const run = (fn: () => void) => () => {
+    fn();
+    onClose();
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable className="flex-1 justify-end bg-black/50" onPress={onClose}>
+        {/* Пустой onPress — чтобы тап по самому листу не закрывал его. */}
+        <Pressable onPress={() => {}} className="gap-2 px-3 pb-6">
+          <View className="flex-row items-center justify-around rounded-full border border-border bg-popover px-2 py-1.5">
+            {QUICK_EMOJIS.map((emoji) => (
+              <Pressable
+                key={emoji}
+                accessibilityRole="button"
+                accessibilityLabel={`Реакция ${emoji}`}
+                onPress={run(() => onReact(row, emoji))}
+                className="h-11 w-11 items-center justify-center rounded-full">
+                <Text className="text-2xl">{emoji}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View className="overflow-hidden rounded-2xl border border-border bg-popover">
+            <Pressable
+              onPress={run(() => onReply(row))}
+              className="flex-row items-center gap-2.5 px-4 py-3">
+              <ReplyIcon size={18} color={CHAT_COLORS.muted} />
+              <Text className="text-sm text-popover-foreground">Ответить</Text>
+            </Pressable>
+
+            {canEdit ? (
+              <Pressable
+                onPress={run(() => onEdit(row))}
+                className="flex-row items-center gap-2.5 px-4 py-3">
+                <EditIcon size={18} color={CHAT_COLORS.muted} />
+                <Text className="text-sm text-popover-foreground">Редактировать</Text>
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              onPress={run(() => onDeleteMine(row))}
+              className="flex-row items-center gap-2.5 px-4 py-3">
+              <TrashIcon size={18} color={CHAT_COLORS.muted} />
+              <Text className="text-sm text-popover-foreground">Удалить у меня</Text>
+            </Pressable>
+
+            {row.own ? (
+              <Pressable
+                onPress={run(() => onDeleteAll(row))}
+                className="flex-row items-center gap-2.5 px-4 py-3">
+                <TrashIcon size={18} color={CHAT_COLORS.destructive} />
+                <Text className="text-sm text-destructive">Удалить у всех</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}

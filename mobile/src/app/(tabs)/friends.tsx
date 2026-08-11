@@ -1,5 +1,6 @@
-import { StubScreen } from '@/components/stub-screen';
+import { ContactList } from '@/components/contact-list';
 
+/** «Контакты» — весь список друзей, поиск и заявки (BUG-36). */
 export default function FriendsScreen() {
-  return <StubScreen name="friends" />;
+  return <ContactList mode="friends" />;
 }

@@ -1,5 +1,14 @@
-import { StubScreen } from '@/components/stub-screen';
+import { Redirect } from 'expo-router';
 
+/**
+ * На вебе это инструкция «установите PWA на домашний экран» (`AnoonInstall.tsx`).
+ *
+ * В нативном приложении устанавливать нечего: оно УЖЕ установлено — иначе этот
+ * код бы не выполнялся. Портировать сюда «нажмите Поделиться → На экран Домой»
+ * значило бы учить человека установить то, что он открыл. Маршрут оставлен
+ * только потому, что на него ведут старые ссылки/переходы: он молча уводит
+ * домой.
+ */
 export default function InstallScreen() {
-  return <StubScreen name="install" />;
+  return <Redirect href="/(tabs)/home" />;
 }

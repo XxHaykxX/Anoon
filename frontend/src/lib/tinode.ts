@@ -1176,7 +1176,10 @@ export function authedFileUrl(ref: string): string {
     params.set("auth", "token");
     params.set("secret", token);
   }
-  return `${ref}?${params.toString()}`;
+  // The prefix is empty in a browser (the page's own origin already resolves
+  // the path) and the server's origin on the phone, which has no page to
+  // resolve against — there, a bare path is an image that silently never loads.
+  return `${platform().fileBaseUrl}${ref}?${params.toString()}`;
 }
 
 /**
