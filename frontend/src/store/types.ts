@@ -16,6 +16,7 @@ import type {
   TinodeMessageLite,
   User,
 } from "./sliceModels";
+import type { CallRecord } from "@/lib/tinode";
 
 /** Fields the auth screens collect; the rest of {@link User} is synthesized. */
 export interface BasicSignInInput {
@@ -68,6 +69,22 @@ export interface SessionSlice {
   restoreSession: () => Promise<boolean>;
   signOut: () => void;
   setUser: (user: User | null) => void;
+  /**
+   * Persist the editable profile fields, then mirror them into the store.
+   *
+   * Lives here because the two fields go to two different servers: the display
+   * name is the account's Tinode `public.fn`, while the age is companion's (the
+   * match queue filters on it). Both clients — web and phone — have a profile
+   * screen and a settings screen that can change these, and all four used to
+   * call {@link setUser} alone: memory only, so a rename reverted on the next
+   * boot (the shell re-reads the name from Tinode) and the age was never stored
+   * anywhere at all.
+   *
+   * Only the fields that actually changed are sent. Throws on failure — a save
+   * that silently did nothing is the bug this replaces, so the screen has to be
+   * able to say so.
+   */
+  saveProfile: (edits: { displayName?: string; age?: number }) => Promise<void>;
   /**
    * A refusal from the backend that the user has to see, rendered as a toast by
    * AnoonApp. Distinct from {@link authError}, which belongs to the auth screens
@@ -146,19 +163,31 @@ export interface ChatSlice {
   /** Delete a message: `hard` removes it for everyone, else only for me (Wave-2 #86). */
   deleteChatMessage: (seq: number, hard: boolean) => Promise<void>;
   /**
-   * Record a finished call as a system line in the conversation with `peer`
-   * — same injected-system-line path as «Собеседник покинул чат» (BUG-15), so
-   * it renders with the existing centered muted pill. `peer` is the signaling
-   * handle the call used: a friend's #ID, or a per-match anon alias.
+   * Record a finished call in the conversation with `peer`, as a message in that
+   * conversation's Tinode topic (#41). `peer` is the signaling handle the call
+   * used: a friend's #ID, or a per-match anon alias; the topic is resolved from
+   * it here.
    *
-   * Routed by that handle, not by topic: the anon chat gets it via
-   * {@link AnonChatSlice.messages}, an open friend chat via
-   * {@link chatMessages}, and a CLOSED friend chat buffers it until the next
-   * {@link openChat} (a missed call rings on the app shell, not in a thread).
-   * Session-only — nothing is written to the server, so it does not survive a
-   * reload, exactly like every other injected system line.
+   * It used to be a purely local system line, which meant the whole trace of a
+   * call died with the tab — and the other party never saw one at all. Writing
+   * it into the topic puts it where every other message already lives: both
+   * sides get it, it survives a reload, and no new storage was needed for it.
+   *
+   * Only the side that PLACED the call writes (`rec.incoming` is false for
+   * them). Both sides run this on hangup, and a topic message is seen by both,
+   * so letting both write would double every record.
    */
-  logCall: (peer: string, text: string) => void;
+  logCall: (peer: string, rec: CallLogRecord) => void;
+}
+
+/**
+ * What {@link ChatSlice.logCall} is told about a call that just ended.
+ * `incoming` is local-only — it decides who writes the record, and the reader's
+ * own direction is derived from who sent the message (see `sendCallRecord`).
+ */
+export interface CallLogRecord extends CallRecord {
+  /** True when WE were the callee. */
+  incoming: boolean;
 }
 
 /**
@@ -230,6 +259,14 @@ export interface AnonChatSlice {
   resyncAnonReveal: () => Promise<void>;
   /** Bridge setter: both sides revealed → flip to a friend chat. */
   applyRevealed: (peerHashId: string, peerDisplayName: string) => void;
+  /**
+   * Record that `seq` in the active anon topic is one of OUR messages, and
+   * persist it. An anon topic blanks `from` on every message it delivers, live
+   * and in history, so this is the only way a restored chat can tell our own
+   * bubbles from the peer's. Called by the send paths — and by `logCall`, which
+   * publishes into the same topic from outside this slice.
+   */
+  rememberOwnAnonSeq: (seq: number) => void;
 }
 
 /** Matchmaking queue state (idle / searching / matched). */
@@ -249,6 +286,25 @@ export interface RouletteSlice {
    * that first socket is unauthenticated. Call right after `setSessionToken`.
    */
   reconnectCompanionEvents: () => void;
+  /**
+   * Re-enter the anon chat the user was in before this client (re)started, by
+   * asking the companion who they are currently paired with.
+   *
+   * A reload or an app the OS unloaded drops the match out of memory, and
+   * nothing rebuilt it: the peer stayed in the chat and only learned of the
+   * "departure" through the disconnect grace window, ~20s later. The pairing
+   * itself never went anywhere — it lives in `roulette_matches` and the socket
+   * grace period (companion `wsDisconnectGrace`) exists precisely so a reload
+   * does not end it — so all that was missing was asking.
+   *
+   * Only an ANON pairing is restored. A revealed pair are friends whose chat is
+   * an ordinary conversation reachable from «Чаты», and their match row lingers
+   * server-side after they walk away, so reopening it on every boot would drag
+   * them back into a chat they already left.
+   *
+   * @returns true if a chat was restored — the shell navigates to it.
+   */
+  restoreActiveMatch: () => Promise<boolean>;
 }
 
 /** Notification center state. */

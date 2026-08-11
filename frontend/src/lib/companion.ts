@@ -355,6 +355,10 @@ export class CompanionClient {
     if (!res.ok) throw new CompanionHttpError(path, res.status);
     // A successful call means the backend is live — leave mock mode.
     this.mock = false;
+    // 204 has no body, and asking for JSON there throws — which would report a
+    // succeeded write as a failure. `DELETE /me` never noticed because it
+    // swallows everything; `PATCH /me` does not, and must not lie to the user.
+    if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
   }
 
@@ -846,16 +850,34 @@ export class CompanionClient {
 
   /**
    * Best-effort delete of the signed-in user's companion-side row (contract:
-   * `DELETE /me`). The endpoint isn't implemented on the backend yet, so any
-   * failure (404, network, etc.) is swallowed — callers should proceed with
-   * the Tinode-side account deletion regardless.
+   * `DELETE /me`). Any failure (network, already gone, etc.) is swallowed —
+   * callers should proceed with the Tinode-side account deletion regardless.
    */
   async deleteMe(): Promise<void> {
     try {
       await this.request<unknown>("/me", { method: "DELETE" });
     } catch {
-      /* not implemented yet / already gone — proceed anyway */
+      /* already gone — proceed anyway */
     }
+  }
+
+  /**
+   * Save the signed-in user's self-reported age (contract: `PATCH /me` `{age}`
+   * → 204). `null` clears it.
+   *
+   * Age is the one profile field that is companion's rather than Tinode's — the
+   * match queue filters on it — so the profile screen has to write it here,
+   * separately from the name and photo that go into the account's `public`.
+   *
+   * Unlike {@link deleteMe} this one throws: a save that silently did nothing is
+   * exactly the bug this endpoint exists to fix, so the screen must be able to
+   * tell the user it failed.
+   */
+  async updateAge(age: number | null): Promise<void> {
+    await this.request<unknown>("/me", {
+      method: "PATCH",
+      body: JSON.stringify({ age }),
+    });
   }
 
   /* ----------------------------- media ----------------------------- */

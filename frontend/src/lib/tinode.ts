@@ -298,7 +298,7 @@ export class TinodeClient {
 
   /**
    * Own display name as stored in the account's Tinode `public.fn` — the field
-   * the profile screen writes and the one a Google sign-in seeds from the ID
+   * {@link setDisplayName} writes and the one a Google sign-in seeds from the ID
    * token (companion `googleAccountPublic`). `null` until the `me` topic is
    * subscribed, or when the account has no name set.
    */
@@ -815,6 +815,26 @@ export class TinodeClient {
     await this.publishCached(t, emoji, false, { reaction: { seq: targetSeq, emoji } });
   }
 
+  /**
+   * Publish the record of a finished call into the conversation's topic, so it
+   * outlives the tab that made the call (#41). Same app-level-head convention as
+   * {@link editMessage}/{@link sendReaction}: `head.call` carries the structured
+   * facts, the plain-text body is a readable fallback for anything that does not
+   * know the convention. Readers must check {@link parseCallRecord} first — a
+   * non-null result is a system line, not a chat bubble.
+   *
+   * Deliberately NOT direction-stamped. Who called whom is derivable from who
+   * SENT this message, and the record is written by the caller only (see
+   * `logCall`), so each side renders «Исходящий»/«Входящий» from its own view.
+   * Stamping a direction would name it from the writer's side for both.
+   * @returns the server-assigned seq (0 if unavailable).
+   */
+  async sendCallRecord(topic: string, rec: CallRecord, text: string): Promise<number> {
+    const t = this.topics.get(topic) ?? this.tinode!.getTopic(topic);
+    await this.ensureAttached(t);
+    return this.publishSeq(await this.publishCached(t, text, false, { call: rec }));
+  }
+
   /** Emit a "typing" notification on a topic (throttle at the call site). */
   sendTyping(topic: string): void {
     this.topics.get(topic)?.noteKeyPress();
@@ -925,6 +945,13 @@ export class TinodeClient {
    * `me` topic's existing `public` (preserving `fn` etc.) via `setMeta` — the
    * standard Tinode avatar convention (`public.photo.ref`, same shape
    * {@link avatarRefFor} reads back for any contact).
+   *
+   * `attachments` is not optional garnish: an upload starts life unreferenced,
+   * and Tinode's file collector deletes every unreferenced upload older than an
+   * hour (`hdl_files.go`, `store.Files.DeleteUnused`). Only the `extra.attachments`
+   * on this `{set}` links the blob to the topic (`topic.go` → `LinkAttachments`).
+   * Without it the avatar renders fine right after upload and then turns into a
+   * permanent 404 an hour later — the blob is gone, the ref stays in `public`.
    * @returns the uploaded avatar's file ref (wrap in {@link authedFileUrl} to display).
    */
   async setAvatar(file: File): Promise<string> {
@@ -934,8 +961,31 @@ export class TinodeClient {
     const up = await this.uploadFile(file, file.name, file.type || "application/octet-stream");
     const me = this.tinode.getMeTopic();
     const prevPublic = (me.public as Record<string, unknown> | undefined) ?? {};
-    await me.setMeta({ desc: { public: { ...prevPublic, photo: { ref: up.url } } } });
+    await me.setMeta({
+      desc: { public: { ...prevPublic, photo: { ref: up.url } } },
+      attachments: [up.url],
+    });
     return up.url;
+  }
+
+  /**
+   * Write the account's own display name into Tinode `public.fn` — the field
+   * {@link myDisplayName} reads back and the one every peer sees.
+   *
+   * Same shape as {@link setAvatar}: merge into the existing `public` rather
+   * than replace it, or saving a name would drop the photo (and vice versa).
+   *
+   * Until this existed, the profile and settings screens only called the store's
+   * `setUser`, so a renamed account reverted on the next load — the shell
+   * re-reads the name from Tinode at boot, and Tinode had never been told.
+   */
+  async setDisplayName(fn: string): Promise<void> {
+    if (!this.tinode || !this.tinode.isConnected()) {
+      throw new Error("Tinode is not connected — cannot set display name");
+    }
+    const me = this.tinode.getMeTopic();
+    const prevPublic = (me.public as Record<string, unknown> | undefined) ?? {};
+    await me.setMeta({ desc: { public: { ...prevPublic, fn } } });
   }
 
   /**
@@ -1208,6 +1258,35 @@ export function parseReaction(msg: TinodeMessage): { seq: number; emoji: string 
   const seq = Number(reaction.seq ?? 0);
   if (!seq) return null;
   return { seq, emoji: reaction.emoji };
+}
+
+/**
+ * The facts about a finished call, as they ride in `head.call` (see
+ * {@link TinodeClient.sendCallRecord}). Everything here is direction-free on
+ * purpose — see that method.
+ */
+export interface CallRecord {
+  media: "audio" | "video";
+  /** Whole seconds of connected media. 0 means it never connected. */
+  sec: number;
+  /** Why it ended without connecting. Absent for a call that did connect. */
+  outcome?: "declined" | "unavailable" | "missed" | "busy" | "cancelled";
+}
+
+/**
+ * Detect a call record and return it, or `null` if `msg` isn't one. Reads the
+ * `{call: {...}}` head convention (see {@link TinodeClient.sendCallRecord}). A
+ * non-null result means the caller should render a system line, not a bubble.
+ */
+export function parseCallRecord(msg: TinodeMessage): CallRecord | null {
+  const call = msg.head?.call as Record<string, unknown> | undefined;
+  if (!call || (call.media !== "audio" && call.media !== "video")) return null;
+  const outcome = typeof call.outcome === "string" ? call.outcome : undefined;
+  return {
+    media: call.media,
+    sec: Number(call.sec) || 0,
+    outcome: outcome as CallRecord["outcome"],
+  };
 }
 
 /**

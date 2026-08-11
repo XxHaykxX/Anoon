@@ -37,7 +37,6 @@ const DESKTOP_FORM =
 
 export default function AnoonVerifyEmail() {
   const nav = useAnoonNav();
-  const email = "you@example.com";
   const [seconds, setSeconds] = useState(60);
   const [resends, setResends] = useState(0);
   const [resendError, setResendError] = useState<string | null>(null);
@@ -127,10 +126,13 @@ export default function AnoonVerifyEmail() {
         </div>
 
         <h1 className="mt-6 text-2xl font-bold">Подтвердите почту</h1>
+        {/* Никакого конкретного адреса: `User` его не хранит, а сюда попадают с
+            экрана регистрации без передачи параметров между маршрутами — раньше
+            здесь стояло жёстко зашитое «you@example.com», то есть экран называл
+            человеку чужой адрес как его собственный. */}
         <p className="mt-2 max-w-[18rem] text-sm text-muted-foreground">
-          Мы отправили письмо со ссылкой для подтверждения на адрес
+          Мы отправили письмо со ссылкой для подтверждения на указанную почту.
         </p>
-        <p className="mt-1 font-medium text-foreground">{email}</p>
         <p className="mt-4 max-w-[18rem] text-xs text-muted-foreground">
           Перейдите по ссылке из письма, чтобы завершить регистрацию. Не забудьте
           проверить папку «Спам».

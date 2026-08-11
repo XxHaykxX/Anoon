@@ -244,14 +244,20 @@ export default function AnoonFriends({
               <CloseIcon className="size-6" />
             </button>
           ) : (
+            // Two different searches behind one glyph, and the screen used to
+            // start the wrong one and then throw it away: it set `searchOpen`
+            // AND pushed «Найти друга» on the same click. The push unmounts this
+            // screen, so the flag (and the whole inline filter below it) was
+            // dead code — the field never appeared once.
+            //
+            // «Чаты» wants the filter: you are looking for a conversation you
+            // already have. «Контакты» wants the #ID lookup: that screen is the
+            // only way to add someone new, and this icon is its only entry point.
             <button
               type="button"
               className={ICON_BTN}
-              aria-label="Поиск друзей"
-              onClick={() => {
-                setSearchOpen(true);
-                nav.push("friend-search");
-              }}
+              aria-label={isChats ? "Поиск по чатам" : "Найти друга по #ID"}
+              onClick={() => (isChats ? setSearchOpen(true) : nav.push("friend-search"))}
             >
               <SearchIcon className="size-6" />
             </button>
@@ -265,7 +271,7 @@ export default function AnoonFriends({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поиск среди друзей"
+            placeholder="Поиск по чатам"
             autoFocus
             className="w-full rounded-full border border-transparent bg-muted px-4 py-2 text-sm text-foreground outline-none ring-primary/40 transition-shadow placeholder:text-muted-foreground focus:border-primary focus:ring-2"
           />

@@ -6,6 +6,7 @@ import { BellIcon, CloseIcon, CheckIcon, PeopleIcon } from "@/components/icons";
 import { useAnoonStore } from "@/store";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
 import { getCompanionClient } from "@/lib/companion";
+import { isPushPrefEnabled, pushSupported, setPushPrefEnabled, subscribePush } from "@/lib/push";
 import { USE_TINODE } from "@/lib/tinode";
 import type {
   FriendRequest as StoreFriendRequest,
@@ -172,7 +173,15 @@ function notificationToFeed(n: StoreNotification): FeedItem {
 
 export default function AnoonNotifications() {
   const nav = useAnoonNav();
-  const [showPushBanner, setShowPushBanner] = useState(true);
+  // Offer the banner only where it can lead somewhere: a browser that can do
+  // Web Push and hasn't been switched on already. Lazy init reads localStorage,
+  // so SSR renders the same "no banner" as a browser that can't push.
+  const [showPushBanner, setShowPushBanner] = useState(
+    () => pushSupported() && !isPushPrefEnabled(),
+  );
+  const [pushBusy, setPushBusy] = useState(false);
+  /** Set when the browser or the backend refused — the banner stays and says so. */
+  const [pushFailed, setPushFailed] = useState(false);
 
   // Real state (store) vs. offline demo state (local mock). USE_TINODE flips
   // the source; the mock arrays remain the standalone-showcase fallback.
@@ -234,9 +243,24 @@ export default function AnoonNotifications() {
   // Desktop only: is there anything to put in the left column next to the feed?
   const twoColumnDesktop = showPushBanner || requests.length > 0;
 
-  const handleEnablePush = () => {
-    if (typeof Notification !== "undefined") void Notification.requestPermission();
-    setShowPushBanner(false);
+  /**
+   * «Включить» has to end with a push subscription registered at companion, not
+   * with a granted permission. It used to call `Notification.requestPermission()`
+   * and close the banner: the browser prompt appeared, the user said yes, and no
+   * push ever arrived — the one outcome worse than a button that does nothing.
+   * `subscribePush` asks for the permission itself and never throws, so a
+   * refusal (denied, backend down) keeps the banner up instead of claiming
+   * success.
+   */
+  const handleEnablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    setPushFailed(false);
+    const ok = await subscribePush();
+    setPushPrefEnabled(ok);
+    setPushBusy(false);
+    if (ok) setShowPushBanner(false);
+    else setPushFailed(true);
   };
 
   return (
@@ -292,16 +316,23 @@ export default function AnoonNotifications() {
                 {/* `truncate` is a phone measure — 233px of text in a 202px
                     slot. On desktop the banner has room to spare, so the line
                     is allowed to finish. */}
-                <p className="truncate text-xs text-muted-foreground lg:[.anoon-desktop_&]:overflow-visible lg:[.anoon-desktop_&]:whitespace-normal">
-                  Не пропускайте новые сообщения и заявки
+                <p
+                  className={`truncate text-xs lg:[.anoon-desktop_&]:overflow-visible lg:[.anoon-desktop_&]:whitespace-normal ${
+                    pushFailed ? "text-destructive" : "text-muted-foreground"
+                  }`}
+                >
+                  {pushFailed
+                    ? "Не удалось включить — разрешите уведомления в браузере"
+                    : "Не пропускайте новые сообщения и заявки"}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={handleEnablePush}
-                className="shrink-0 cursor-pointer select-none rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-transform active:scale-95"
+                disabled={pushBusy}
+                onClick={() => void handleEnablePush()}
+                className="shrink-0 cursor-pointer select-none rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-transform active:scale-95 disabled:opacity-60"
               >
-                Включить
+                {pushBusy ? "Включаем…" : "Включить"}
               </button>
               <button
                 type="button"

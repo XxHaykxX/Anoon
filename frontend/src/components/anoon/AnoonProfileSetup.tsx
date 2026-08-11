@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { PlusIcon } from "@/components/icons";
 import { AnoonAvatar, AnoonLogo } from "@/components/anoon/_shared";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
@@ -41,7 +41,21 @@ export default function AnoonProfileSetup() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [ageRange, setAgeRange] = useState<string | null>(null);
-  const [hasPhoto, setHasPhoto] = useState(false);
+  // Object URL of the picked file. This was a `hasPhoto` boolean flipped by the
+  // button itself: tapping it printed «Фото добавлено» without ever opening a
+  // picker, so the screen claimed a photo nobody had chosen. A hidden file input
+  // is the native way to ask, and it costs less than the lie did.
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onPhotoPicked = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
 
   const canFinish = firstName.trim().length > 0;
 
@@ -61,15 +75,16 @@ export default function AnoonProfileSetup() {
         <div className="mt-7 flex flex-col items-center">
           <button
             type="button"
-            onClick={() => setHasPhoto((v) => !v)}
-            aria-label={hasPhoto ? "Убрать фото" : "Добавить фото"}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label={photoUrl ? "Заменить фото" : "Добавить фото"}
             className="relative transition-transform active:scale-95 cursor-pointer"
           >
-            {hasPhoto ? (
+            {photoUrl ? (
               <AnoonAvatar
                 initials={(firstName.trim()[0] ?? "A").toUpperCase()}
                 tone={3}
                 size={96}
+                photoUrl={photoUrl}
               />
             ) : (
               <div className="grid size-24 place-items-center rounded-full border-2 border-dashed border-border bg-card text-muted-foreground">
@@ -80,8 +95,15 @@ export default function AnoonProfileSetup() {
               <PlusIcon className="size-4" />
             </span>
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onPhotoPicked}
+          />
           <span className="mt-2 text-xs text-muted-foreground">
-            {hasPhoto ? "Фото добавлено" : "Добавить фото · необязательно"}
+            {photoUrl ? "Фото выбрано" : "Добавить фото · необязательно"}
           </span>
         </div>
 

@@ -343,6 +343,11 @@ export default function AnoonApp() {
   // straight to Чаты. `booting` starts true ONLY when a stored session exists,
   // so first-time visitors go straight to onboarding with no splash flash.
   const restoreSession = useAnoonStore((s) => s.restoreSession);
+  // …and if that session was in the middle of an anonymous chat, go back INTO
+  // it rather than to Чаты. The pairing outlives the reload server-side (the
+  // socket has a grace period for exactly this), so the peer is still sitting
+  // there — see `restoreActiveMatch`.
+  const restoreActiveMatch = useAnoonStore((s) => s.restoreActiveMatch);
   // Starts true for EVERYONE, including the server render. Reading
   // `hasPersistedSession()` in the initialiser instead — as this did — makes the
   // first client render disagree with the server one for anybody who is logged
@@ -361,8 +366,26 @@ export default function AnoonApp() {
     void (async () => {
       const ok = await restoreSession().catch(() => false);
       if (cancelled) return;
-      if (ok) go("chats");
+      if (!ok) {
+        setBooting(false);
+        return;
+      }
+      go("chats");
+      // The splash comes down HERE, before asking about an anonymous match, and
+      // not after. That question is a companion round-trip on every single
+      // reload — including the overwhelming majority who were never in a
+      // roulette chat — and holding the splash for it meant one slow or wedged
+      // request left the app on a spinner with no way out. It cost a real
+      // reload test 60s of waiting for a nav bar that never rendered.
+      //
+      // The trade is a brief «Чаты» before the redirect lands for whoever WAS
+      // mid-chat. That is the right way round: the app is usable while the
+      // answer is in flight, instead of everyone waiting for an answer that is
+      // almost always "no".
       setBooting(false);
+      const inChat = await restoreActiveMatch().catch(() => false);
+      if (cancelled) return;
+      if (inChat) go("anon-chat");
     })();
     return () => {
       cancelled = true;
@@ -710,7 +733,11 @@ export default function AnoonApp() {
               {/* Global connectivity banner — overlays whatever screen is active. */}
               {offline && (
                 <div className="absolute inset-0 z-40">
-                  <AnoonOffline />
+                  {/* «Повторить» probes the network itself; when it comes back
+                      the banner has to go, and only the shell owns that flag —
+                      the browser's `online` event can lag behind a link that
+                      already carries traffic again. */}
+                  <AnoonOffline onOnline={() => setOffline(false)} />
                 </div>
               )}
 

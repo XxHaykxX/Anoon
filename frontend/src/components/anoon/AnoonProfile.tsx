@@ -31,7 +31,7 @@ export default function AnoonProfile() {
   // stubs only in the showcase (no user / flag off).
   const user = useAnoonStore((s) => s.user);
   const signOut = useAnoonStore((s) => s.signOut);
-  const setUser = useAnoonStore((s) => s.setUser);
+  const saveProfile = useAnoonStore((s) => s.saveProfile);
   // Bell badge: real unread-notifications count when signed in; stub otherwise
   // (same pattern as AnoonHome/AnoonNotifications — never hardcode a phantom count).
   const unreadCount = useAnoonStore((s) => s.unreadCount);
@@ -55,6 +55,8 @@ export default function AnoonProfile() {
   );
   const [age, setAge] = useState(() => (real ? String(user!.age) : "24"));
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   // Persisted photo ref (`public.photo.ref`), read live off the Tinode client
@@ -68,14 +70,25 @@ export default function AnoonProfile() {
   const [walletOpen, setWalletOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSave = () => {
-    // Persist edits to the store so they survive navigation (real user only).
-    if (real && user) {
-      const displayName = `${firstName} ${lastName}`.trim() || user.displayName;
-      setUser({ ...user, displayName, age: Number(age) || user.age });
+  /** Persist through the store's `saveProfile` — it owns where each field goes. */
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (real && user) {
+        await saveProfile({
+          displayName: `${firstName} ${lastName}`.trim(),
+          age: Number(age) || user.age,
+        });
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1600);
+    } catch {
+      setSaveError("Не удалось сохранить профиль. Попробуйте ещё раз.");
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1600);
   };
 
   const handleCopy = () => {
@@ -222,18 +235,26 @@ export default function AnoonProfile() {
           {/* Save */}
           <button
             type="button"
-            onClick={handleSave}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 font-semibold text-primary-foreground transition-transform active:scale-95"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 font-semibold text-primary-foreground transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
           >
             {saved ? (
               <>
                 <CheckIcon className="size-5" />
                 Сохранено
               </>
+            ) : saving ? (
+              "Сохраняем…"
             ) : (
               "Сохранить"
             )}
           </button>
+          {saveError && (
+            <p className="mt-2 text-sm text-destructive" role="alert">
+              {saveError}
+            </p>
+          )}
         </div>
 
         {/* Column 2 on desktop: sharing + the links out of this screen. */}

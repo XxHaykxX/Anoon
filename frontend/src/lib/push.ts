@@ -78,6 +78,24 @@ export async function subscribePush(): Promise<boolean> {
   }
 }
 
+/**
+ * Local "the user asked for pushes" preference. Only a best guess — the browser
+ * subscription is the truth — but it survives a reload before the async check
+ * that reconciles it. Lives here, not on a screen, because two screens set it:
+ * the settings toggle and the notifications banner.
+ */
+const PUSH_PREF_KEY = "anoon:notify:push";
+
+export function isPushPrefEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(PUSH_PREF_KEY) === "1";
+}
+
+export function setPushPrefEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PUSH_PREF_KEY, enabled ? "1" : "0");
+}
+
 /** Unregister push: cancel the browser subscription and tell companion. */
 export async function unsubscribePush(): Promise<void> {
   if (typeof window === "undefined" || !pushSupported()) return;

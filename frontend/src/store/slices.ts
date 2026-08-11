@@ -10,12 +10,14 @@ import { CompanionHttpError, getCompanionClient, type RegisterResult } from "@/l
 import {
   buildMediaDraft,
   getTinodeClient,
+  parseCallRecord,
   parseEditTarget,
   parseMediaParts,
   parseReaction,
   plainText,
   tinodeLoginFromEmail,
   USE_TINODE,
+  type CallRecord,
   type MediaKind,
   type MediaPart,
   type MeContact,
@@ -160,6 +162,16 @@ interface RouletteStatusResponse {
    * decremented and stays decremented.
    */
   revealAsksLeft?: number;
+  /**
+   * Whether the peer currently holds an event socket. Absent means "no" (the
+   * server omits it when false, and when there is no match at all).
+   *
+   * A pairing nobody ended stays in the database forever, so `match` alone does
+   * not mean there is still a conversation. This is what separates "reload —
+   * they are still there" from "that chat emptied out hours ago". See
+   * `restoreActiveMatch`.
+   */
+  peerOnline?: boolean;
 }
 
 /**
@@ -207,6 +219,50 @@ function systemMsg(text: string): TinodeMessageLite {
     system: true,
     text,
     ts: Date.now(),
+  };
+}
+
+/** mm:ss for a whole-second duration. */
+const mmss = (sec: number) =>
+  `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+
+/**
+ * The line a call record renders as, e.g. «Исходящий видеозвонок · 02:14» /
+ * «Входящий аудиозвонок · пропущен».
+ *
+ * `mine` is the READER's side of it, which is why the record on the wire is
+ * direction-free: one message in the topic is read by both parties, and each
+ * has to see their own half of it (see `TinodeClient.sendCallRecord`).
+ */
+function callLogLine(rec: CallRecord, mine: boolean): string {
+  const kind = rec.media === "video" ? "видеозвонок" : "аудиозвонок";
+  const direction = mine ? "Исходящий" : "Входящий";
+  const outcome = rec.sec
+    ? mmss(rec.sec)
+    : rec.outcome === "declined"
+      ? "отклонён"
+      : rec.outcome === "unavailable"
+        ? "не удалось дозвониться"
+        : rec.outcome === "busy"
+          ? "собеседник занят"
+          : rec.outcome === "missed"
+            ? "пропущен"
+            : "отменён";
+  return `${direction} ${kind} · ${outcome}`;
+}
+
+/**
+ * A call record from the topic, as a store message. Keyed by its server seq —
+ * not a fresh id like {@link systemMsg} — so the history replay that happens on
+ * every (re)subscribe folds onto the same line instead of stacking copies.
+ */
+function callRecordMsg(m: TinodeMessage, rec: CallRecord, mine: boolean): TinodeMessageLite {
+  return {
+    id: String(m.seq || `r${m.ts}`),
+    mine,
+    system: true,
+    text: callLogLine(rec, mine),
+    ts: m.ts,
   };
 }
 
@@ -276,6 +332,7 @@ function clearSession(): void {
   try {
     platform().storage.remove(SESSION_KEY);
     platform().storage.remove(GROUP_FRIENDS_KEY);
+    platform().storage.remove(ANON_SEQS_KEY);
   } catch {
     /* ignore */
   }
@@ -318,6 +375,40 @@ function readGroupFriends(): Friend[] {
     return Array.isArray(parsed) ? (parsed as Friend[]) : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Which seqs in the CURRENT anon topic are our own messages (#41 / anon reload).
+ *
+ * An anonymous topic blanks `From` on every message, live and in history (see
+ * the server's anon patch in `topic.go`) — that is what keeps the two sides from
+ * learning each other's uid. The consequence is that nothing in a replayed anon
+ * history says who wrote what, so a restored chat would render the user's own
+ * messages as the peer's. The sender is the only one who can know, so the
+ * sender writes it down.
+ *
+ * One topic at a time, because there is only ever one anon chat: a new topic
+ * replaces the record rather than accumulating one per match.
+ */
+const ANON_SEQS_KEY = "anoon:anon:seqs";
+
+function readAnonSeqs(topic: string): Set<number> {
+  try {
+    const raw = platform().storage.get(ANON_SEQS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || parsed.topic !== topic || !Array.isArray(parsed.seqs)) return new Set();
+    return new Set((parsed.seqs as unknown[]).map(Number).filter(Number.isFinite));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveAnonSeqs(topic: string, seqs: Set<number>): void {
+  try {
+    platform().storage.set(ANON_SEQS_KEY, JSON.stringify({ topic, seqs: [...seqs] }));
+  } catch {
+    /* storage full / disabled — own bubbles just won't survive a reload */
   }
 }
 
@@ -828,6 +919,25 @@ export const createSessionSlice: Slice<SessionSlice> = (set, get) => ({
     });
   },
   setUser: (user) => set({ user, hashId: user?.hashId ?? null }),
+
+  saveProfile: async ({ displayName, age }) => {
+    const user = get().user;
+    if (!user) return;
+
+    // Send only what moved: renaming touches Tinode, changing the age touches
+    // companion, and a save where neither changed should hit neither server.
+    const nextName = displayName?.trim() || user.displayName;
+    const nextAge = age ?? user.age;
+    if (nextName !== user.displayName) {
+      await getTinodeClient().setDisplayName(nextName);
+    }
+    if (nextAge !== user.age) {
+      await getCompanionClient().updateAge(nextAge);
+    }
+    // Mirror only after both writes land, or the screen would show a value the
+    // server does not have.
+    set({ user: { ...user, displayName: nextName, age: nextAge } });
+  },
 });
 
 export const createFriendsSlice: Slice<FriendsSlice> = (set) => ({
@@ -862,10 +972,6 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
   // Topic of the currently-open chat, so background subscriptions never clobber
   // the active chat's handlers (BUG-17).
   let activeTopic: string | null = null;
-  // Call system-lines for peers whose chat wasn't open when the call ended,
-  // keyed by peerKey(hashId). Flushed (and cleared) by the next openChat — a
-  // missed call rings on the app shell, not inside the thread it belongs to.
-  const pendingCallLines = new Map<string, TinodeMessageLite[]>();
   // Background subscriptions to every friend topic so a friend's messages arrive
   // even when their chat is CLOSED (BUG-17). Value = the SDK unsub (leaves the
   // topic); only invoked on full teardown — an open/closed chat just swaps
@@ -942,6 +1048,13 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
   const chatHandlers = (topic: string): TopicHandlers => {
     const client = getTinodeClient();
     const myUid = client.getUid();
+    // A revealed pair keep the grp topic they were matched on, so this thread can
+    // still contain messages published while it was anonymous — those carry no
+    // `from` at all. Our own seqs from that phase are the only record of who
+    // wrote them (see {@link readAnonSeqs}); it matters for the call lines,
+    // which are the one system message rendered from both sides.
+    const anonSeqs = topic.startsWith("grp") ? readAnonSeqs(topic) : new Set<number>();
+    const isMine = (m: TinodeMessage) => (m.from ? m.from === myUid : anonSeqs.has(m.seq));
     return {
       onMessage: (m) => {
         const reaction = parseReaction(m);
@@ -954,6 +1067,15 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
         const editSeq = parseEditTarget(m);
         if (editSeq) {
           set((s) => ({ chatMessages: applyEdit(s.chatMessages, editSeq, plainText(m.content)) }));
+          return;
+        }
+        // A finished call (#41): a centered system line, not a bubble. Checked
+        // before the `from` guards below because it is the one message type both
+        // sides render — the writer sees «Исходящий», the reader «Входящий».
+        const call = parseCallRecord(m);
+        if (call) {
+          const line = callRecordMsg(m, call, isMine(m));
+          set((s) => ({ chatMessages: upsertMsg(s.chatMessages, line) }));
           return;
         }
         // Pre-reveal anon messages carry a server-blanked `from` — not part of
@@ -1041,7 +1163,10 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
     const myUid = client.getUid();
     return {
       onMessage: (m) => {
-        if (parseReaction(m) || parseEditTarget(m)) return;
+        // Reactions/edits aren't new messages — and neither is a call record:
+        // the call itself already rang, and openChat picks the line up from the
+        // topic history. Counting it would badge the chat for our own hangup.
+        if (parseReaction(m) || parseEditTarget(m) || parseCallRecord(m)) return;
         if (!m.from || m.from === myUid) return;
         const msg = inboundMsg(m, false);
         // Preview always reflects the latest message (even a replayed one).
@@ -1197,14 +1322,10 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
       // for messages that happen to arrive after this point (BUG-8 / unread
       // reconciliation). `noteRead` with no seq marks up to the topic's latest.
       client.noteRead(topic);
-      // Replay call records that landed while this chat was closed. Appended at
-      // the tail, after the cached history replay above: a buffered record is
-      // newer than the history it follows in every practical case.
-      const buffered = pendingCallLines.get(peerKey(friend.hashId));
-      if (buffered?.length) {
-        pendingCallLines.delete(peerKey(friend.hashId));
-        set((s) => ({ chatMessages: [...s.chatMessages, ...buffered] }));
-      }
+      // Call records need no replay buffer of their own any more: they are real
+      // messages in this topic (#41), so the history fetch above brings them
+      // back along with everything else — including calls that ended while this
+      // chat was closed, and calls from before the last reload.
     },
 
     closeChat: () => {
@@ -1382,25 +1503,47 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
     markChatViewed: (seq) =>
       set((s) => (s.chatViewed[seq] ? s : { chatViewed: { ...s.chatViewed, [seq]: true } })),
 
-    logCall: (peer, text) => {
+    logCall: (peer, rec) => {
+      // Only the caller writes: both sides run endCall, and one message in the
+      // topic is read by both, so two writers would mean two records per call.
+      // The callee's copy comes back to them from the topic like any message.
+      if (rec.incoming) return;
       const key = peerKey(peer);
-      const line = systemMsg(text);
-      // Anon roulette chat first: while a match is live it is the only place the
-      // peer exists, and `messages` survives the screen being unmounted.
+      // Anon roulette chat first: while a match is live its alias is the only
+      // name the peer has. A revealed pair also resolve here, on the same topic.
       const match = get().activeMatch;
-      if (match && (match.peerAlias === peer || (match.peerHashId && peerKey(match.peerHashId) === key))) {
-        set((s) => ({ messages: [...s.messages, line] }));
+      const topic =
+        match && (match.peerAlias === peer || (match.peerHashId && peerKey(match.peerHashId) === key))
+          ? match.topic
+          : get().friends.find((f) => peerKey(f.hashId) === key)?.topic;
+      const line = callLogLine(rec, true);
+      // Session-only fallback, for when there is no conversation to write into:
+      // mock mode (no real topic exists), a publish that failed, or a handle we
+      // could not match to a chat. The call still leaves a visible trace, it
+      // just doesn't reach the peer or survive a reload — which is what every
+      // call record used to do.
+      const injectLocally = () => {
+        if (match && get().activeMatch?.topic === match.topic) {
+          set((s) => ({ messages: [...s.messages, systemMsg(line)] }));
+        } else if (get().activeChat && peerKey(get().activeChat!.hashId) === key) {
+          set((s) => ({ chatMessages: [...s.chatMessages, systemMsg(line)] }));
+        }
+      };
+      if (!topic || getCompanionClient().isMock()) {
+        injectLocally();
         return;
       }
-      if (get().activeChat && peerKey(get().activeChat!.hashId) === key) {
-        set((s) => ({ chatMessages: [...s.chatMessages, line] }));
-        return;
-      }
-      // Friend chat is closed (a missed call is answered from the app shell) —
-      // hold the line until openChat replays it.
-      const buffered = pendingCallLines.get(key) ?? [];
-      buffered.push(line);
-      pendingCallLines.set(key, buffered);
+      void getTinodeClient()
+        .sendCallRecord(topic, { media: rec.media, sec: rec.sec, outcome: rec.outcome }, line)
+        .then((seq) => {
+          // Anon topics blank `From`, so remember the seq or our own record
+          // reads as the peer's after a reload (see readAnonSeqs). The live
+          // echo renders it; nothing is appended optimistically.
+          if (seq && topic.startsWith("grp") && get().activeMatch?.topic === topic) {
+            get().rememberOwnAnonSeq(seq);
+          }
+        })
+        .catch(injectLocally);
     },
   };
 };
@@ -1412,8 +1555,18 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
   // Seqs of our own outgoing anon messages. Anon topics blank the `From` field
   // (server ANON-PATCH), so the usual `m.from === myUid` self-filter can't tell
   // our own echoed message from the peer's — without this, own messages render
-  // twice. We skip inbound frames whose seq we sent ourselves.
-  const ownAnonSeqs = new Set<number>();
+  // twice, and a chat restored after a reload attributes the whole conversation
+  // to the peer. Persisted per topic (see readAnonSeqs) for exactly that second
+  // reason: the sender is the only party who can ever know.
+  let ownAnonSeqs = new Set<number>();
+  // The topic `ownAnonSeqs` belongs to, so a stray late send can't write its seq
+  // under the next match's topic.
+  let ownAnonTopic = "";
+  const rememberOwnAnonSeq = (seq: number) => {
+    if (!seq || !ownAnonTopic) return;
+    ownAnonSeqs.add(seq);
+    saveAnonSeqs(ownAnonTopic, ownAnonSeqs);
+  };
   // Topics we've already emitted a `peer:leaving` for, so the two real leave
   // points that can both fire (endMatch → closeAnon) don't double-signal
   // (BUG-15). Cleared when a new anon chat opens.
@@ -1457,6 +1610,7 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
     anonViewed: {},
 
     setAnonPeerActivity,
+    rememberOwnAnonSeq,
     notifyAnonMediaSending: () => {
       const match = get().activeMatch;
       if (!match?.topic || getCompanionClient().isMock()) return;
@@ -1480,7 +1634,11 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
     openAnonChat: async (match) => {
       anonUnsub?.();
       anonUnsub = null;
-      ownAnonSeqs.clear();
+      // Re-adopt the own-message seqs if this is the SAME topic we were in
+      // before the app restarted; a different topic starts empty. This is what
+      // makes a restored chat show our own side of it (#41 / anon reload).
+      ownAnonTopic = match.topic;
+      ownAnonSeqs = readAnonSeqs(match.topic);
       leftSignaled.clear();
       anonPeerRecvSeq = 0;
       anonPeerReadSeq = 0;
@@ -1524,9 +1682,29 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
             return;
           }
           if (m.from && m.from === myUid) return; // own bubbles are optimistic
-          // Anon topics blank `From`, so also drop the echo of our own message
-          // by the seq we recorded when sending (prevents the double-render).
-          if (m.seq && ownAnonSeqs.has(m.seq)) return;
+          // Anon topics blank `From`, so our own messages are recognised only by
+          // the seqs we wrote down when sending them.
+          const own = Boolean(m.seq) && ownAnonSeqs.has(m.seq);
+          // A finished call (#41) renders as a centered system line on both
+          // sides, each from its own direction — before the own-echo drop below,
+          // because the writer has no optimistic copy of it to protect.
+          const call = parseCallRecord(m);
+          if (call) {
+            set((s) => ({ messages: upsertMsg(s.messages, callRecordMsg(m, call, own)) }));
+            return;
+          }
+          if (own) {
+            // Either the echo of a bubble we already show optimistically (drop
+            // it — it carries the delivery ticks), or our own message replayed
+            // from the server after a restart, which is the only copy there is.
+            const id = String(m.seq);
+            set((s) =>
+              s.messages.some((x) => x.id === id)
+                ? {}
+                : { messages: upsertMsg(s.messages, { ...inboundMsg(m, true), status: "sent" }) },
+            );
+            return;
+          }
           const msg = inboundMsg(m, false);
           set((s) => ({ messages: upsertMsg(s.messages, msg) }));
           // Delivered + read receipts so the SENDER's ticks advance (BUG-38).
@@ -1577,7 +1755,7 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
       try {
         const content = reply ? buildReplyContent(body, reply) : body;
         const seq = await getTinodeClient().sendMessage(match.topic, content);
-        if (seq) ownAnonSeqs.add(seq); // so our own echo (blanked From) is ignored
+        rememberOwnAnonSeq(seq); // so our own echo (blanked From) is ignored, and survives a reload
         // Reconcile, then fold in any receipts that landed before the ack (BUG-38).
         set((s) => ({
           messages: applyOwnReceipts(
@@ -1611,7 +1789,7 @@ export const createAnonChatSlice: Slice<AnonChatSlice> = (set, get) => {
       try {
         const draft = viewOnce ? buildViewOnceDraft(up, extra) : buildMediaDraft(kind, up, extra);
         const seq = await getTinodeClient().sendMessage(match.topic, draft);
-        if (seq) ownAnonSeqs.add(seq); // so our own echo (blanked From) is ignored
+        rememberOwnAnonSeq(seq); // so our own echo (blanked From) is ignored, and survives a reload
         set((s) => ({
           messages: applyOwnReceipts(
             reconcileTmp(s.messages, tmpId, seq),
@@ -1940,6 +2118,60 @@ export const createRouletteSlice: Slice<RouletteSlice> = (set, get) => {
     leaveQueue: async () => {
       await getCompanionClient().cancel();
       set({ queue: { status: "idle" } });
+    },
+
+    restoreActiveMatch: async () => {
+      if (getCompanionClient().isMock()) return false;
+      // Nothing to restore INTO if this client already holds a chat — a boot
+      // that raced the `matched` event, or a second call of this action.
+      if (get().activeMatch) return true;
+      const status = await fetchRouletteStatus();
+      if (!status?.match) return false;
+      // Anon only. A revealed pairing's row survives both parties walking away
+      // (nothing ends it — see the `reveal` branch in resyncRouletteMatch), so
+      // honouring it here would drag them back into that chat on every launch;
+      // their conversation is an ordinary friend chat in «Чаты» either way.
+      if (status.reveal === "revealed") return false;
+      // …and only if the other side is actually still there. `peerOnline` covers
+      // a peer who is themselves mid-reload, thanks to the socket's grace
+      // window; anything longer means the room emptied out and every message
+      // sent into it would land nowhere.
+      //
+      // Declining to restore ENDS the pairing rather than leaving it open. The
+      // server's own cleanup (endMatchOnDisconnect) gives up if the user is
+      // online again by the time the grace expires — which is exactly what a
+      // fresh sign-in looks like — so an abandoned chat could otherwise stay
+      // open forever. Ten of them piled up between two accounts on the test
+      // stand, and each one was a trap for the next boot. This is the moment the
+      // client can say for certain that nobody is in that room any more.
+      if (!status.peerOnline) {
+        await getCompanionClient()
+          .end(status.match.topic)
+          .catch(() => {
+            /* best effort: the next enqueue clears the row anyway */
+          });
+        return false;
+      }
+      applyMatched(status.match);
+      // The reveal handshake may have moved on while we were gone. The chat
+      // screen polls resyncAnonReveal itself, but doing it here means the
+      // restored chat is already correct on its first frame rather than up to a
+      // poll interval later.
+      if (typeof status.revealAsksLeft === "number") {
+        set({ anonRevealAsksLeft: status.revealAsksLeft });
+      }
+      switch (status.reveal) {
+        case "we_requested":
+          set({ anonRevealPending: true });
+          break;
+        case "peer_requested":
+          set({ anonRevealState: "peer_requested" });
+          break;
+        case "declined":
+          set({ anonRevealState: "declined" });
+          break;
+      }
+      return true;
     },
 
     resyncRouletteMatch: async () => {

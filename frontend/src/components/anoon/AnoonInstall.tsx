@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronLeftIcon, DownloadIcon, CheckIcon } from "@/components/icons";
 import { AnoonLogo } from "@/components/anoon/_shared";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
+import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 
 /* Local iOS-style share icon (square with up arrow). */
 function ShareIcon({ className }: { className?: string }) {
@@ -57,7 +58,27 @@ const DESKTOP_FORM =
 export default function AnoonInstall() {
   const nav = useAnoonNav();
   const [platform, setPlatform] = useState<Platform>("android");
-  const [installed, setInstalled] = useState(false);
+  /** null = not asked yet; the two outcomes of the browser's own install dialog. */
+  const [outcome, setOutcome] = useState<"accepted" | "dismissed" | null>(null);
+  const { canInstall, promptInstall } = useInstallPrompt();
+
+  // Deliberately no UA sniff to preselect the iPhone tab: the answer lives in
+  // `navigator`, which the server render can't see, so seeding it either way
+  // makes the first client render disagree with the server one (React #418, the
+  // same trap AnoonApp's boot splash documents). iOS has no
+  // `beforeinstallprompt` at all, so an iPhone gets a disabled button with the
+  // reason spelled out below, and the «iPhone» tab one tap away.
+
+  /**
+   * The real PWA install. This used to be `setInstalled(true)` and a label that
+   * said «Устанавливается…» — nothing was ever installed. The deferred
+   * `beforeinstallprompt` event is what the browser wants replayed here, and
+   * `useInstallPrompt` has been capturing it (unused) all along.
+   */
+  const handleInstall = async () => {
+    const result = await promptInstall();
+    if (result) setOutcome(result);
+  };
 
   return (
     <div className="relative flex h-full w-full flex-col bg-background text-foreground">
@@ -119,23 +140,46 @@ export default function AnoonInstall() {
         {/* Platform content */}
         <div className="mt-6 w-full">
           {platform === "android" ? (
-            <button
-              type="button"
-              onClick={() => setInstalled(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95"
-            >
-              {installed ? (
-                <>
-                  <CheckIcon className="size-5" />
-                  Устанавливается…
-                </>
-              ) : (
-                <>
-                  <DownloadIcon className="size-5" />
-                  Установить
-                </>
+            <>
+              {/* Disabled, not hidden: the button is the reason this screen
+                  exists, and «почему нельзя» is more useful than an empty box.
+                  The browser only fires `beforeinstallprompt` when the app is
+                  installable and not installed yet — so no prompt means either
+                  it is already on the home screen, or this browser doesn't
+                  support installing at all. */}
+              <button
+                type="button"
+                disabled={!canInstall}
+                onClick={() => void handleInstall()}
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+              >
+                {outcome === "accepted" ? (
+                  <>
+                    <CheckIcon className="size-5" />
+                    Приложение установлено
+                  </>
+                ) : (
+                  <>
+                    <DownloadIcon className="size-5" />
+                    Установить
+                  </>
+                )}
+              </button>
+              {!canInstall && outcome === null && (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Приложение уже установлено — или этот браузер не умеет ставить
+                  веб-приложения. Попробуйте Chrome: меню ⋮ → «Установить приложение».
+                </p>
               )}
-            </button>
+              {/* The browser hands out the deferred prompt once. Declining it
+                  spends it, so «нажмите ещё раз» would be a lie — a reload is
+                  what brings the offer back. */}
+              {outcome === "dismissed" && (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Установка отменена. Обновите страницу, чтобы попробовать снова.
+                </p>
+              )}
+            </>
           ) : (
             <div className="rounded-2xl border border-border bg-card p-4 text-left">
               <p className="text-sm font-semibold">Как установить на iPhone</p>

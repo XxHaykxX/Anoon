@@ -12,8 +12,8 @@
  *   IncomingCall, driving the RTCPeerConnection + callSignaling frames.
  *
  * The one dependency on the main store is one-way and lives in `endCall`: a
- * finished call writes a system line into the conversation via `logCall`
- * (slices.ts). Nothing in the main store imports this file, so there is no cycle.
+ * finished call is recorded in the conversation via `logCall` (slices.ts).
+ * Nothing in the main store imports this file, so there is no cycle.
  *
  * Teardown of the actual RTCPeerConnection/media tracks lives in CallScreen's
  * own unmount cleanup (see its effect) — `endCall` just clears the state that
@@ -21,6 +21,7 @@
  */
 import { create } from "zustand";
 import { useAnoonStore } from "@/store";
+import type { CallLogRecord } from "./types";
 
 export type CallMedia = "audio" | "video";
 export type CallStatus = "idle" | "outgoing" | "incoming" | "active" | "ended";
@@ -67,40 +68,32 @@ export interface CallStore {
   /** Media is flowing — starts the duration clock (CallScreen). */
   markConnected: () => void;
   /**
-   * Tear down / clear the current call AND leave a system line about it in the
-   * conversation with the peer (see {@link callLogLine}). Pass `reason` when the
-   * call never connected and the end wasn't ours.
+   * Tear down / clear the current call AND record it in the conversation with
+   * the peer (see {@link CallLogRecord}). Pass `reason` when the call never
+   * connected and the end wasn't ours.
    */
   endCall: (reason?: CallEndReason) => void;
 }
 
-/** mm:ss for a whole-second duration. */
-const mmss = (sec: number) =>
-  `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
-
 /**
- * The one line a finished call leaves in the conversation, e.g.
- * «Исходящий видеозвонок · 02:14» / «Входящий аудиозвонок · пропущен».
+ * The facts `logCall` needs about the call that just ended. Deliberately NOT a
+ * rendered string any more: the record is written into the conversation's topic
+ * and read back by BOTH sides, so «Исходящий»/«Входящий» has to be decided by
+ * each reader, not baked in here by whoever happened to hang up.
  *
- * Direction is read off `incomingOffer`, which is set only by
+ * `incoming` is read off `incomingOffer`, which is set only by
  * {@link CallStore.receiveIncoming} — the same signal the overlay already uses
  * to pick the caller/callee role.
  */
-function callLogLine(call: CallState, reason: CallEndReason | undefined): string {
-  const kind = call.media === "video" ? "видеозвонок" : "аудиозвонок";
-  const direction = call.incomingOffer ? "Входящий" : "Исходящий";
-  const outcome = call.connectedAt
-    ? mmss((Date.now() - call.connectedAt) / 1000)
-    : reason === "declined"
-      ? "отклонён"
-      : reason === "unavailable"
-        ? "не удалось дозвониться"
-        : reason === "busy"
-          ? "собеседник занят"
-          : reason === "missed"
-            ? "пропущен"
-            : "отменён";
-  return `${direction} ${kind} · ${outcome}`;
+function callRecordOf(call: CallState, reason: CallEndReason | undefined): CallLogRecord {
+  return {
+    media: call.media,
+    sec: call.connectedAt ? Math.floor((Date.now() - call.connectedAt) / 1000) : 0,
+    // A connected call has a duration to show and needs no reason; an
+    // unreasoned end before that is one we walked out of ourselves.
+    outcome: call.connectedAt ? undefined : reason ?? "cancelled",
+    incoming: Boolean(call.incomingOffer),
+  };
 }
 
 export const useCallStore = create<CallStore>((set, get) => ({
@@ -131,8 +124,8 @@ export const useCallStore = create<CallStore>((set, get) => ({
   endCall: (reason) => {
     const call = get().call;
     set({ call: null });
-    // Leave the trace in the conversation the call belonged to. Session-only —
-    // the store owns it, nothing is persisted server-side.
-    if (call) useAnoonStore.getState().logCall(call.peerHashId, callLogLine(call, reason));
+    // Leave the trace in the conversation the call belonged to. `logCall` puts
+    // it in that conversation's topic, so it outlives this tab (#41).
+    if (call) useAnoonStore.getState().logCall(call.peerHashId, callRecordOf(call, reason));
   },
 }));

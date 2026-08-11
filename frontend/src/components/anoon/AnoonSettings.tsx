@@ -16,7 +16,13 @@ import { useAnoonNav } from "@/components/anoon/anoonNav";
 import { USE_TINODE, changePassword, deleteMyAccount } from "@/lib/tinode";
 import { getCompanionClient, type BlockedFriend } from "@/lib/companion";
 import { isNotifySoundEnabled, setNotifySoundEnabled } from "@/lib/notify";
-import { pushSupported, subscribePush, unsubscribePush } from "@/lib/push";
+import {
+  isPushPrefEnabled,
+  pushSupported,
+  setPushPrefEnabled,
+  subscribePush,
+  unsubscribePush,
+} from "@/lib/push";
 import { useAnoonStore } from "@/store";
 
 /* Local toggle switch — controlled. */
@@ -58,27 +64,16 @@ function toneFor(id: string): number {
   return sum % 6;
 }
 
-/** Local push-preference toggle, persisted the same way notify.ts persists
- * the sound switch — mirrors the actual browser subscription state, checked
- * on mount, but survives a reload before that check completes. */
-const PUSH_PREF_KEY = "anoon:notify:push";
-function isPushPrefEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(PUSH_PREF_KEY) === "1";
-}
-function setPushPrefEnabled(enabled: boolean): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(PUSH_PREF_KEY, enabled ? "1" : "0");
-}
-
 export default function AnoonSettings() {
   const nav = useAnoonNav();
   const user = useAnoonStore((s) => s.user);
-  const setUser = useAnoonStore((s) => s.setUser);
+  const saveProfile = useAnoonStore((s) => s.saveProfile);
   const signOut = useAnoonStore((s) => s.signOut);
   const real = USE_TINODE && !!user;
   const [nick, setNick] = useState(() => (real ? user!.displayName : "solar_fox"));
   const [savedNick, setSavedNick] = useState(false);
+  const [nickSaving, setNickSaving] = useState(false);
+  const [nickError, setNickError] = useState<string | null>(null);
   // Whether this browser can do Web Push at all — gates the toggle below.
   const [pushCapable] = useState(pushSupported);
   // Lazy init reads localStorage — SSR-safe (defaults to off until the mount
@@ -145,17 +140,27 @@ export default function AnoonSettings() {
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.getSubscription();
         setPush(!!sub);
+        setPushPrefEnabled(!!sub);
       } catch {
         /* best-effort — keep whatever the persisted preference said */
       }
     })();
   }, [pushCapable]);
 
-  const saveNick = () => {
-    // Persist nick as the user's display name (real user only).
-    if (real && user) setUser({ ...user, displayName: nick });
-    setSavedNick(true);
-    setTimeout(() => setSavedNick(false), 1600);
+  /** Persist through the store's `saveProfile` — it owns where each field goes. */
+  const saveNick = async () => {
+    if (nickSaving) return;
+    setNickSaving(true);
+    setNickError(null);
+    try {
+      if (real && user) await saveProfile({ displayName: nick });
+      setSavedNick(true);
+      setTimeout(() => setSavedNick(false), 1600);
+    } catch {
+      setNickError("Не удалось сохранить имя. Попробуйте ещё раз.");
+    } finally {
+      setNickSaving(false);
+    }
   };
 
   const handleChangePassword = async () => {
@@ -278,18 +283,26 @@ export default function AnoonSettings() {
             </label>
             <button
               type="button"
-              onClick={saveNick}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground transition-transform active:scale-95"
+              onClick={() => void saveNick()}
+              disabled={nickSaving}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 font-semibold text-primary-foreground transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
             >
               {savedNick ? (
                 <>
                   <CheckIcon className="size-5" />
                   Сохранено
                 </>
+              ) : nickSaving ? (
+                "Сохраняем…"
               ) : (
                 "Сохранить"
               )}
             </button>
+            {nickError && (
+              <p className="mt-2 text-sm text-destructive" role="alert">
+                {nickError}
+              </p>
+            )}
           </section>
 
           {/* Change password */}

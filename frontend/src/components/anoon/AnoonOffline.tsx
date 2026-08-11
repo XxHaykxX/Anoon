@@ -22,12 +22,39 @@ function GlobeOffIcon({ className }: { className?: string }) {
   );
 }
 
-export default function AnoonOffline() {
-  const [retrying, setRetrying] = useState(false);
+export interface AnoonOfflineProps {
+  /**
+   * Called when the probe below proves the network is back. The shell (AnoonApp)
+   * uses it to drop this overlay; the standalone "offline" route leaves it out.
+   */
+  onOnline?: () => void;
+}
 
-  const handleRetry = () => {
+export default function AnoonOffline({ onOnline }: AnoonOfflineProps) {
+  const [retrying, setRetrying] = useState(false);
+  const [stillOffline, setStillOffline] = useState(false);
+
+  /**
+   * A real probe, not a spinner. This used to be `setTimeout(…, 1400)` — the
+   * button spun, said nothing, and left the user on the same screen with no
+   * idea whether anything had been checked.
+   *
+   * `navigator.onLine` is not enough on its own: it only reports whether the OS
+   * has a link, and the usual case here is a link that carries no traffic. So
+   * fetch something small and same-origin with the cache bypassed — the
+   * manifest, which is always deployed — and let it fail if there's no route.
+   */
+  const handleRetry = async () => {
     setRetrying(true);
-    setTimeout(() => setRetrying(false), 1400);
+    setStillOffline(false);
+    try {
+      await fetch("/manifest.webmanifest", { method: "HEAD", cache: "no-store" });
+      onOnline?.();
+    } catch {
+      setStillOffline(true);
+    } finally {
+      setRetrying(false);
+    }
   };
 
   return (
@@ -43,7 +70,7 @@ export default function AnoonOffline() {
 
       <button
         type="button"
-        onClick={handleRetry}
+        onClick={() => void handleRetry()}
         disabled={retrying}
         className="mt-7 flex min-w-40 items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 font-semibold text-primary-foreground transition-transform active:scale-95 disabled:opacity-70"
       >
@@ -56,6 +83,12 @@ export default function AnoonOffline() {
           "Повторить"
         )}
       </button>
+
+      {stillOffline && (
+        <p role="alert" className="mt-3 text-sm text-destructive">
+          Соединения по-прежнему нет
+        </p>
+      )}
     </div>
   );
 }
