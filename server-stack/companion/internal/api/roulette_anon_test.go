@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"anoon/companion/internal/store"
 )
@@ -293,6 +294,60 @@ func TestSendPeerLeftFrame(t *testing.T) {
 	case raw := <-peer.send:
 		t.Fatalf("an unresolved peer/topic still sent a frame: %s", raw)
 	default:
+	}
+}
+
+// TestDisconnectGraceSurvivesAReconnect pins the one server behaviour the
+// clients' "re-enter the anon chat after a reload" path stands on: a socket that
+// dies and COMES BACK inside wsDisconnectGrace must leave the match completely
+// alone. A page reload, an app the OS unloaded and a tunnel blip are all this,
+// and if the grace window ever stopped covering them the reload would end the
+// chat under both users a moment before the restored client asked for it back —
+// with the peer told "собеседник вышел" for a reload they never saw.
+//
+// Server has no Store here on purpose: reaching the match lookup at all is the
+// failure, and a nil store makes that unmissable rather than silently passing.
+func TestDisconnectGraceSurvivesAReconnect(t *testing.T) {
+	prev := wsDisconnectGrace
+	wsDisconnectGrace = 300 * time.Millisecond
+	defer func() { wsDisconnectGrace = prev }()
+
+	s := &Server{Hub: NewHub()}
+	u := store.User{ID: aliceID}
+
+	failed := make(chan any, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				failed <- r
+			}
+		}()
+		s.endMatchOnDisconnect(u)
+	}()
+
+	// The reload's new socket lands well inside the window.
+	time.Sleep(50 * time.Millisecond)
+	s.Hub.add(u.ID, &wsClient{send: make(chan []byte, 1)})
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("endMatchOnDisconnect never returned")
+	}
+	select {
+	case r := <-failed:
+		t.Fatalf("a reconnect inside the grace window still ended the match: %v", r)
+	default:
+	}
+
+	// The other early exit: a second tab/device never lost its socket at all, so
+	// there is nothing to wait out — this must not even sleep.
+	start := time.Now()
+	s.endMatchOnDisconnect(u)
+	if time.Since(start) >= wsDisconnectGrace {
+		t.Error("a user who was never offline should not be waited out")
 	}
 }
 

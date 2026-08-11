@@ -105,7 +105,7 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		FromHashID:  store.FormatHashID(u.HashID),
 		DisplayName: store.FormatHashID(u.HashID),
 	})
-	s.Push.SendPush(r.Context(), target.ID, push.PushPayload{
+	s.sendPush(r.Context(), target.ID, push.PushPayload{
 		Title: "anoon",
 		Body:  store.FormatHashID(u.HashID) + " sent you a friend request",
 		Tag:   "friend_request",
@@ -174,7 +174,7 @@ func (s *Server) handleFriendRespond(w http.ResponseWriter, r *http.Request) {
 			Topic:       u.TinodeUID,
 			Online:      true,
 		})
-		s.Push.SendPush(r.Context(), from.ID, push.PushPayload{
+		s.sendPush(r.Context(), from.ID, push.PushPayload{
 			Title: "anoon",
 			Body:  store.FormatHashID(u.HashID) + " принял вашу заявку в друзья",
 			Tag:   "friend_accepted",

@@ -6,9 +6,14 @@ package api
 // s.onTinodeData (wired in NewServer via tinode.Client.SetDataHandler). For each
 // message we resolve the topic's two members, and if the recipient (the member
 // who is NOT the sender) has no live companion WebSocket — i.e. the app isn't
-// open in front of them — we send them a Web Push with the sender's #ID and a
-// short preview. If they have a socket, they'll receive the message live over
-// Tinode, so we skip the push.
+// open in front of them — we send them a push with the sender's #ID and a short
+// preview. If they have a socket, they'll receive the message live over Tinode,
+// so we skip the push.
+//
+// "A push" means both device kinds: s.sendPush (expopush.go) fans one payload
+// out to the user's browsers over Web Push AND to their phones over Expo. Every
+// rule below about WHO gets woken is decided before that call and therefore
+// applies identically to both — there is no phone-specific path to keep in sync.
 //
 // Scope / what ROOT can observe: ROOT owns and stays subscribed to the group
 // topics roulette creates (WatchTopic in onMatch), and a revealed match keeps
@@ -25,8 +30,9 @@ package api
 // subscribing ROOT to the p2p on_behalf_of a member would make Tinode treat that
 // member as attached — corrupting their presence ("в сети" while they are away)
 // and very likely their delivery receipts. Push toggling is implicit: a user
-// with no push subscription simply receives nothing (SendPush is a no-op), which
-// is exactly what unsubscribing in Settings produces.
+// with no push subscription simply receives nothing (the fan-out finds no rows),
+// which is exactly what unsubscribing in Settings — or the phone's notifications
+// toggle — produces.
 
 import (
 	"context"
@@ -100,7 +106,7 @@ func (s *Server) onTinodeData(ev tinode.DataEvent) {
 		return
 	}
 
-	s.Push.SendPush(ctx, recipientID, push.PushPayload{
+	s.sendPush(ctx, recipientID, push.PushPayload{
 		Title: "anoon",
 		Body:  messagePushBody(sender, m, ev.Content),
 		Tag:   "msg:" + ev.Topic, // per-topic tag: newer messages replace older
@@ -170,7 +176,7 @@ func (s *Server) onMessageSent(ctx context.Context, u store.User, frame map[stri
 	if p := truncatePreview(preview, messagePreviewMax); p != "" {
 		body = p
 	}
-	s.Push.SendPush(ctx, link.peerID, push.PushPayload{
+	s.sendPush(ctx, link.peerID, push.PushPayload{
 		Title: "anoon",
 		// Named by the caller's own #ID, not the frame: a p2p chat only exists
 		// between friends, who already know each other's real #ID, so there is

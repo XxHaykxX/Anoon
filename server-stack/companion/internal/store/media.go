@@ -207,7 +207,11 @@ type MediaFolderRow struct {
 	Nickname string `json:"nickname"`
 	Images   int    `json:"images"`
 	Videos   int    `json:"videos"`
-	Count    int    `json:"count"`
+	// Audios are the voice messages. Counted separately because the admin panel
+	// renders them with a player rather than an <img>; without this the folder's
+	// per-kind numbers silently fail to add up to Count, which is every kind.
+	Audios int `json:"audios"`
+	Count  int `json:"count"`
 }
 
 // ListMediaFolders groups non-deleted media_assets by owner, for the admin
@@ -217,6 +221,7 @@ func (s *Store) ListMediaFolders(ctx context.Context) ([]MediaFolderRow, error) 
 		SELECT m.owner_id, u.hash_id,
 		       count(*) FILTER (WHERE m.kind = 'image'),
 		       count(*) FILTER (WHERE m.kind = 'video'),
+		       count(*) FILTER (WHERE m.kind = 'audio'),
 		       count(*)
 		FROM media_assets m
 		JOIN users u ON u.id = m.owner_id
@@ -232,7 +237,7 @@ func (s *Store) ListMediaFolders(ctx context.Context) ([]MediaFolderRow, error) 
 	for rows.Next() {
 		var f MediaFolderRow
 		var hash int64
-		if err := rows.Scan(&f.OwnerID, &hash, &f.Images, &f.Videos, &f.Count); err != nil {
+		if err := rows.Scan(&f.OwnerID, &hash, &f.Images, &f.Videos, &f.Audios, &f.Count); err != nil {
 			return nil, fmt.Errorf("store: scan media folder: %w", err)
 		}
 		f.PublicID = PadHashID(hash)

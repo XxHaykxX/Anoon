@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -85,6 +86,7 @@ func (s *Service) SendPush(ctx context.Context, userID int64, payload PushPayloa
 		log.Printf("push: load subscriptions for user %d: %v", userID, err)
 		return
 	}
+	subs = webPushOnly(subs)
 	if len(subs) == 0 {
 		return
 	}
@@ -128,7 +130,7 @@ func (s *Service) Broadcast(ctx context.Context, payload PushPayload, gender str
 		return 0, 0
 	}
 
-	for _, sub := range subs {
+	for _, sub := range webPushOnly(subs) {
 		if err := s.sendOne(ctx, body, sub); err != nil {
 			failed++
 		} else {
@@ -136,6 +138,24 @@ func (s *Service) Broadcast(ctx context.Context, payload PushPayload, gender str
 		}
 	}
 	return sent, failed
+}
+
+// webPushOnly drops the phone subscriptions from subs.
+//
+// A phone's Expo push token shares this table with the browsers, stored as
+// `endpoint: "expo:ExponentPushToken[…]"` so that unsubscribe, pruning and
+// account deletion keep working unchanged. Delivering it is the Expo branch's
+// job (internal/api/expopush.go); webpush would only fail to decode the keys and
+// log a line per phone per push. Skipped, not counted: Broadcast's sent/failed
+// tally is about web deliveries, and the Expo branch counts its own.
+func webPushOnly(subs []store.PushSub) []store.PushSub {
+	out := subs[:0:0] // fresh backing array — never alias the caller's slice
+	for _, sub := range subs {
+		if !strings.HasPrefix(sub.Endpoint, "expo:") {
+			out = append(out, sub)
+		}
+	}
+	return out
 }
 
 // sendOne delivers body to a single subscription and removes it if the push

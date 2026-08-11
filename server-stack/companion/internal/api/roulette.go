@@ -222,6 +222,19 @@ type rouletteStatusResponse struct {
 	// values are no longer secret, which is the entire meaning of that state.
 	PeerHashID      string `json:"peerHashId,omitempty"`
 	PeerDisplayName string `json:"peerDisplayName,omitempty"`
+	// PeerOnline says whether the other side currently holds an event socket.
+	//
+	// It exists because Match alone cannot answer "is there still a
+	// conversation here". Nothing closes a pairing whose owners simply walked
+	// away — see the note on Match — so a client restoring an anonymous chat on
+	// boot would otherwise be dropped into a room emptied hours ago, and its
+	// peer would never hear a word of it. A reload is worth restoring precisely
+	// when the peer is still sitting there, which is what this reports.
+	//
+	// A peer who is merely reloading counts as online for the length of the
+	// disconnect grace window (see wsDisconnectGrace), so the two of them can
+	// reload at the same moment without either being told the chat is over.
+	PeerOnline bool `json:"peerOnline,omitempty"`
 }
 
 // revealedIdentity returns the peer's real #ID and display name, but only once
@@ -293,6 +306,7 @@ func (s *Server) handleRouletteStatus(w http.ResponseWriter, r *http.Request) {
 		left := m.RevealAsksLeft(u.ID)
 		resp.RevealAsksLeft = &left
 		resp.PeerHashID, resp.PeerDisplayName = revealedIdentity(resp.Reveal, peer)
+		resp.PeerOnline = s.Hub.Online(peer.ID)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -388,7 +402,9 @@ func (s *Server) handleEnd(w http.ResponseWriter, r *http.Request) {
 // or a brief network blip all tear the socket down and get it back within
 // seconds; ending a live chat under someone who is merely reloading is a far
 // worse bug than the peer waiting this long to be told.
-const wsDisconnectGrace = 20 * time.Second
+// A var, not a const, only so the test can shrink it — nothing in the running
+// server writes to it.
+var wsDisconnectGrace = 20 * time.Second
 
 // endMatchOnDisconnect closes out an anonymous chat whose member's last socket
 // died and did not come back, and tells the peer with reason "peer_disconnected".
@@ -787,8 +803,8 @@ func (s *Server) onMatch(ctx context.Context, m matchmaker.Match) {
 	s.Hub.Send(a.ID, anonMatchedEvent(match, a.ID, m.B.AgeRange))
 	s.Hub.Send(b.ID, anonMatchedEvent(match, b.ID, m.A.AgeRange))
 	matchPush := push.PushPayload{Title: "anoon", Body: "You've been matched! Say hi.", Tag: "roulette_match"}
-	s.Push.SendPush(ctx, a.ID, matchPush)
-	s.Push.SendPush(ctx, b.ID, matchPush)
+	s.sendPush(ctx, a.ID, matchPush)
+	s.sendPush(ctx, b.ID, matchPush)
 	log.Printf("roulette: matched #%05d <-> #%05d on %s", a.HashID, b.HashID, topic)
 }
 

@@ -64,11 +64,11 @@ func run() error {
 
 	// --- OAuth (Google) ---------------------------------------------------
 	var google *oauth.GoogleVerifier
-	if cfg.GoogleClientID != "" {
-		google = oauth.NewGoogleVerifier(cfg.GoogleClientID)
-		log.Printf("google sign-in enabled")
+	if len(cfg.GoogleClientIDs) > 0 {
+		google = oauth.NewGoogleVerifier(cfg.GoogleClientIDs...)
+		log.Printf("google sign-in enabled (%d client id(s))", len(cfg.GoogleClientIDs))
 	} else {
-		log.Printf("google sign-in disabled (COMPANION_GOOGLE_CLIENT_ID unset)")
+		log.Printf("google sign-in disabled (COMPANION_GOOGLE_CLIENT_IDS unset)")
 	}
 
 	// --- Outbound email (SMTP-stubbed) ------------------------------------

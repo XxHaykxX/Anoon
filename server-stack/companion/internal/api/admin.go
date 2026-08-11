@@ -693,7 +693,7 @@ func (s *Server) handleAdminBroadcast(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_gender", "gender, when present, must be 'male' or 'female'")
 		return
 	}
-	sent, failed := s.Push.Broadcast(r.Context(), push.PushPayload{
+	sent, failed := s.broadcastPush(r.Context(), push.PushPayload{
 		Title: req.Title,
 		Body:  req.Body,
 		Url:   req.URL,

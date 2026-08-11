@@ -39,6 +39,26 @@ func FormatHashID(n int64) string {
 }
 
 // CreateUser allocates the next sequential #ID (from hash_id_seq) and inserts a
+// UpdateUserAge overwrites the caller's self-reported age. A nil age clears it,
+// which is the same "not stated" the column holds for an account that never
+// gave one — the profile screen's age field can legitimately be emptied.
+//
+// Age is the one profile field that does NOT live in Tinode: the display name
+// and photo ride in the account's `public`, but age is companion's, because the
+// match queue filters on it. Without this method the profile screen could only
+// write age into browser memory, so it silently reverted on the next load.
+//
+// Gender is deliberately absent: it is set once at registration and drives
+// matching and moderation, so changing it is not a profile edit.
+func (s *Store) UpdateUserAge(ctx context.Context, userID int64, age *int) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE users SET age = $1 WHERE id = $2 AND deleted_at IS NULL`, age, userID)
+	if err != nil {
+		return fmt.Errorf("store: update age for user %d: %w", userID, err)
+	}
+	return nil
+}
+
 // user row mapping it to the given Tinode UID. gender is required; age and
 // tinodeUID may be empty (age nil, uid ""). It returns the created row,
 // including the assigned HashID.

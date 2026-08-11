@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,17 +41,29 @@ const defaultTokenInfoURL = "https://oauth2.googleapis.com/tokeninfo"
 
 // GoogleVerifier validates Google ID tokens.
 type GoogleVerifier struct {
-	clientID string       // expected "aud" claim (our OAuth client id)
-	url      string       // tokeninfo endpoint (overridable for tests)
-	client   *http.Client // overridable for tests
+	// Accepted "aud" claims. There is more than one because a native app cannot
+	// present the web client id: Google refuses a custom-scheme redirect for a
+	// client of type "Web", so Android and iOS each need their own OAuth client
+	// — and each stamps its own id into "aud". One verifier, one list.
+	clientIDs []string
+	url       string       // tokeninfo endpoint (overridable for tests)
+	client    *http.Client // overridable for tests
 }
 
-// NewGoogleVerifier builds a verifier for the given OAuth client id.
-func NewGoogleVerifier(clientID string) *GoogleVerifier {
+// NewGoogleVerifier builds a verifier accepting tokens for any of the given
+// OAuth client ids. Blank entries are dropped, so a half-filled env var cannot
+// silently widen the audience to "".
+func NewGoogleVerifier(clientIDs ...string) *GoogleVerifier {
+	ids := make([]string, 0, len(clientIDs))
+	for _, id := range clientIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
 	return &GoogleVerifier{
-		clientID: clientID,
-		url:      defaultTokenInfoURL,
-		client:   &http.Client{Timeout: 10 * time.Second},
+		clientIDs: ids,
+		url:       defaultTokenInfoURL,
+		client:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -75,7 +88,7 @@ type tokenInfo struct {
 // It checks the signature/expiry (via Google), that the audience matches our
 // client id, and that the issuer is Google.
 func (v *GoogleVerifier) Verify(ctx context.Context, idToken string) (Identity, error) {
-	if v.clientID == "" {
+	if len(v.clientIDs) == 0 {
 		return Identity{}, fmt.Errorf("oauth: google client id not configured")
 	}
 	if strings.TrimSpace(idToken) == "" {
@@ -111,7 +124,7 @@ func (v *GoogleVerifier) Verify(ctx context.Context, idToken string) (Identity, 
 		return Identity{}, fmt.Errorf("oauth: google rejected token: %s", msg)
 	}
 
-	if info.Aud != v.clientID {
+	if !slices.Contains(v.clientIDs, info.Aud) {
 		return Identity{}, fmt.Errorf("oauth: token audience mismatch")
 	}
 	if info.Iss != "accounts.google.com" && info.Iss != "https://accounts.google.com" {

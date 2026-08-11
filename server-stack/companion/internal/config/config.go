@@ -90,10 +90,16 @@ type Config struct {
 	TinodeHTTPURL string
 	TinodeAPIKey  string
 
-	// GoogleClientID is the OAuth client id whose tokens we accept (the "aud"
+	// GoogleClientIDs are the OAuth client ids whose tokens we accept (the "aud"
 	// claim of Google ID tokens). Empty disables Google sign-in.
-	// Env: COMPANION_GOOGLE_CLIENT_ID.
-	GoogleClientID string
+	//
+	// A list, not a single id: the web bundle, the Android app and the iOS app
+	// each need their own Google OAuth client (Google refuses a custom-scheme
+	// redirect for a client of type "Web"), and every client stamps its own id
+	// into "aud". Accepting only one of them locks the other two out.
+	// Env: COMPANION_GOOGLE_CLIENT_IDS (comma-separated), falling back to the
+	// older single-valued COMPANION_GOOGLE_CLIENT_ID.
+	GoogleClientIDs []string
 
 	// DevAuth enables the header-based auth shortcut (X-Anoon-Uid /
 	// X-Anoon-Hash-Id) so REST/WS callers can be exercised without a real Tinode
@@ -228,7 +234,7 @@ func Load() (*Config, error) {
 		TinodeAPIKey:         envOr("TINODE_API_KEY", "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K"),
 		RootLogin:            os.Getenv("COMPANION_ROOT_LOGIN"),
 		RootSecret:           os.Getenv("COMPANION_ROOT_SECRET"),
-		GoogleClientID:       os.Getenv("COMPANION_GOOGLE_CLIENT_ID"),
+		GoogleClientIDs:      googleClientIDs(),
 		DevAuth:              os.Getenv("COMPANION_DEV_AUTH") == "1" || os.Getenv("COMPANION_DEV_AUTH") == "true",
 		AdminSecret:          os.Getenv("COMPANION_ADMIN_SECRET"),
 		AdminTokenSecret:     strings.TrimSpace(os.Getenv("COMPANION_ADMIN_TOKEN_SECRET")),
@@ -311,6 +317,26 @@ func corsOrigins(isProd bool) ([]string, error) {
 		}
 	}
 	return origins, nil
+}
+
+// googleClientIDs reads the accepted Google audiences. COMPANION_GOOGLE_CLIENT_IDS
+// is a comma-separated list (web, Android, iOS — see Config.GoogleClientIDs);
+// the older single-valued COMPANION_GOOGLE_CLIENT_ID still works, so an existing
+// deployment keeps signing people in across the upgrade. Blank entries are
+// dropped rather than passed on: an empty audience would match nothing useful
+// and only hide a typo in the env var.
+func googleClientIDs() []string {
+	raw := os.Getenv("COMPANION_GOOGLE_CLIENT_IDS")
+	if strings.TrimSpace(raw) == "" {
+		raw = os.Getenv("COMPANION_GOOGLE_CLIENT_ID")
+	}
+	var ids []string
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			ids = append(ids, part)
+		}
+	}
+	return ids
 }
 
 // envOr returns the value of env var key, or def when it is unset/empty.

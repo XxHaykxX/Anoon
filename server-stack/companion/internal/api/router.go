@@ -203,6 +203,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /friends/block/{hashId}", s.handleFriendUnblock)
 
 	mux.HandleFunc("GET /me", s.handleMe)
+	mux.HandleFunc("PATCH /me", s.handlePatchMe)
 	mux.HandleFunc("DELETE /me", s.handleDeleteMe)
 
 	// Web Push (VAPID): subscribe/unsubscribe are authenticated; the VAPID

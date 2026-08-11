@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"anoon/companion/internal/store"
 )
@@ -46,6 +49,85 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"coins":        wallet.Coins,
 		"subscription": wallet.Tier,
 	})
+}
+
+// patchMeRequest is the body of PATCH /me. A field left out is left alone;
+// `age: null` clears the age.
+//
+// Age is raw on purpose. Telling "absent" from "null" is the whole point of a
+// PATCH, and neither *int nor **int can: encoding/json writes a JSON null as
+// the zero value, so both arrive as a nil pointer, and an untouched age would
+// be indistinguishable from a request to erase it. Only the raw bytes carry
+// that difference.
+type patchMeRequest struct {
+	Age json.RawMessage `json:"age"`
+}
+
+// parseAgeEdit interprets the raw `age` of a PATCH /me body:
+//
+//	absent      → (nil, false, nil)   leave it alone
+//	null        → (nil, true,  nil)   clear it
+//	13..120     → (&n,  true,  nil)   set it
+//	anything else                     → an error to answer 400 with
+//
+// The bounds match POST /auth/register, so an age that could be registered can
+// also be edited to.
+func parseAgeEdit(raw json.RawMessage) (age *int, present bool, err error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return nil, false, nil
+	}
+	if trimmed == "null" {
+		return nil, true, nil
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return nil, true, fmt.Errorf("age must be a number")
+	}
+	if n < 13 || n > 120 {
+		return nil, true, fmt.Errorf("age must be between 13 and 120")
+	}
+	return &n, true, nil
+}
+
+// handlePatchMe updates the caller's own editable profile fields. Currently that
+// is age alone: the display name and photo live in the account's Tinode
+// `public` and the client writes them there directly, while age is companion's
+// because the match queue filters on it.
+//
+// This endpoint did not exist, so the profile screen's age field wrote to
+// browser memory and nowhere else — the value reverted on the next load, with
+// no error to show for it.
+//
+// Gender is not editable here on purpose: it is chosen once at registration and
+// drives matching and moderation.
+func (s *Server) handlePatchMe(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var req patchMeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "malformed request body")
+		return
+	}
+	age, present, err := parseAgeEdit(req.Age)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_age", err.Error())
+		return
+	}
+	if !present {
+		// Nothing to change. Not an error — a save with an untouched age is the
+		// normal case once other fields join this endpoint.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err := s.Store.UpdateUserAge(r.Context(), u.ID, age); err != nil {
+		log.Printf("me: update age for user %d: %v", u.ID, err)
+		writeError(w, http.StatusInternalServerError, "store_failed", "could not save profile")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleDeleteMe implements self-service account deletion (#94 frontend /
