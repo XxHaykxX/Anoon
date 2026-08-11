@@ -1,19 +1,20 @@
 import { router } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon, LockIcon, ShieldIcon } from '@/components/icons';
 
 /** Экран блокировки (`AnoonBanned.tsx`). Чистая презентация, логики нет. */
 export default function BannedScreen() {
   return (
-    <View className="flex-1 items-center justify-center bg-background px-8">
+    <SafeAreaView className="flex-1 items-center justify-center bg-background px-8" edges={['top', 'bottom']}>
       {/* Выход «назад» — в настоящем бане идти пользователю некуда. */}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Назад"
         onPress={() => router.back()}
         style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-        className="absolute left-1 top-14 h-12 w-12 items-center justify-center rounded-full">
+        className="absolute left-1 top-2 h-12 w-12 items-center justify-center rounded-full">
         <ChevronLeftIcon size={24} />
       </Pressable>
 
@@ -47,6 +48,6 @@ export default function BannedScreen() {
       <Text className="mt-8 max-w-[18rem] text-center text-xs text-muted-foreground/70">
         Если вы считаете, что произошла ошибка, обратитесь в поддержку.
       </Text>
-    </View>
+    </SafeAreaView>
   );
 }

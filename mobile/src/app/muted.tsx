@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ChevronLeftIcon, LockIcon } from '@/components/icons';
 import { AnoonAvatar } from '@/components/shared';
@@ -25,9 +26,9 @@ const thread: Bubble[] = [
  */
 export default function MutedScreen() {
   return (
-    <View className="flex-1 bg-background">
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
       <View className="shrink-0 border-b border-border">
-        <View className="flex-row items-center gap-1 px-3 pb-2 pt-14">
+        <View className="flex-row items-center gap-1 px-3 py-2">
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Назад"
@@ -88,6 +89,6 @@ export default function MutedScreen() {
           </View>
         </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }

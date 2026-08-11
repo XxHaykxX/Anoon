@@ -9,8 +9,15 @@ import type { PlatformAdapter, PlatformStorage } from '@/lib/platform';
  * from a browser.
  */
 
-/** Backend origin. `app.json` → `expo.extra.backendUrl`, prod by default. */
+/**
+ * Backend origin. `app.json` → `expo.extra.backendUrl`, prod by default.
+ *
+ * `EXPO_PUBLIC_BACKEND_URL` overrides it — that is how a dev build gets pointed
+ * at a local stand (or a tunnel) without editing a committed file and then
+ * remembering to edit it back.
+ */
 const BACKEND_URL: string =
+  process.env.EXPO_PUBLIC_BACKEND_URL ??
   (Constants.expoConfig?.extra?.backendUrl as string | undefined) ??
   'https://5-129-206-152.sslip.io';
 

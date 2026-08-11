@@ -63,7 +63,7 @@ export default function SearchingScreen() {
   const peerAges = prefs?.peerAgeRanges ?? [];
 
   return (
-    <View className="flex-1 items-center justify-between bg-background">
+    <SafeAreaView className="flex-1 items-center justify-between bg-background" edges={['top', 'bottom']}>
       <View className="flex-1 items-center justify-center px-6">
         {/* Кольца вокруг аватара. На вебе они пульсируют через `animate-ping`;
             в RN такого класса нет, а тащить Reanimated ради декора — лишнее.
@@ -98,6 +98,6 @@ export default function SearchingScreen() {
           <Text className="text-base font-bold text-foreground">Отмена</Text>
         </Pressable>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }

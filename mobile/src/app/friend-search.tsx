@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CheckIcon, SearchIcon } from '@/components/icons';
 import { AnoonAvatar } from '@/components/shared';
@@ -117,8 +118,8 @@ export default function FriendSearchScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <View className="px-5 pb-3 pt-14">
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+      <View className="px-5 pb-3 pt-3">
         <Text className="text-2xl font-bold text-foreground">Найти друга</Text>
         <Text className="mt-0.5 text-sm text-muted-foreground">Введите ID пользователя</Text>
       </View>
@@ -205,6 +206,6 @@ export default function FriendSearchScreen() {
           </View>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }

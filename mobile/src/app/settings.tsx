@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   BellIcon,
@@ -158,8 +159,8 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <View className="shrink-0 flex-row items-center gap-1 px-3 pb-2 pt-14">
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+      <View className="shrink-0 flex-row items-center gap-1 px-3 pb-2 pt-4">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Назад"
@@ -354,7 +355,7 @@ export default function SettingsScreen() {
           Аккаунт и все данные будут удалены без возможности восстановления.
         </Text>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 

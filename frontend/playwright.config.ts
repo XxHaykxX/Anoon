@@ -55,7 +55,8 @@ export default defineConfig({
       // are matched against the ABSOLUTE path, which on this machine is
       // C:\Users\Admin\… — so that glob ignored every spec in the repo and the
       // whole suite silently listed zero tests.
-      testIgnore: /[\\/]tests[\\/]e2e[\\/]admin[\\/]/,
+      // Same for the mobile project below: a different app on a different port.
+      testIgnore: /[\\/]tests[\\/]e2e[\\/](admin|mobile)[\\/]/,
       use: {
         ...devices["Desktop Chrome"],
         // Override the device's default (desktop) viewport with the phone frame.
@@ -77,6 +78,20 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         baseURL: process.env.ADMIN_BASE_URL ?? "http://localhost:3002",
         viewport: { width: 1280, height: 900 },
+      },
+    },
+    {
+      // The Expo client's web export (mobile/), driven against a live stand —
+      // the only way to exercise the native bundle on a machine with no device
+      // and no Android SDK. Opt-in with E2E_MOBILE=1; see the spec's header for
+      // the three commands that put the bundle on :3000.
+      name: "mobile",
+      testDir: "./tests/e2e/mobile",
+      fullyParallel: false,
+      use: {
+        ...devices["Desktop Chrome"],
+        baseURL: process.env.MOBILE_BASE_URL ?? "http://127.0.0.1:3000",
+        viewport: { width: 390, height: 844 },
       },
     },
   ],

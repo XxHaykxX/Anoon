@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CheckIcon, CloseIcon } from '@/components/icons';
 import { getCompanionClient, type ReportCategory } from '@/lib/companion';
@@ -72,7 +73,7 @@ export default function ReportScreen() {
 
   if (sent) {
     return (
-      <View className="flex-1 items-center justify-center gap-3 bg-background px-6">
+      <SafeAreaView className="flex-1 items-center justify-center gap-3 bg-background px-6" edges={['top', 'bottom']}>
         <View className="h-16 w-16 items-center justify-center rounded-full bg-primary">
           <CheckIcon size={32} color="#000000" />
         </View>
@@ -87,16 +88,17 @@ export default function ReportScreen() {
           className="mt-2 rounded-full bg-primary px-6 py-2.5">
           <Text className="text-sm font-semibold text-primary-foreground">Готово</Text>
         </Pressable>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-background"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Контекст чата, поверх которого на вебе лежит шторка. */}
-      <View className="border-b border-border px-5 pb-4 pt-14 opacity-40">
+      <View className="border-b border-border px-5 pb-4 pt-4 opacity-40">
         <Text className="font-semibold text-foreground">{peerLabel}</Text>
         <Text className="text-xs text-muted-foreground">был(а) недавно</Text>
       </View>
@@ -182,6 +184,7 @@ export default function ReportScreen() {
           </ScrollView>
         </View>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

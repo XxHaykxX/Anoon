@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Clipboard, Pressable, Share, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CheckIcon, ChevronLeftIcon, ForwardIcon } from '@/components/icons';
 import { AnoonNotice } from '@/components/shared';
@@ -36,8 +37,8 @@ export default function InviteScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <View className="flex-row items-center gap-1 px-6 pb-2 pt-14">
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+      <View className="flex-row items-center gap-1 px-6 pb-2 pt-6">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Назад"
@@ -104,6 +105,6 @@ export default function InviteScreen() {
           </>
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CheckIcon, CloseIcon } from '@/components/icons';
 import { AnoonAvatar } from '@/components/shared';
@@ -92,8 +93,8 @@ export default function FriendRequestsScreen() {
   const pendingCount = rows.filter((r) => (statuses[r.id] ?? 'pending') === 'pending').length;
 
   return (
-    <View className="flex-1 bg-background">
-      <View className="flex-row items-center justify-between px-5 pb-3 pt-14">
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+      <View className="flex-row items-center justify-between px-5 pb-3 pt-3">
         <Text className="text-2xl font-bold text-foreground">Заявки в друзья</Text>
         {pendingCount > 0 ? (
           <View className="h-6 min-w-6 items-center justify-center rounded-full bg-primary px-2">
@@ -164,6 +165,6 @@ export default function FriendRequestsScreen() {
           })}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
