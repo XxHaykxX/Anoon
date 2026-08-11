@@ -1,6 +1,6 @@
 "use client";
 
-import { Images, ImageIcon, Video } from "lucide-react";
+import { Images, ImageIcon, Mic, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { MediaGallery } from "@/components/media-gallery";
@@ -8,7 +8,7 @@ import { Pager } from "@/components/pager";
 import type { MediaAssetRow } from "@/data/fixtures";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "image" | "video";
+type Filter = "all" | "image" | "video" | "audio";
 const PAGE_SIZE = 60;
 
 // Общая галерея: все медиа всех пользователей. Серверная пагинация + фильтр по дате/типу.
@@ -49,6 +49,7 @@ export default function GalleryPage() {
     { key: "all", label: "Все", icon: Images },
     { key: "image", label: "Фото", icon: ImageIcon },
     { key: "video", label: "Видео", icon: Video },
+    { key: "audio", label: "Голос", icon: Mic },
   ];
 
   return (

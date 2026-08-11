@@ -8,6 +8,7 @@ import {
   companionUpdateReport,
   companionUpdateResource,
 } from "@/lib/companion-client";
+import { toMediaKind } from "@/data/fixtures";
 import type { BanRow, MediaAssetRow, ProfileRow, ReportRow } from "@/data/fixtures";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -139,7 +140,7 @@ export async function listMedia(p: ListParams): Promise<{ data: MediaAssetRow[];
   const mapped: MediaAssetRow[] = rows.map((r) => ({
     id: r.id,
     ownerProfileId: r.ownerProfileId,
-    kind: r.kind === "video" ? "video" : "image",
+    kind: toMediaKind(r.kind, r.mime),
     url: r.deletedAt ? "" : urlByKey.get(r.r2Key) ?? "",
     ephemeral: r.ephemeral,
     expiresAt: r.expiresAt ?? null,

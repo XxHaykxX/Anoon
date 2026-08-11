@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- граница нетипизированного companion REST-ответа */
 import { cookies } from "next/headers";
 
+import { isMediaKind, toMediaKind } from "@/data/fixtures";
 import type { BanRow, MediaAssetRow, ProfileRow, ReportReason, ReportRow, ReportStatus } from "@/data/fixtures";
 import { ADMIN_COOKIE, verifySession } from "@/lib/admin-session";
 
@@ -404,7 +405,7 @@ function mapMediaAsset(r: any): MediaAssetRow {
   return {
     id: String(r.id),
     ownerProfileId: String(r.ownerProfileId ?? r.owner_id ?? ""),
-    kind: r.kind === "video" ? "video" : "image",
+    kind: toMediaKind(r.kind, r.mime),
     // Через свой роут — иначе тайл галереи просит файл у админки (404). См. proxiedFileUrl.
     url: proxiedFileUrl(r.url ?? "") ?? "",
     ephemeral: Boolean(r.ephemeral),
@@ -429,7 +430,7 @@ export type CompanionMediaParams = {
 export async function companionMediaFiles(p: CompanionMediaParams): Promise<{ data: MediaAssetRow[]; total: number }> {
   const qs = new URLSearchParams();
   if (p.ownerId) qs.set("ownerId", p.ownerId);
-  if (p.kind === "image" || p.kind === "video") qs.set("kind", p.kind);
+  if (isMediaKind(p.kind)) qs.set("kind", p.kind);
   if (p.from) qs.set("from", p.from);
   if (p.to) qs.set("to", p.to);
   if (p.page) qs.set("page", String(p.page));
@@ -440,7 +441,7 @@ export async function companionMediaFiles(p: CompanionMediaParams): Promise<{ da
   return { data: rows.map(mapMediaAsset), total: Number(body?.total ?? rows.length) };
 }
 
-export type CompanionMediaFolder = { profileId: string; nickname: string; publicId: string; images: number; videos: number; count: number };
+export type CompanionMediaFolder = { profileId: string; nickname: string; publicId: string; images: number; videos: number; audios: number; count: number };
 
 // GET /admin/media/folders — рольап MediaAsset по владельцу для файл-менеджера («Файлы»).
 export async function companionMediaFolders(): Promise<{ folders: CompanionMediaFolder[] }> {
@@ -453,6 +454,8 @@ export async function companionMediaFolders(): Promise<{ folders: CompanionMedia
       publicId: String(f.publicId ?? f.public_id ?? ""),
       images: Number(f.images ?? 0),
       videos: Number(f.videos ?? 0),
+      // companion пока не разделяет голосовые в счётчиках папок — 0, пока не пришлёт.
+      audios: Number(f.audios ?? 0),
       count: Number(f.count ?? 0),
     })),
   };

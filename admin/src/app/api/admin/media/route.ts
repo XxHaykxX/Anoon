@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- граница нетипизированного Supabase */
 import { NextResponse } from "next/server";
 
-import { media as mediaFixtures, profiles } from "@/data/fixtures";
+import { isMediaKind, media as mediaFixtures, profiles, toMediaKind } from "@/data/fixtures";
 import { companionEnabled, companionMediaFiles, companionMediaFolders, statusFor } from "@/lib/companion-client";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -37,25 +37,34 @@ function filterMedia(rows: typeof mediaFixtures, f: MediaFilter) {
   let list = rows;
   if (f.fromISO) list = list.filter((m) => m.createdAt >= f.fromISO!);
   if (f.toISO) list = list.filter((m) => m.createdAt < f.toISO!);
-  if (f.kind === "image" || f.kind === "video") list = list.filter((m) => m.kind === f.kind);
+  if (isMediaKind(f.kind)) list = list.filter((m) => m.kind === f.kind);
   list = [...list].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   const total = list.length;
   const page = list.slice((f.page - 1) * f.pageSize, f.page * f.pageSize);
   return { page, total };
 }
 
+// Счётчики папки по видам. Голосовые считались как фото — отдельная строка.
+type KindCounts = { images: number; videos: number; audios: number };
+
+function bump(counts: KindCounts, kind: unknown, mime?: unknown) {
+  const k = toMediaKind(kind, mime);
+  if (k === "video") counts.videos++;
+  else if (k === "audio") counts.audios++;
+  else counts.images++;
+}
+
 function mockFolders() {
-  const byOwner = new Map<string, { images: number; videos: number }>();
+  const byOwner = new Map<string, KindCounts>();
   for (const m of mediaFixtures) {
-    const e = byOwner.get(m.ownerProfileId) ?? { images: 0, videos: 0 };
-    if (m.kind === "video") e.videos++;
-    else e.images++;
+    const e = byOwner.get(m.ownerProfileId) ?? { images: 0, videos: 0, audios: 0 };
+    bump(e, m.kind);
     byOwner.set(m.ownerProfileId, e);
   }
   const folders = [...byOwner.entries()]
-    .map(([profileId, counts]) => {
+    .map(([profileId, c]) => {
       const p = profiles.find((x) => x.id === profileId);
-      return { profileId, nickname: p?.nickname ?? "—", publicId: p?.publicId ?? "", images: counts.images, videos: counts.videos, count: counts.images + counts.videos };
+      return { profileId, nickname: p?.nickname ?? "—", publicId: p?.publicId ?? "", ...c, count: c.images + c.videos + c.audios };
     })
     .sort((a, b) => b.count - a.count);
   return NextResponse.json({ folders });
@@ -141,7 +150,7 @@ export async function GET(req: Request) {
         .order("createdAt", { ascending: false });
       if (fromISO) q = q.gte("createdAt", fromISO);
       if (toISO) q = q.lt("createdAt", toISO);
-      if (kind === "image" || kind === "video") q = q.eq("kind", kind);
+      if (isMediaKind(kind)) q = q.eq("kind", kind);
       q = q.range((page - 1) * pageSize, page * pageSize - 1);
       const { data: rows, count } = await q;
       const list = (rows ?? []) as Array<any>;
@@ -164,7 +173,7 @@ export async function GET(req: Request) {
         id: m.id,
         ownerProfileId: m.ownerProfileId,
         ownerBadge: `#${pubById.get(m.ownerProfileId) ?? "?????"}`,
-        kind: m.kind === "video" ? "video" : "image",
+        kind: toMediaKind(m.kind, m.mime),
         url: m.deletedAt ? "" : urlByKey.get(m.r2Key) ?? "",
         mime: m.mime,
         durationMs: m.durationMs ?? undefined,
@@ -179,13 +188,12 @@ export async function GET(req: Request) {
 
     if (!profileId) {
       // Папки: группируем MediaAsset по владельцу.
-      const { data: assets } = await admin.from("MediaAsset").select("ownerProfileId,kind");
-      const rows = (assets ?? []) as Array<{ ownerProfileId: string; kind: string }>;
-      const byOwner = new Map<string, { images: number; videos: number }>();
+      const { data: assets } = await admin.from("MediaAsset").select("ownerProfileId,kind,mime");
+      const rows = (assets ?? []) as Array<{ ownerProfileId: string; kind: string; mime: string | null }>;
+      const byOwner = new Map<string, KindCounts>();
       for (const a of rows) {
-        const e = byOwner.get(a.ownerProfileId) ?? { images: 0, videos: 0 };
-        if (a.kind === "video") e.videos++;
-        else e.images++;
+        const e = byOwner.get(a.ownerProfileId) ?? { images: 0, videos: 0, audios: 0 };
+        bump(e, a.kind, a.mime);
         byOwner.set(a.ownerProfileId, e);
       }
       const ids = [...byOwner.keys()];
@@ -199,7 +207,8 @@ export async function GET(req: Request) {
         publicId: pmap.get(id)?.publicId ?? "",
         images: byOwner.get(id)!.images,
         videos: byOwner.get(id)!.videos,
-        count: byOwner.get(id)!.images + byOwner.get(id)!.videos,
+        audios: byOwner.get(id)!.audios,
+        count: byOwner.get(id)!.images + byOwner.get(id)!.videos + byOwner.get(id)!.audios,
       }));
       folders.sort((a, b) => b.count - a.count);
       return NextResponse.json({ folders });
@@ -213,7 +222,7 @@ export async function GET(req: Request) {
       .order("createdAt", { ascending: false });
     if (fromISO) fq = fq.gte("createdAt", fromISO);
     if (toISO) fq = fq.lt("createdAt", toISO);
-    if (kind === "image" || kind === "video") fq = fq.eq("kind", kind);
+    if (isMediaKind(kind)) fq = fq.eq("kind", kind);
     fq = fq.range((page - 1) * pageSize, page * pageSize - 1);
     const { data: rows, count } = await fq;
     const list = (rows ?? []) as Array<any>;
@@ -231,7 +240,7 @@ export async function GET(req: Request) {
     const files = list.map((m) => ({
       id: m.id,
       ownerProfileId: profileId,
-      kind: m.kind === "video" ? "video" : "image",
+      kind: toMediaKind(m.kind, m.mime),
       url: m.deletedAt ? "" : urlByKey.get(m.r2Key) ?? "",
       mime: m.mime,
       durationMs: m.durationMs ?? undefined,

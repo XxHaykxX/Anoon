@@ -60,7 +60,23 @@ export const bans: BanRow[] = [
 
 // --- Медиа-ассеты (Этап 3). Приватность: url — заглушка R2 (mock),
 // в проде проксируется через admin-API (аудит просмотра). ---
-export type MediaKind = "image" | "video";
+export type MediaKind = "image" | "video" | "audio";
+
+const MEDIA_KINDS: readonly string[] = ["image", "video", "audio"];
+
+// Значение фильтра ?kind= — принимаем только известные виды (иначе фильтр игнорируется).
+export const isMediaKind = (v: unknown): v is MediaKind => typeof v === "string" && MEDIA_KINDS.includes(v);
+
+// Единственное место, где сырой kind из БД/companion сводится к MediaKind.
+// Раньше каждый маппер писал `kind === "video" ? "video" : "image"` — и голосовые
+// (43 шт. на стенде) попадали в <img>. mime — запасной вариант, если kind пуст.
+export function toMediaKind(kind: unknown, mime?: unknown): MediaKind {
+  if (isMediaKind(kind)) return kind;
+  const m = typeof mime === "string" ? mime : "";
+  if (m.startsWith("video/")) return "video";
+  if (m.startsWith("audio/")) return "audio";
+  return "image";
+}
 
 export type MediaAssetRow = {
   id: string;

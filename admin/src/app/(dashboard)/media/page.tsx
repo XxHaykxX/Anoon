@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Copy, Folder, ImageIcon, Video } from "lucide-react";
+import { ArrowLeft, Copy, Folder, ImageIcon, Mic, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { MediaGallery } from "@/components/media-gallery";
@@ -10,7 +10,7 @@ import { toast } from "@/components/ui/toaster";
 import type { MediaAssetRow } from "@/data/fixtures";
 import { cn } from "@/lib/utils";
 
-type FolderRow = { profileId: string; nickname: string; publicId: string; images: number; videos: number; count: number };
+type FolderRow = { profileId: string; nickname: string; publicId: string; images: number; videos: number; audios?: number; count: number };
 
 // Файл-менеджер медиа: папки по юзерам (слева) + галерея выбранного (справа).
 // Данные — из Supabase Storage/MediaAsset через /api/admin/media (api-режим).
@@ -97,6 +97,8 @@ export default function MediaPage() {
                     <span className="flex items-center gap-3 text-xs text-fg-muted">
                       <span className="flex items-center gap-1"><ImageIcon size={12} />{f.images}</span>
                       <span className="flex items-center gap-1"><Video size={12} />{f.videos}</span>
+                      {/* Голосовые — только когда есть: companion этот счётчик пока не отдаёт. */}
+                      {f.audios ? <span className="flex items-center gap-1"><Mic size={12} />{f.audios}</span> : null}
                     </span>
                   </span>
                   <span

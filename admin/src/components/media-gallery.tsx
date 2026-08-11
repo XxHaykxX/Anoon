@@ -2,7 +2,7 @@
 
 import { usePermissions, useUpdate } from "@refinedev/core";
 import { motion } from "framer-motion";
-import { Eye, Film, ImageOff, Lock, Play, ShieldAlert, Trash2 } from "lucide-react";
+import { Eye, Film, ImageOff, Lock, Mic, Play, ShieldAlert, Trash2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import Lightbox, { type GenericSlide, type Slide } from "yet-another-react-lightbox";
@@ -19,15 +19,20 @@ import { cn } from "@/lib/utils";
 // Видеоплеер (vidstack) — только на клиенте: web-components + window.
 const VideoPlayer = dynamic(() => import("./video-player"), { ssr: false });
 
-// Кастомный тип слайда лайтбокса для vidstack-видео.
+// Кастомные типы слайдов лайтбокса: vidstack-видео и голосовые.
 declare module "yet-another-react-lightbox" {
   interface SlideTypes {
     "vidstack-video": SlideVidstackVideo;
+    "audio-file": SlideAudioFile;
   }
   interface SlideVidstackVideo extends GenericSlide {
     type: "vidstack-video";
     src: string;
     poster?: string;
+  }
+  interface SlideAudioFile extends GenericSlide {
+    type: "audio-file";
+    src: string;
   }
 }
 
@@ -66,12 +71,17 @@ export function MediaGallery({
     [media, escalatedIds, deletedIds],
   );
 
+  // Слайды строго 1:1 с viewable — индекс из openLightbox ищется по этому же массиву.
+  // Поэтому audio тоже даёт слайд (со своим рендером), а не выпадает из списка:
+  // иначе стрелки в лайтбоксе открывали бы соседний файл.
   const slides: Slide[] = useMemo(
     () =>
       viewable.map((m) =>
         m.kind === "video"
           ? { type: "vidstack-video" as const, src: m.url, poster: m.poster }
-          : { type: "image" as const, src: m.url, width: m.width, height: m.height },
+          : m.kind === "audio"
+            ? { type: "audio-file" as const, src: m.url }
+            : { type: "image" as const, src: m.url, width: m.width, height: m.height },
       ),
     [viewable],
   );
@@ -161,7 +171,15 @@ export function MediaGallery({
               ) : (
                 <>
                   {/* Превью: blur-by-default */}
-                  {m.kind === "video" && m.poster ? (
+                  {m.kind === "audio" ? (
+                    // У голосового нет кадра — глиф + плеер прямо в тайле (в <img> оно давало битую картинку).
+                    <div className="flex h-full flex-col items-center justify-center gap-2 bg-surface-2 px-2 text-fg-muted">
+                      <Mic size={22} className="text-accent" />
+                      {shown && (
+                        <audio src={m.url} controls preload="none" className="w-full max-w-full" />
+                      )}
+                    </div>
+                  ) : m.kind === "video" && m.poster ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={m.poster}
@@ -189,8 +207,9 @@ export function MediaGallery({
                     </button>
                   )}
 
-                  {/* Раскрыто — клик открывает лайтбокс */}
-                  {shown && (
+                  {/* Раскрыто — клик открывает лайтбокс. У audio оверлея нет: он перекрыл бы
+                      controls плеера, а слушать можно прямо в тайле. */}
+                  {shown && m.kind !== "audio" && (
                     <button
                       onClick={() => openLightbox(m)}
                       className="absolute inset-0 flex items-center justify-center bg-black/0 transition hover:bg-black/20"
@@ -215,6 +234,11 @@ export function MediaGallery({
                     {m.kind === "video" && (
                       <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-fg">
                         <Film size={11} /> видео
+                      </span>
+                    )}
+                    {m.kind === "audio" && (
+                      <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-fg">
+                        <Mic size={11} /> голос
                       </span>
                     )}
                     {m.reportReason && (
@@ -276,6 +300,11 @@ export function MediaGallery({
             slide.type === "vidstack-video" ? (
               <div className="mx-auto w-full max-w-3xl px-4">
                 <VideoPlayer src={slide.src} poster={slide.poster} />
+              </div>
+            ) : slide.type === "audio-file" ? (
+              <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-4 px-4 text-white">
+                <Mic size={40} />
+                <audio src={slide.src} controls autoPlay className="w-full" />
               </div>
             ) : undefined,
         }}
