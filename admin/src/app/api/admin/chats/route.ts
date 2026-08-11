@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- граница нетипизированного Supabase */
 import { NextResponse } from "next/server";
 
-import { statusFor } from "@/lib/companion-client";
+import { companionChatMessages, companionChats, companionEnabled, statusFor } from "@/lib/companion-client";
 
 import { profiles } from "@/data/fixtures";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -9,14 +9,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const runtime = "nodejs";
 
 const BUCKET = "media";
-// «Идёт сейчас» = сообщение за последние LIVE_WINDOW_MS.
+// «Идёт сейчас» = сообщение за последние LIVE_WINDOW_MS. Нужен только Supabase-пути:
+// в companion-пути live считает сам companion (то же окно), чтобы контракт совпадал.
 const LIVE_WINDOW_MS = 5 * 60_000;
 
-// TODO(companion): БЛОКИРОВАНО юр. вопросом Q7a (COMPANION-PLAN.md §7) — доступ модератора
-// к приватным перепискам целиком vs только по открытой жалобе не решён. Не реализовывать
-// companion-путь, пока это не разрешено (см. #67 USER-1). Остаётся на Supabase-пути даже при
-// ADMIN_BACKEND=companion; в mock-режиме — фикстуры. (см. ADMIN-REUSE-PLAN.md §5 п.2 /
-// COMPANION-ADMIN-API.md §3)
 const MOCK = process.env.NEXT_PUBLIC_DATA_MODE !== "api";
 const MOCK_CONVS = [
   { id: "c1", aId: "p1", bId: "p3", messages: 2, lastMessageAt: new Date(Date.now() - 30_000).toISOString(), createdAt: "2026-06-30T09:00:00Z" },
@@ -58,6 +54,18 @@ export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id");
 
   if (MOCK) return id ? NextResponse.json({ messages: MOCK_MSGS[id] ?? [] }) : mockConversations();
+
+  // ADMIN_BACKEND=companion → переписки читает companion ROOT-ботом прямо из
+  // Tinode-топиков (COMPANION-ADMIN-API.md §3). Модератор видит диалог целиком —
+  // решение владельца по Q7a от 2026-08-11; companion пишет каждое открытие в
+  // moderator_actions('view_chat').
+  if (companionEnabled()) {
+    try {
+      return NextResponse.json(id ? await companionChatMessages(id) : await companionChats());
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "error" }, { status: statusFor(err, 400) });
+    }
+  }
 
   const admin = supabaseAdmin();
 

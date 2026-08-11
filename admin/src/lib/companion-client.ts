@@ -168,8 +168,9 @@ function listQuery(p: CompanionListParams): string {
   return s ? `?${s}` : "";
 }
 
-// companion route-path по admin-ресурсу. media/chats/gallery/broadcast сюда НЕ входят —
-// у companion пока нет таких эндпоинтов (остаются на Supabase/mock, см. TODO в route-хендлерах).
+// companion route-path по generic-ресурсу Refine. media/chats/gallery/broadcast сюда НЕ
+// входят: у них свои роут-хендлеры со своим контрактом (см. companionMediaFiles /
+// companionChats ниже), а не Refine-конверт {data,total}.
 function resourcePath(resource: string): string | null {
   if (resource === "reports") return "reports";
   if (resource === "users" || resource === "profiles") return "users";
@@ -481,6 +482,84 @@ export async function companionBroadcast(payload: CompanionBroadcastPayload): Pr
     body: JSON.stringify(payload),
   });
   return { sent: Number(body?.sent ?? 0), failed: Number(body?.failed ?? 0) };
+}
+
+// --- Чаты (раздел «Чаты»). ---
+// Единственный раздел, чьи данные лежат не в БД companion, а в Tinode-топиках:
+// companion читает их ROOT-ботом (COMPANION-ADMIN-API.md §3) и сам считает live/
+// количество сообщений, поэтому здесь только маппинг полей, без вычислений.
+export type CompanionChatPeer = { id: string; nickname: string; publicId: string; emoji: string };
+
+export type CompanionConversation = {
+  id: string;
+  a: CompanionChatPeer;
+  b: CompanionChatPeer;
+  messages: number;
+  lastMessageAt: string | null;
+  createdAt: string;
+  live: boolean;
+};
+
+export type CompanionChatMessage = {
+  id: string;
+  senderId: string;
+  kind: string;
+  text: string | null;
+  status: string;
+  createdAt: string;
+  mediaUrl: string | null;
+  mediaKind: string | null;
+};
+
+// Эмодзи companion не хранит (анон-персона — это алиас матча, а не профиль),
+// поэтому подставляем ту же заглушку, что и mapProfile/companionOnline.
+function mapChatPeer(p: any): CompanionChatPeer {
+  const publicId = String(p?.publicId ?? p?.public_id ?? "");
+  return {
+    id: String(p?.id ?? ""),
+    nickname: p?.nickname ?? (publicId ? `#${publicId}` : "—"),
+    publicId,
+    emoji: p?.emoji || "🙂",
+  };
+}
+
+// GET /admin/chats — список диалогов, свежие сверху.
+export async function companionChats(): Promise<{ conversations: CompanionConversation[] }> {
+  const b = await companionFetch<any>(`/admin/chats`);
+  const rows: any[] = Array.isArray(b?.conversations) ? b.conversations : [];
+  return {
+    conversations: rows.map((c) => ({
+      id: String(c.id),
+      a: mapChatPeer(c.a),
+      b: mapChatPeer(c.b),
+      messages: Number(c.messages ?? 0),
+      lastMessageAt: c.lastMessageAt ?? c.last_message_at ?? null,
+      createdAt: c.createdAt ?? c.created_at ?? "",
+      live: Boolean(c.live),
+    })),
+  };
+}
+
+// GET /admin/chats?id=<topic> — сообщения одного диалога, старые сверху.
+// senderId приходит пустым, пока пара анонимна: Tinode вырезает отправителя на
+// анон-топике для всех читателей, включая ROOT (см. anon-патч сервера). Пустая
+// строка не совпадёт ни с a.id, ни с b.id — страница разложит такие сообщения по
+// одной стороне, но текст и медиа видны полностью.
+export async function companionChatMessages(topic: string): Promise<{ messages: CompanionChatMessage[] }> {
+  const b = await companionFetch<any>(`/admin/chats?id=${encodeURIComponent(topic)}`);
+  const rows: any[] = Array.isArray(b?.messages) ? b.messages : [];
+  return {
+    messages: rows.map((m) => ({
+      id: String(m.id),
+      senderId: String(m.senderId ?? m.sender_id ?? ""),
+      kind: String(m.kind ?? "text"),
+      text: m.text ?? null,
+      status: String(m.status ?? "sent"),
+      createdAt: m.createdAt ?? m.created_at ?? "",
+      mediaUrl: m.mediaUrl ?? m.media_url ?? null,
+      mediaKind: m.mediaKind ?? m.media_kind ?? null,
+    })),
+  };
 }
 
 // --- Overview / Online (раздел «Обзор» и «Онлайн»). ---

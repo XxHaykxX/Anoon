@@ -245,6 +245,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/bans", s.adminOnly(s.handleAdminListBans))
 	mux.HandleFunc("GET /admin/bans/{id}", s.adminOnly(s.handleAdminGetBan))
 	mux.HandleFunc("PATCH /admin/bans/{id}", s.adminOnly(s.handleAdminPatchBan))
+	// Chats (§3): the conversation list, and one conversation read whole
+	// (?id=<topic>). Read-only, and the only admin section whose data lives in
+	// Tinode rather than in companion's DB — see chats.go.
+	mux.HandleFunc("GET /admin/chats", s.adminOnly(s.handleAdminChats))
 	mux.HandleFunc("GET /admin/media/folders", s.adminOnly(s.handleAdminMediaFolders))
 	mux.HandleFunc("GET /admin/media", s.adminOnly(s.handleAdminListMedia))
 	mux.HandleFunc("PATCH /admin/media/{id}", s.adminOnly(s.handleAdminPatchMedia))

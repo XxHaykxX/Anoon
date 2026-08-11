@@ -72,6 +72,14 @@ type Client struct {
 	// subscription is re-established after a reconnect. Guarded by watchedMu.
 	watchedMu sync.Mutex
 	watched   map[string]struct{}
+
+	// metaSink / dataSink route the answers to an in-flight ROOT read (chats.go)
+	// back to the caller: a {meta} carries the request id, a {data} does not and
+	// is therefore keyed by topic. Both guarded by mu; readMu serializes the
+	// reads themselves so there is never more than one sink per key.
+	readMu   sync.Mutex
+	metaSink map[string]chan *pbx.ServerMeta
+	dataSink map[string]*[]*pbx.ServerData
 }
 
 // DataEvent is a chat {data} message observed on the ROOT stream: enough to
@@ -87,13 +95,15 @@ type DataEvent struct {
 // New constructs a Client. Call Run to start the connection loop.
 func New(grpcAddr, rootLogin, rootSecret string) *Client {
 	return &Client{
-		addr:    grpcAddr,
-		login:   rootLogin,
-		secret:  rootSecret,
-		pending: make(map[string]chan *pbx.ServerCtrl),
-		ready:   make(chan struct{}),
-		tokens:  newTokenCache(tokenCacheTTL, tokenCacheMax),
-		watched: make(map[string]struct{}),
+		addr:     grpcAddr,
+		login:    rootLogin,
+		secret:   rootSecret,
+		pending:  make(map[string]chan *pbx.ServerCtrl),
+		ready:    make(chan struct{}),
+		tokens:   newTokenCache(tokenCacheTTL, tokenCacheMax),
+		watched:  make(map[string]struct{}),
+		metaSink: make(map[string]chan *pbx.ServerMeta),
+		dataSink: make(map[string]*[]*pbx.ServerData),
 	}
 }
 
@@ -288,13 +298,18 @@ func (c *Client) readLoop(stream pbx.Node_MessageLoopClient) error {
 			}
 		case msg.GetData() != nil:
 			// Chat message on a topic ROOT is subscribed to (anon/revealed group
-			// topics — see WatchTopic). Hand it to the message-push path (#112),
-			// which notifies offline recipients. Non-blocking + panic-safe.
-			c.dispatchData(msg.GetData())
+			// topics — see WatchTopic). An admin read in progress on that topic
+			// claims the frame as history (chats.go); otherwise it is live and
+			// goes to the message-push path (#112), which notifies offline
+			// recipients. Non-blocking + panic-safe.
+			if !c.collectData(msg.GetData()) {
+				c.dispatchData(msg.GetData())
+			}
 		case msg.GetPres() != nil:
 			// TODO: presence for admin online tracking.
 		case msg.GetMeta() != nil:
-			// TODO: meta responses (sub lists, etc.).
+			// Answer to a ROOT {get} — routed to the waiting reader (chats.go).
+			c.collectMeta(msg.GetMeta())
 		case msg.GetInfo() != nil:
 			// TODO: read/recv/typing notes.
 		}
