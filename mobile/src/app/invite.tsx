@@ -1,34 +1,34 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Clipboard, Pressable, Share, Text, View } from 'react-native';
+import { Pressable, Share, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CheckIcon, ChevronLeftIcon, ForwardIcon } from '@/components/icons';
 import { AnoonNotice } from '@/components/shared';
+import { copyText } from '@/lib/clipboard';
 import { useAnoonStore } from '@/store';
 
 /**
  * Пригласить друга (`AnoonInvite.tsx`).
  *
  * `navigator.clipboard` / `navigator.share` веба заменены нативными: `Share`
- * из react-native — это системная шторка «Поделиться», а `Clipboard` — буфер
- * обмена. `Clipboard` из ядра RN помечен deprecated (переехал в
- * `@react-native-clipboard/clipboard`), но пока экспортируется и работает;
- * новую зависимость ради одной строки не ставим.
+ * из react-native — это системная шторка «Поделиться», а буфер обмена — это
+ * `expo-clipboard` через {@link copyText} (`Clipboard` из ядра RN выпилен).
  */
 export default function InviteScreen() {
   const user = useAnoonStore((s) => s.user);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle');
 
   const hashId = user?.hashId;
   const inviteLink = `anoon.app/add/${hashId ?? ''}`;
   const inviteUrl = `https://${inviteLink}`;
   const myId = `#${hashId ?? ''}`;
 
-  const handleCopy = () => {
-    Clipboard.setString(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+  // Отказ буфера обмена показываем на самой кнопке: молча оставить надпись
+  // «Скопировать» — значит соврать, что нажатие ничего не сделало.
+  const handleCopy = async () => {
+    setCopyState((await copyText(inviteUrl)) ? 'ok' : 'fail');
+    setTimeout(() => setCopyState('idle'), 1800);
   };
 
   const handleShare = () => {
@@ -80,12 +80,16 @@ export default function InviteScreen() {
             <View className="mt-4 w-full flex-row gap-2.5">
               <Pressable
                 accessibilityRole="button"
-                onPress={handleCopy}
+                onPress={() => void handleCopy()}
                 style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
                 className="flex-1 flex-row items-center justify-center gap-1.5 rounded-full bg-primary py-3">
-                {copied ? <CheckIcon size={16} color="#000000" /> : null}
+                {copyState === 'ok' ? <CheckIcon size={16} color="#000000" /> : null}
                 <Text className="text-sm font-semibold text-primary-foreground">
-                  {copied ? 'Скопировано' : 'Скопировать ссылку'}
+                  {copyState === 'ok'
+                    ? 'Скопировано'
+                    : copyState === 'fail'
+                      ? 'Не удалось скопировать'
+                      : 'Скопировать ссылку'}
                 </Text>
               </Pressable>
               <Pressable

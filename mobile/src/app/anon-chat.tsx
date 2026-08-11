@@ -3,7 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, KeyboardAvoidingView, Platform, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Composer, MessageActions, ReplyPreview, pickAndUpload } from '@/components/chat/composer';
+import {
+  Composer,
+  MessageActions,
+  ReplyPreview,
+  pickAndUpload,
+  uploadVoice,
+  type RecordedVoice,
+} from '@/components/chat/composer';
 import { CHAT_COLORS, MoreIcon, ReportIcon } from '@/components/chat/icons';
 import {
   Banner,
@@ -22,6 +29,7 @@ import {
   VideoIcon,
 } from '@/components/icons';
 import { AnoonAvatar } from '@/components/shared';
+import { placeCall } from '@/lib/calls';
 import { getCompanionClient } from '@/lib/companion';
 import { avatarUrlFor } from '@/lib/media-url';
 import { useAnoonStore } from '@/store';
@@ -30,12 +38,9 @@ import { useAnoonStore } from '@/store';
  * Анонимный чат рулетки (`AnoonAnonChat.tsx`). Вся логика — из общего стора:
  * матч, лента, «печатает», раскрытие профиля, завершение и оценка.
  *
- * Чего здесь нет и почему:
- *  • звонков — нужен `react-native-webrtc`, его в зависимостях нет. Кнопки в
- *    шапке видимо выключены: нажимаемая кнопка, которая молчит, хуже;
- *  • записи голоса — нужен `expo-audio` (см. `Composer`);
- *  • mock-режима — на телефоне `useTinode` всегда true (`platform.ts`), поэтому
- *    ветки веба «если не real» просто отсутствуют, а не спрятаны за флаг.
+ * Чего здесь нет: mock-режима — на телефоне `useTinode` всегда true
+ * (`platform.ts`), поэтому ветки веба «если не real» просто отсутствуют, а не
+ * спрятаны за флаг.
  */
 export default function AnonChatScreen() {
   const activeMatch = useAnoonStore((s) => s.activeMatch);
@@ -70,7 +75,11 @@ export default function AnonChatScreen() {
   const [viewOnceArmed, setViewOnceArmed] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
-  const [peerAvatarUrl, setPeerAvatarUrl] = useState<string | null>(null);
+  // Аватар собеседника хранится ВМЕСТЕ с топиком, которому принадлежит. Иначе
+  // при переходе к следующей паре здесь на мгновение оставался бы URL прежнего
+  // собеседника — а это ровно та утечка, ради предотвращения которой анонимная
+  // фаза и существует.
+  const [peerAvatar, setPeerAvatar] = useState<{ topic: string; url: string } | null>(null);
   const lastKpAt = useRef(0);
 
   // `ended` важнее: он означает, что ЭТОТ пользователь нажал «Завершить
@@ -86,19 +95,34 @@ export default function AnonChatScreen() {
   const headerName = revealed ? (activeMatch?.peerDisplayName ?? 'Собеседник') : 'Собеседник';
   const peerInitials = (activeMatch?.peerDisplayName?.trim()[0] ?? '?').toUpperCase();
   const activity: 'typing' | 'media' | null = anonPeerActivity ?? (peerTyping ? 'typing' : null);
+  // Показываем фото, только если оно от ТЕКУЩЕЙ пары и профили уже раскрыты.
+  // Оба условия — вычисление, а не состояние: сбрасывать их через setState в
+  // эффекте значило бы лишний рендер и окно, в котором старое фото ещё видно.
+  const peerAvatarUrl =
+    revealed && peerAvatar && activeMatch?.topic && peerAvatar.topic === activeMatch.topic
+      ? peerAvatar.url
+      : null;
 
   const flash = useCallback((text: string) => {
     setBanner(text);
     setTimeout(() => setBanner(null), 2200);
   }, []);
 
-  // Разовое подтверждение в момент раскрытия профилей.
-  useEffect(() => {
-    if (!revealed) return;
-    setBanner('Профили открыты — вы теперь друзья');
-    const t = setTimeout(() => setBanner(null), 2200);
-    return () => clearTimeout(t);
-  }, [revealed]);
+  // Разовое подтверждение в МОМЕНТ раскрытия профилей.
+  //
+  // Подписка на стор, а не эффект по `revealed`: баннер — реакция на переход,
+  // которого в состоянии экрана нет, и вычислить его из `revealed` нельзя.
+  // Эффект же вдобавок показывал баннер при каждом входе на уже раскрытую пару
+  // — например после перезапуска приложения, когда открывать нечего.
+  useEffect(
+    () =>
+      useAnoonStore.subscribe((s, prev) => {
+        if (s.anonRevealState === 'revealed' && prev.anonRevealState !== 'revealed') {
+          flash('Профили открыты — вы теперь друзья');
+        }
+      }),
+    [flash],
+  );
 
   // Лечим рукопожатие раскрытия при возврате приложения на передний план: кадры
   // reveal_request/declined идут по тому же best-effort сокету, и свёрнутое
@@ -116,14 +140,14 @@ export default function AnonChatScreen() {
   // поэтому несколько попыток, а потом молча остаются инициалы.
   useEffect(() => {
     const topic = activeMatch?.topic;
-    if (!revealed || !topic) {
-      setPeerAvatarUrl(null);
-      return;
-    }
+    // До раскрытия аватар не показываем — но гасим его вычислением ниже, а не
+    // setState прямо в эффекте: сброс состояния здесь давал лишний каскадный
+    // рендер на каждую смену пары.
+    if (!revealed || !topic) return;
     let tries = 0;
     const read = () => {
       const url = avatarUrlFor(topic);
-      if (url) setPeerAvatarUrl(url);
+      if (url) setPeerAvatar({ topic, url });
       return Boolean(url);
     };
     if (read()) return;
@@ -176,6 +200,27 @@ export default function AnonChatScreen() {
     } catch {
       flash('Не удалось отправить');
     }
+  };
+
+  const sendVoice = async (rec: RecordedVoice) => {
+    try {
+      useAnoonStore.getState().notifyAnonMediaSending();
+      const up = await uploadVoice(rec);
+      await sendAnonMedia(up, 'audio', { duration: rec.sec });
+    } catch {
+      flash('Не удалось отправить');
+    }
+  };
+
+  // Звоним тем хендлом, который у нас законно есть: настоящий #ID после
+  // раскрытия, по-матчевый алиас пока анонимно (companion разрешает алиас
+  // только внутри породившего его матча) — ровно как на вебе.
+  const startCall = (media: 'audio' | 'video') => {
+    const to = activeMatch?.peerHashId
+      ? `#${activeMatch.peerHashId.replace(/^#/, '')}`
+      : activeMatch?.peerAlias;
+    if (!to) return;
+    placeCall(to, headerName, media);
   };
 
   // Завершение → оценка → выход. `rateMatch` читает activeMatch синхронно до
@@ -262,13 +307,18 @@ export default function AnonChatScreen() {
             </View>
           </View>
 
-          {/* Звонки: нет react-native-webrtc — кнопки видимо выключены. */}
-          <View accessibilityState={{ disabled: true }} className="opacity-40">
-            <PhoneIcon size={20} color={CHAT_COLORS.muted} />
-          </View>
-          <View accessibilityState={{ disabled: true }} className="opacity-40">
-            <VideoIcon size={20} color={CHAT_COLORS.muted} />
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Аудиозвонок"
+            onPress={() => startCall('audio')}>
+            <PhoneIcon size={20} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Видеозвонок"
+            onPress={() => startCall('video')}>
+            <VideoIcon size={20} />
+          </Pressable>
 
           {!revealed ? (
             <Pressable
@@ -387,6 +437,8 @@ export default function AnonChatScreen() {
           onAttach={() => void attach()}
           viewOnceArmed={viewOnceArmed}
           onToggleViewOnce={() => setViewOnceArmed((v) => !v)}
+          onVoice={(rec) => void sendVoice(rec)}
+          onVoiceError={flash}
         />
       </KeyboardAvoidingView>
 
@@ -429,6 +481,7 @@ export default function AnonChatScreen() {
           setReplyTarget(null);
           setDraft(row.text);
         }}
+        onCopied={flash}
         onDeleteMine={(row) => row.seq && void deleteAnonMessage(row.seq, false)}
         onDeleteAll={(row) => row.seq && void deleteAnonMessage(row.seq, true)}
         onClose={() => setActionFor(null)}

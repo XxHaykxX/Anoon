@@ -1,10 +1,19 @@
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import * as ImagePicker from 'expo-image-picker';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 
-import { CloseIcon, PlusIcon, SendIcon, TrashIcon } from '@/components/icons';
+import { CloseIcon, MicIcon, PlusIcon, SendIcon, TrashIcon } from '@/components/icons';
+import { copyText } from '@/lib/clipboard';
 import { uploadFile, type MediaKind, type UploadedMedia } from '@/lib/tinode';
 
-import { CHAT_COLORS, EditIcon, MicOffIcon, ReplyIcon } from './icons';
+import { CHAT_COLORS, CopyIcon, EditIcon, ReplyIcon } from './icons';
 import type { ChatRow } from './thread';
 
 /** Быстрые реакции — тот же набор и порядок, что в `ReactionBar` на вебе. */
@@ -54,6 +63,32 @@ export async function pickAndUpload(): Promise<{
   };
 }
 
+/** Записанное голосовое: путь к файлу на устройстве и его длительность. */
+export interface RecordedVoice {
+  uri: string;
+  /** Целые секунды — ровно то, что Drafty кладёт в `duration` (см. `buildMediaDraft`). */
+  sec: number;
+}
+
+/**
+ * Загрузить записанное голосовое на Tinode — тем же `uploadFile`, что и фото с
+ * видео, чтобы формат и путь совпадали с вебом.
+ *
+ * `RecordingPresets.HIGH_QUALITY` пишет `.m4a`/AAC на обеих системах — это тот
+ * же контейнер, что отдаёт `MediaRecorder` в Safari (`audio/mp4`), так что
+ * записанное на телефоне открывается в вебе и в админке, а записанное в вебе —
+ * на телефоне. Расширение читаем у самого файла, а не подставляем: врать про
+ * mime — значит сломать воспроизведение у получателя.
+ */
+export async function uploadVoice(rec: RecordedVoice): Promise<UploadedMedia> {
+  const ext = rec.uri.split('.').pop()?.toLowerCase() || 'm4a';
+  const mime = ext === 'm4a' || ext === 'mp4' ? 'audio/mp4' : `audio/${ext}`;
+  // У телефона есть только `file://`-путь; читаем его в Blob — единственный
+  // способ отдать байты, не трогая общий `lib/tinode.ts`.
+  const blob = await (await fetch(rec.uri)).blob();
+  return uploadFile(blob, `voice-${Date.now()}.${ext}`, mime);
+}
+
 /** Полоска над композером: цитата ответа или подсказка о правке. */
 export function ReplyPreview({
   text,
@@ -91,13 +126,18 @@ export function ReplyPreview({
   );
 }
 
+function formatElapsed(sec: number): string {
+  const safe = Math.max(0, Math.floor(sec));
+  return `${Math.floor(safe / 60)}:${(safe % 60).toString().padStart(2, '0')}`;
+}
+
 /**
- * Строка ввода. Отличия от веба, все — вынужденные:
- *  • нет кнопки эмодзи: на телефоне эмодзи даёт системная клавиатура, а свой
- *    пикер занял бы пол-экрана ради того же самого;
- *  • кнопка микрофона выключена: запись требует `expo-audio`, которого нет в
- *    зависимостях. Выключенная кнопка честнее нажимаемой, которая ничего не
- *    делает (то же решение, что с Google-входом на экране логина).
+ * Строка ввода. Кнопка микрофона пишет голосовое через `expo-audio` — тот же
+ * жест, что на вебе (`VoiceRecorder.tsx`): тап начинает запись, строка
+ * превращается в «отмена · таймер · отправить».
+ *
+ * Единственное отличие от веба: нет кнопки эмодзи — на телефоне их даёт
+ * системная клавиатура, а свой пикер занял бы пол-экрана ради того же самого.
  */
 export function Composer({
   draft,
@@ -107,6 +147,8 @@ export function Composer({
   onAttach,
   viewOnceArmed,
   onToggleViewOnce,
+  onVoice,
+  onVoiceError,
 }: {
   draft: string;
   onDraftChange: (value: string) => void;
@@ -115,8 +157,90 @@ export function Composer({
   onAttach: () => void;
   viewOnceArmed: boolean;
   onToggleViewOnce: () => void;
+  /** Запись закончена и отправлена пользователем — грузить и слать экрану. */
+  onVoice: (rec: RecordedVoice) => void;
+  onVoiceError: (message: string) => void;
 }) {
   const canSend = draft.trim().length > 0;
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const state = useAudioRecorderState(recorder, 250);
+  const [recording, setRecording] = useState(false);
+
+  // Микрофон не должен оставаться открытым, если экран закрыли посреди записи.
+  useEffect(
+    () => () => {
+      if (recorder.isRecording) void recorder.stop();
+    },
+    [recorder],
+  );
+
+  const startRecording = async () => {
+    const { granted } = await requestRecordingPermissionsAsync();
+    if (!granted) {
+      onVoiceError('Нет доступа к микрофону');
+      return;
+    }
+    try {
+      // На iOS без `allowsRecording` сессия остаётся в режиме воспроизведения и
+      // запись выходит пустой; `playsInSilentMode` — чтобы переключатель звука
+      // не глушил её молча.
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setRecording(true);
+    } catch {
+      onVoiceError('Не удалось начать запись');
+    }
+  };
+
+  const stopRecording = async (send: boolean) => {
+    setRecording(false);
+    // Длительность читаем ДО остановки: после неё счётчик обнуляется.
+    const sec = Math.round(recorder.currentTime || state.durationMillis / 1000);
+    try {
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecording: false });
+    } catch {
+      /* нечего останавливать */
+    }
+    if (!send) return;
+    const uri = recorder.uri;
+    if (!uri || sec < 1) {
+      onVoiceError('Слишком короткая запись');
+      return;
+    }
+    onVoice({ uri, sec });
+  };
+
+  if (recording) {
+    return (
+      <View className="flex-row items-center gap-2 border-t border-border px-3 py-2.5">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Отменить запись"
+          onPress={() => void stopRecording(false)}
+          className="h-8 w-8 items-center justify-center rounded-full">
+          <CloseIcon size={18} color={CHAT_COLORS.muted} />
+        </Pressable>
+
+        <View className="flex-1 flex-row items-center gap-2 rounded-3xl bg-muted px-4 py-2">
+          <View className="h-2 w-2 rounded-full bg-destructive" />
+          <Text className="text-xs text-foreground">
+            {formatElapsed(state.durationMillis / 1000)}
+          </Text>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Отправить голосовое сообщение"
+          onPress={() => void stopRecording(true)}
+          className="h-8 w-8 items-center justify-center rounded-full bg-primary">
+          <SendIcon size={18} color={CHAT_COLORS.onBubbleOut} />
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-row items-center gap-2 border-t border-border px-3 py-2.5">
       <Pressable accessibilityRole="button" accessibilityLabel="Прикрепить" onPress={onAttach}>
@@ -149,13 +273,12 @@ export function Composer({
           <SendIcon size={24} color={CHAT_COLORS.primary} />
         </Pressable>
       ) : (
-        <View
+        <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: true }}
-          accessibilityLabel="Голосовое сообщение — недоступно"
-          className="opacity-50">
-          <MicOffIcon size={24} color={CHAT_COLORS.muted} />
-        </View>
+          accessibilityLabel="Записать голосовое сообщение"
+          onPress={() => void startRecording()}>
+          <MicIcon size={24} color={CHAT_COLORS.muted} />
+        </Pressable>
       )}
     </View>
   );
@@ -166,14 +289,16 @@ export function Composer({
  * телефоне — нижний лист: попасть пальцем в маленький поповер над пузырём у
  * края экрана тяжело, а лист всегда в зоне большого пальца.
  *
- * «Копировать» не портировано: `Clipboard` выпилен из ядра React Native, а
- * `expo-clipboard` в зависимостях нет.
+ * «Копировать» кладёт текст в системный буфер через готовый `@/lib/clipboard`;
+ * подтверждение показывает экран (`onCopied`) своей же плашкой, потому что
+ * молчаливое копирование неотличимо от несработавшей кнопки.
  */
 export function MessageActions({
   row,
   onReact,
   onReply,
   onEdit,
+  onCopied,
   onDeleteMine,
   onDeleteAll,
   onClose,
@@ -182,12 +307,14 @@ export function MessageActions({
   onReact: (row: ChatRow, emoji: string) => void;
   onReply: (row: ChatRow) => void;
   onEdit: (row: ChatRow) => void;
+  onCopied: (message: string) => void;
   onDeleteMine: (row: ChatRow) => void;
   onDeleteAll: (row: ChatRow) => void;
   onClose: () => void;
 }) {
   if (!row) return null;
   const canEdit = row.own && !!row.text && !row.media?.length && row.seq != null;
+  const canCopy = !!row.text && !row.deleted;
   const run = (fn: () => void) => () => {
     fn();
     onClose();
@@ -225,6 +352,19 @@ export function MessageActions({
                 className="flex-row items-center gap-2.5 px-4 py-3">
                 <EditIcon size={18} color={CHAT_COLORS.muted} />
                 <Text className="text-sm text-popover-foreground">Редактировать</Text>
+              </Pressable>
+            ) : null}
+
+            {canCopy ? (
+              <Pressable
+                onPress={run(() => {
+                  void copyText(row.text).then((ok) =>
+                    onCopied(ok ? 'Скопировано' : 'Не удалось скопировать'),
+                  );
+                })}
+                className="flex-row items-center gap-2.5 px-4 py-3">
+                <CopyIcon size={18} color={CHAT_COLORS.muted} />
+                <Text className="text-sm text-popover-foreground">Копировать</Text>
               </Pressable>
             ) : null}
 

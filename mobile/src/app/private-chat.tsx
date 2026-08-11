@@ -3,12 +3,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Composer, MessageActions, ReplyPreview, pickAndUpload } from '@/components/chat/composer';
+import {
+  Composer,
+  MessageActions,
+  ReplyPreview,
+  pickAndUpload,
+  uploadVoice,
+  type RecordedVoice,
+} from '@/components/chat/composer';
 import { CHAT_COLORS, MoreIcon, ReportIcon } from '@/components/chat/icons';
 import { Banner, ChatMenu, ChatMenuItem } from '@/components/chat/overlays';
 import { Thread, toRows, type ChatRow } from '@/components/chat/thread';
 import { ChevronLeftIcon, PhoneIcon, VideoIcon } from '@/components/icons';
 import { AnoonAvatar } from '@/components/shared';
+import { placeCall } from '@/lib/calls';
 import { avatarUrlFor } from '@/lib/media-url';
 import { useAnoonStore } from '@/store';
 
@@ -17,9 +25,6 @@ import { useAnoonStore } from '@/store';
  * оверлеи — общие с анон-чатом (`components/chat/*`): вся разница между двумя
  * экранами в шапке и в том, какие методы стора они дёргают, поэтому второй
  * копии тут нет.
- *
- * Чего нет и почему — ровно как в анон-чате: звонки (нужен
- * `react-native-webrtc`) и запись голоса (нужен `expo-audio`) видимо выключены.
  */
 export default function PrivateChatScreen() {
   const activeChat = useAnoonStore((s) => s.activeChat);
@@ -115,6 +120,21 @@ export default function PrivateChatScreen() {
     }
   };
 
+  const sendVoice = async (rec: RecordedVoice) => {
+    try {
+      useAnoonStore.getState().notifyMediaSending();
+      const up = await uploadVoice(rec);
+      await sendFriendMedia(up, 'audio', { duration: rec.sec });
+    } catch {
+      flash('Не удалось отправить');
+    }
+  };
+
+  const startCall = (media: 'audio' | 'video') => {
+    if (!activeChat) return;
+    placeCall(activeChat.hashId, peerName, media);
+  };
+
   const leave = () => {
     closeChat();
     router.back();
@@ -151,13 +171,18 @@ export default function PrivateChatScreen() {
             </Text>
           </View>
 
-          {/* Звонки: нет react-native-webrtc — кнопки видимо выключены. */}
-          <View accessibilityState={{ disabled: true }} className="opacity-40">
-            <PhoneIcon size={20} color={CHAT_COLORS.muted} />
-          </View>
-          <View accessibilityState={{ disabled: true }} className="opacity-40">
-            <VideoIcon size={20} color={CHAT_COLORS.muted} />
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Аудиозвонок"
+            onPress={() => startCall('audio')}>
+            <PhoneIcon size={20} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Видеозвонок"
+            onPress={() => startCall('video')}>
+            <VideoIcon size={20} />
+          </Pressable>
 
           <Pressable
             accessibilityRole="button"
@@ -219,6 +244,8 @@ export default function PrivateChatScreen() {
           onAttach={() => void attach()}
           viewOnceArmed={viewOnceArmed}
           onToggleViewOnce={() => setViewOnceArmed((v) => !v)}
+          onVoice={(rec) => void sendVoice(rec)}
+          onVoiceError={flash}
         />
       </KeyboardAvoidingView>
 
@@ -246,6 +273,7 @@ export default function PrivateChatScreen() {
           setReplyTarget(null);
           setDraft(row.text);
         }}
+        onCopied={flash}
         onDeleteMine={(row) => row.seq && void deleteChatMessage(row.seq, false)}
         onDeleteAll={(row) => row.seq && void deleteChatMessage(row.seq, true)}
         onClose={() => setActionFor(null)}

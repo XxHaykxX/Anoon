@@ -1,19 +1,20 @@
 import { router } from 'expo-router';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { FlatList, Pressable, Switch, Text, View } from 'react-native';
 
 import { BellIcon, CheckIcon, CloseIcon, PeopleIcon } from '@/components/icons';
 import { AnoonAvatar } from '@/components/shared';
 import { getCompanionClient } from '@/lib/companion';
+import { disablePush, enablePush, pushStatus, type PushStatus } from '@/lib/push';
 import { useAnoonStore } from '@/store';
 import type { FriendRequest, Notification } from '@/types/companion';
 
 /**
- * Уведомления (`AnoonNotifications.tsx`): заявки в друзья сверху, лента ниже.
+ * Уведомления (`AnoonNotifications.tsx`): тумблер пушей, заявки в друзья, лента.
  *
- * Чего нет и почему: баннера «Включите уведомления». На вебе он дёргает
- * `Notification.requestPermission()`; на телефоне разрешение спрашивает
- * `expo-notifications`, которого в зависимостях нет — а кнопка, которая
- * ничего не включает, врёт пользователю. Вернётся вместе с самим пушем.
+ * Тумблер здесь, а не только в настройках, по той же причине, по которой на
+ * вебе на этом экране висит баннер: сюда приходят за уведомлениями, и это
+ * единственное место, где «почему их нет» — вопрос, который человек уже задал.
  */
 
 /** Две буквы аватара из #ID («#04821» → «04»). */
@@ -83,6 +84,64 @@ function RequestCard({
   );
 }
 
+/**
+ * Тумблер пушей. Показывает ПРИЧИНУ, когда включить нельзя: токен Expo выдаётся
+ * только настоящей сборке, и без причины экран выглядел бы как сломанный
+ * переключатель, который щёлкает обратно сам.
+ */
+function PushToggle() {
+  const [state, setState] = useState<PushStatus>({ enabled: false, reason: null });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void pushStatus().then((s) => {
+      if (alive) setState(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const toggle = (on: boolean) => {
+    setBusy(true);
+    const done = on
+      ? enablePush()
+      : disablePush().then((): PushStatus => ({ enabled: false, reason: null }));
+    void done
+      .then(setState)
+      .catch(() => setState({ enabled: false, reason: 'Не удалось изменить настройку' }))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <View className="mx-5 mb-3 rounded-2xl border border-border bg-card p-3">
+      <View className="flex-row items-center gap-3">
+        <View className="h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+          <BellIcon size={20} color="#000000" />
+        </View>
+        <View className="min-w-0 flex-1">
+          <Text className="text-foreground">Уведомления на телефоне</Text>
+          <Text className="text-xs text-muted-foreground">
+            Сообщения, совпадения и заявки, когда приложение закрыто
+          </Text>
+        </View>
+        <Switch
+          accessibilityLabel="Уведомления на телефоне"
+          disabled={busy || (!state.enabled && state.reason !== null)}
+          value={state.enabled}
+          onValueChange={toggle}
+          trackColor={{ false: '#2c2c2e', true: '#fdbf2d' }}
+          thumbColor="#ffffff"
+        />
+      </View>
+      {state.reason ? (
+        <Text className="mt-2 text-xs text-muted-foreground">{state.reason}</Text>
+      ) : null}
+    </View>
+  );
+}
+
 export default function NotificationsScreen() {
   const requests = useAnoonStore((s) => s.requests);
   const notifications = useAnoonStore((s) => s.notifications);
@@ -137,6 +196,7 @@ export default function NotificationsScreen() {
         keyExtractor={(n) => n.id}
         ListHeaderComponent={
           <View>
+            <PushToggle />
             {incoming.length > 0 ? (
               <View className="mb-3">
                 <View className="flex-row items-center gap-2 px-5 pb-2 pt-1">

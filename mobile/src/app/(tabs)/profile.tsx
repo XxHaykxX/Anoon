@@ -13,13 +13,11 @@ import { useAnoonStore } from '@/store';
  * Профиль (`AnoonProfile.tsx`): аватар, редактируемые поля, ссылка на себя и
  * выходы в настройки / из аккаунта.
  *
- * Два отличия от веба, оба вынужденные:
- *   • «Скопировать ссылку» → «Поделиться»: буфера обмена в RN нет, а
- *     `expo-clipboard` не установлен. Штатный системный шэр решает ровно ту же
- *     задачу и на телефоне уместнее.
- *   • «Монеты и подписка» (`AnoonWallet`) не портирован — экрана кошелька в
- *     мобильном клиенте пока нет; строка показана недоступной, а не молча
- *     мёртвой.
+ * Отличие от веба одно: «Скопировать ссылку» → «Поделиться». Буфер обмена на
+ * телефоне есть (`@/lib/clipboard`), но системная шторка «Поделиться» решает ту
+ * же задачу — отдать ссылку другому человеку — и на телефоне уместнее.
+ *
+ * «Монеты и подписка» ведут на `/wallet` — порт `AnoonWallet.tsx`.
  */
 
 /** Собственный топик аккаунта — аватар и профиль лежат на `me`. */
@@ -80,7 +78,7 @@ function LockedField({ label, note, value }: { label: string; note: string; valu
 
 export default function ProfileScreen() {
   const user = useAnoonStore((s) => s.user);
-  const setUser = useAnoonStore((s) => s.setUser);
+  const saveProfile = useAnoonStore((s) => s.saveProfile);
   const signOut = useAnoonStore((s) => s.signOut);
 
   const hashId = user?.hashId ?? '—';
@@ -94,6 +92,8 @@ export default function ProfileScreen() {
   );
   const [age, setAge] = useState(() => (user ? String(user.age) : ''));
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Локальный uri выбранного файла — показываем сразу, пока идёт загрузка.
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -104,13 +104,30 @@ export default function ProfileScreen() {
   // на null. Перерисовку после загрузки даёт сброс `avatarPreview`.
   const avatarRef = avatarUrlFor(MY_TOPIC);
 
-  const handleSave = () => {
-    if (user) {
-      const displayName = `${firstName} ${lastName}`.trim() || user.displayName;
-      setUser({ ...user, displayName, age: Number(age) || user.age });
+  /**
+   * Сохранение идёт через общее действие стора: имя лежит в Tinode
+   * `public.fn`, возраст — в companion (по нему фильтруется очередь подбора).
+   * Раньше здесь был только `setUser` — то есть запись в память: имя
+   * откатывалось при следующем запуске, возраст не сохранялся вообще.
+   */
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (user) {
+        await saveProfile({
+          displayName: `${firstName} ${lastName}`.trim(),
+          age: Number(age) || user.age,
+        });
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1600);
+    } catch {
+      setSaveError('Не удалось сохранить профиль. Попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1600);
   };
 
   const pickPhoto = async () => {
@@ -209,14 +226,18 @@ export default function ProfileScreen() {
 
         <Pressable
           accessibilityRole="button"
-          onPress={handleSave}
-          style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+          onPress={() => void handleSave()}
+          disabled={saving}
+          style={({ pressed }) => ({ opacity: saving ? 0.6 : pressed ? 0.85 : 1 })}
           className="mt-1 h-12 flex-row items-center justify-center gap-2 rounded-full bg-primary">
           {saved ? <CheckIcon size={20} color="#000000" /> : null}
           <Text className="font-semibold text-primary-foreground">
-            {saved ? 'Сохранено' : 'Сохранить'}
+            {saved ? 'Сохранено' : saving ? 'Сохраняем…' : 'Сохранить'}
           </Text>
         </Pressable>
+        {saveError ? (
+          <Text className="mt-2 text-sm text-destructive">{saveError}</Text>
+        ) : null}
 
         <View className="mt-6 rounded-2xl border border-border bg-card p-4">
           <Text className="text-sm font-semibold text-foreground">Поделиться профилем</Text>
@@ -236,13 +257,14 @@ export default function ProfileScreen() {
         </View>
 
         <View className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
-          <View
+          <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: true }}
-            className="flex-row items-center justify-between px-4 py-3.5 opacity-50">
+            onPress={() => router.push('/wallet')}
+            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+            className="flex-row items-center justify-between px-4 py-3.5">
             <Text className="text-foreground">Монеты и подписка</Text>
-            <Text className="text-xs text-muted-foreground">скоро</Text>
-          </View>
+            <ChevronRightIcon size={16} color="#9a9aa0" />
+          </Pressable>
           <View className="h-px bg-border" />
           <Pressable
             accessibilityRole="button"

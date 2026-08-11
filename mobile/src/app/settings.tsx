@@ -40,11 +40,13 @@ function toneFor(id: string): number {
  */
 export default function SettingsScreen() {
   const user = useAnoonStore((s) => s.user);
-  const setUser = useAnoonStore((s) => s.setUser);
+  const saveProfile = useAnoonStore((s) => s.saveProfile);
   const signOut = useAnoonStore((s) => s.signOut);
 
   const [nick, setNick] = useState(user?.displayName ?? '');
   const [savedNick, setSavedNick] = useState(false);
+  const [nickSaving, setNickSaving] = useState(false);
+  const [nickError, setNickError] = useState<string | null>(null);
   // Ленивая инициализация читает хранилище платформы (на телефоне — keystore).
   const [soundOn, setSoundOn] = useState(isNotifySoundEnabled);
   const [blockedOpen, setBlockedOpen] = useState(false);
@@ -85,10 +87,20 @@ export default function SettingsScreen() {
     };
   }, [user]);
 
-  const saveNick = () => {
-    if (user) setUser({ ...user, displayName: nick });
-    setSavedNick(true);
-    setTimeout(() => setSavedNick(false), 1600);
+  /** Имя живёт в Tinode `public.fn`; пишем через общее действие стора. */
+  const saveNick = async () => {
+    if (nickSaving) return;
+    setNickSaving(true);
+    setNickError(null);
+    try {
+      if (user) await saveProfile({ displayName: nick });
+      setSavedNick(true);
+      setTimeout(() => setSavedNick(false), 1600);
+    } catch {
+      setNickError('Не удалось сохранить имя. Попробуйте ещё раз.');
+    } finally {
+      setNickSaving(false);
+    }
   };
 
   const handleChangePassword = async () => {
@@ -178,14 +190,18 @@ export default function SettingsScreen() {
           <AnoonInput label="Сменить ник" value={nick} onChangeText={setNick} placeholder="Новый ник" />
           <Pressable
             accessibilityRole="button"
-            onPress={saveNick}
-            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+            onPress={() => void saveNick()}
+            disabled={nickSaving}
+            style={({ pressed }) => ({ opacity: nickSaving ? 0.6 : pressed ? 0.85 : 1 })}
             className="mt-3 w-full flex-row items-center justify-center gap-2 rounded-full bg-primary py-2.5">
             {savedNick ? <CheckIcon size={20} color="#000000" /> : null}
             <Text className="font-semibold text-primary-foreground">
-              {savedNick ? 'Сохранено' : 'Сохранить'}
+              {savedNick ? 'Сохранено' : nickSaving ? 'Сохраняем…' : 'Сохранить'}
             </Text>
           </Pressable>
+          {nickError ? (
+            <Text className="mt-2 text-sm text-destructive">{nickError}</Text>
+          ) : null}
         </View>
 
         {/* Пароль */}

@@ -8,11 +8,24 @@
     "scheme": "anoon",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.anoon.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "anoon uses the camera for video calls and for the photos you send in chat.",
+        "NSMicrophoneUsageDescription": "anoon uses the microphone for calls and voice messages.",
+        "NSPhotoLibraryUsageDescription": "anoon needs your photo library to attach pictures to a chat and to set your avatar."
+      }
     },
     "android": {
+      "package": "com.anoon.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#000000",
+        "backgroundColor": "#FDBF2D",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -30,10 +43,23 @@
         {
           "backgroundColor": "#000000",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 180
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#FDBF2D"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "anoon uses the microphone for calls and voice messages."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

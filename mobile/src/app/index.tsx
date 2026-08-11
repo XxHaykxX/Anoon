@@ -19,19 +19,32 @@ import { useAnoonStore } from '@/store';
  */
 export default function Index() {
   const restoreSession = useAnoonStore((s) => s.restoreSession);
-  const [target, setTarget] = useState<'/(tabs)/chats' | '/onboarding' | null>(null);
+  const restoreActiveMatch = useAnoonStore((s) => s.restoreActiveMatch);
+  // «Токена нет» известно синхронно, ещё до первого рендера, поэтому решается
+  // ленивым начальным состоянием, а не setState в эффекте: последнее дало бы
+  // лишний каскадный рендер (и `react-hooks/set-state-in-effect`), а заодно
+  // мигнуло бы сплэшем там, где ждать нечего.
+  const [target, setTarget] = useState<
+    '/(tabs)/chats' | '/onboarding' | '/anon-chat' | null
+  >(() => (hasPersistedSession() ? null : '/onboarding'));
 
   useEffect(() => {
     let cancelled = false;
-    if (!hasPersistedSession()) {
-      setTarget('/onboarding');
-      return;
-    }
+    if (!hasPersistedSession()) return;
     void (async () => {
       const ok = await restoreSession().catch(() => false);
       if (cancelled) return;
       // Токен мог протухнуть или быть отозван — тогда это обычный первый запуск.
-      setTarget(ok ? '/(tabs)/chats' : '/onboarding');
+      if (!ok) {
+        setTarget('/onboarding');
+        return;
+      }
+      // Свёрнутое приложение система выгружает сама, и анонимный разговор
+      // умирал вместе с ним: пара на сервере жива (у сокета для этого есть
+      // льготное окно), а клиент про неё забывал. Спрашиваем и возвращаемся.
+      const inChat = await restoreActiveMatch().catch(() => false);
+      if (cancelled) return;
+      setTarget(inChat ? '/anon-chat' : '/(tabs)/chats');
     })();
     return () => {
       cancelled = true;

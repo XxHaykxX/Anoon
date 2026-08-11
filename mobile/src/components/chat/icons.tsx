@@ -95,10 +95,27 @@ export const DocumentIcon = (p: IconProps) => (
   </Svg>
 );
 
-/** Микрофон с перечёркиванием — выключенная запись голоса (нет expo-audio). */
+/** Микрофон с перечёркиванием — выключенный микрофон в звонке. */
 export const MicOffIcon = (p: IconProps) => (
   <Svg {...base(p)}>
     <Rect x="9" y="3" width="6" height="11" rx="3" />
     <Path d="M6 11a6 6 0 0 0 12 0M12 17v4M3 3l18 18" />
+  </Svg>
+);
+
+/** Камера с перечёркиванием — выключенная камера в видеозвонке. */
+export const VideoOffIcon = (p: IconProps) => (
+  <Svg {...base(p)}>
+    <Path d="M15 10V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h5" />
+    <Path d="m15 10 6-3v10l-6-3" />
+    <Path d="M3 3l18 18" />
+  </Svg>
+);
+
+/** Две карточки внахлёст — «Копировать» в действиях над сообщением. */
+export const CopyIcon = (p: IconProps) => (
+  <Svg {...base(p)}>
+    <Rect x="9" y="9" width="11" height="11" rx="2" />
+    <Path d="M5 15V5a1 1 0 0 1 1-1h9" />
   </Svg>
 );

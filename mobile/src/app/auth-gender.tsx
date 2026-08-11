@@ -33,9 +33,9 @@ const MUTED_FOREGROUND = '#9a9aa0';
  * Выбор пола (`AnoonGenderSelect.tsx`). Пол задаёт подбор собеседников и потом
  * не меняется, поэтому продолжить можно только с явным подтверждением.
  *
- * Ветка `pendingGoogleToken` перенесена как есть, хотя на телефоне пока
- * недостижима: нативного входа через Google нет (см. `auth-login.tsx`), так что
- * токену взяться неоткуда. Когда он появится, экран уже умеет дорегистрировать.
+ * Ветка `pendingGoogleToken` — первый вход через Google: `auth-login.tsx`
+ * получает токен нативным флоу (`@/lib/google-auth`), стор поднимает
+ * `NeedsGenderError` и держит токен, а здесь он предъявляется вместе с полом.
  */
 export default function GenderScreen() {
   const [gender, setGender] = useState<Gender>(null);
