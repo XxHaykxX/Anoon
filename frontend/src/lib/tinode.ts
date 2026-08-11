@@ -23,37 +23,31 @@
 // the tinode-sdk UMD touches `window.location` and crashes during SSR.
 import type { Tinode, TinodeCtrl, Topic } from "tinode-sdk";
 
-/** Base Tinode WebSocket endpoint. */
-// 127.0.0.1, not `localhost`: the latter resolves to `::1` first, and Docker's
-// IPv6 port relay on this stack can accept the connection and then never
-// answer — a socket that hangs instead of failing (see companion.ts's
-// COMPANION_URL for the same trap on the REST side).
-export const TINODE_WS_URL =
-  process.env.NEXT_PUBLIC_TINODE_WS ?? "ws://127.0.0.1:6061/v0/channels";
-
-/** API key the server accepts (default self-hosted/demo key). */
-export const TINODE_API_KEY =
-  process.env.NEXT_PUBLIC_TINODE_API_KEY ?? "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K";
-
-/** Feature flag: when true, auth hits the real Tinode server instead of mocks. */
-export const USE_TINODE = process.env.NEXT_PUBLIC_USE_TINODE === "1";
-
-/** Single-origin mode: connect Tinode to the current page origin, not the abs host. */
-const SAME_ORIGIN = process.env.NEXT_PUBLIC_SAME_ORIGIN === "1";
+import { platform } from "@/lib/platform";
 
 /**
- * Resolve the effective Tinode WS endpoint. In same-origin mode the absolute
- * `wsUrl` (its host) is discarded and rebuilt from `window.location`, keeping the
- * fixed `/v0/channels` path the SDK expects, so the connection follows whatever
- * host the page (and its reverse proxy / tunnel) is served from. Browser-only:
- * every caller runs behind {@link loadTinodeCtor}, which forbids SSR use.
+ * Base Tinode WebSocket endpoint, and the two settings that ride with it. All
+ * three come from `./platform.ts`: the web reads them off `NEXT_PUBLIC_*`, the
+ * native client off its own config. Read once, at module scope — which is why
+ * the Expo entry installs its adapter before importing anything from here.
+ */
+export const TINODE_WS_URL = platform().tinodeWsUrl;
+
+/** API key the server accepts (default self-hosted/demo key). */
+export const TINODE_API_KEY = platform().tinodeApiKey;
+
+/** Feature flag: when true, auth hits the real Tinode server instead of mocks. */
+export const USE_TINODE = platform().useTinode;
+
+/**
+ * Resolve the effective Tinode WS endpoint. On the web in same-origin mode the
+ * absolute `wsUrl` (its host) is discarded and rebuilt from `window.location`,
+ * keeping the fixed `/v0/channels` path the SDK expects, so the connection
+ * follows whatever host the page (and its reverse proxy / tunnel) is served
+ * from. Elsewhere the configured URL is already absolute and stands as-is.
  */
 function effectiveWsUrl(wsUrl: string): string {
-  if (SAME_ORIGIN && typeof window !== "undefined") {
-    const secure = window.location.protocol === "https:";
-    return `${secure ? "wss" : "ws"}://${window.location.host}/v0/channels`;
-  }
-  return wsUrl;
+  return platform().effectiveTinodeWsUrl(wsUrl);
 }
 
 /** App name reported to the server; keep it stable for analytics. */
@@ -113,8 +107,8 @@ function parseEndpoint(wsUrl: string): { host: string; secure: boolean } {
  */
 let TinodeCtor: typeof import("tinode-sdk").Tinode | null = null;
 async function loadTinodeCtor(): Promise<typeof import("tinode-sdk").Tinode> {
-  if (typeof window === "undefined") {
-    throw new Error("tinode-sdk is browser-only and was called during SSR");
+  if (!platform().isClient) {
+    throw new Error("tinode-sdk needs a client runtime and was called during SSR");
   }
   if (!TinodeCtor) {
     TinodeCtor = (await import("tinode-sdk")).Tinode;
@@ -1248,8 +1242,10 @@ export const RTC_CONFIG: RTCConfiguration = {
  * @throws if called outside a browser (SSR has no `RTCPeerConnection`).
  */
 export function createPeerConnection(): RTCPeerConnection {
-  if (typeof window === "undefined" || typeof RTCPeerConnection === "undefined") {
-    throw new Error("RTCPeerConnection is only available in the browser");
+  // The one check that means the same thing everywhere: React Native has no
+  // RTCPeerConnection either until `react-native-webrtc` is installed.
+  if (typeof RTCPeerConnection === "undefined") {
+    throw new Error("RTCPeerConnection is not available in this runtime");
   }
   return new RTCPeerConnection(RTC_CONFIG);
 }

@@ -1,6 +1,6 @@
 {
   "name": "anoon",
-  "main": "expo-router/entry",
+  "main": "src/entry.ts",
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~57.0.10",
@@ -14,6 +14,7 @@
     "expo-image": "~57.0.2",
     "expo-linking": "~57.0.5",
     "expo-router": "~57.0.12",
+    "expo-secure-store": "~57.0.1",
     "expo-splash-screen": "~57.0.6",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.2",
@@ -31,7 +32,9 @@
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.1",
     "tailwind-merge": "^3.6.0",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "tinode-sdk": "^0.25.3",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

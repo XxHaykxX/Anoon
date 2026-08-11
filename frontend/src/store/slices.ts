@@ -24,6 +24,7 @@ import {
   type UploadedMedia,
 } from "@/lib/tinode";
 import { notifyOnce } from "@/lib/notify";
+import { platform } from "@/lib/platform";
 import type {
   Friend,
   MatchedEvent,
@@ -265,7 +266,7 @@ const SESSION_KEY = "anoon:session";
 
 function saveSession(token: string, user: User): void {
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ token, user }));
+    platform().storage.set(SESSION_KEY, JSON.stringify({ token, user }));
   } catch {
     /* storage full / disabled — session just won't persist */
   }
@@ -273,8 +274,8 @@ function saveSession(token: string, user: User): void {
 
 function clearSession(): void {
   try {
-    localStorage.removeItem(SESSION_KEY);
-    localStorage.removeItem(GROUP_FRIENDS_KEY);
+    platform().storage.remove(SESSION_KEY);
+    platform().storage.remove(GROUP_FRIENDS_KEY);
   } catch {
     /* ignore */
   }
@@ -303,8 +304,8 @@ const GROUP_FRIENDS_KEY = "anoon:friends:grp";
 function saveGroupFriends(friends: Friend[]): void {
   try {
     const grp = friends.filter((f) => f.topic?.startsWith("grp"));
-    if (grp.length) localStorage.setItem(GROUP_FRIENDS_KEY, JSON.stringify(grp));
-    else localStorage.removeItem(GROUP_FRIENDS_KEY);
+    if (grp.length) platform().storage.set(GROUP_FRIENDS_KEY, JSON.stringify(grp));
+    else platform().storage.remove(GROUP_FRIENDS_KEY);
   } catch {
     /* storage full / disabled — the list just won't survive a reload */
   }
@@ -312,7 +313,7 @@ function saveGroupFriends(friends: Friend[]): void {
 
 function readGroupFriends(): Friend[] {
   try {
-    const raw = localStorage.getItem(GROUP_FRIENDS_KEY);
+    const raw = platform().storage.get(GROUP_FRIENDS_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
     return Array.isArray(parsed) ? (parsed as Friend[]) : [];
   } catch {
@@ -322,7 +323,7 @@ function readGroupFriends(): Friend[] {
 
 function readSession(): { token: string; user: User } | null {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    const raw = platform().storage.get(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed?.token && parsed?.user ? parsed : null;
@@ -334,7 +335,7 @@ function readSession(): { token: string; user: User } | null {
 /** True if a persisted session exists — lets the shell skip onboarding on boot. */
 export function hasPersistedSession(): boolean {
   try {
-    return typeof localStorage !== "undefined" && !!localStorage.getItem(SESSION_KEY);
+    return !!platform().storage.get(SESSION_KEY);
   } catch {
     return false;
   }

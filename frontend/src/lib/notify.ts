@@ -2,7 +2,10 @@
 
 /**
  * Local notification feedback — a short sound + vibration pulse for new
- * messages / incoming calls / friend requests (Wave-2 #103). Browser-only.
+ * messages / incoming calls / friend requests (Wave-2 #103). Browser-only: on
+ * the phone every entry point below is a no-op (`platform().hasDom` is false),
+ * because WebAudio and `navigator.vibrate` have no React Native counterpart —
+ * expo-haptics / expo-audio are a wave-3 decision, not a shim for here.
  *
  * No external asset: the "sound" is a couple of WebAudio beeps synthesized on
  * the fly, so there's nothing to fetch/cache and no autoplay-blocked <audio>
@@ -10,26 +13,27 @@
  * WebAudio/Vibration API (unsupported browser, autoplay policy, etc.) just
  * means silently no feedback, not a broken app.
  *
- * Respects a single persisted on/off toggle (localStorage `anoon:notify:sound`)
+ * Respects a single persisted on/off toggle (`anoon:notify:sound` in the
+ * platform storage — `localStorage` on the web)
  * — the canonical MVP shape: one combined "Звук и вибрация" switch in
  * Settings (`AnoonSettings.tsx`), read/written via {@link isNotifySoundEnabled}
  * / {@link setNotifySoundEnabled}. Sound and vibration both follow this one
  * flag; there's no separate per-channel toggle.
  */
 
+import { platform } from "@/lib/platform";
+
 const STORAGE_KEY = "anoon:notify:sound";
 
 /** Whether sound/vibration feedback is enabled. Defaults to on. */
 export function isNotifySoundEnabled(): boolean {
-  if (typeof window === "undefined") return true;
-  const v = window.localStorage.getItem(STORAGE_KEY);
+  const v = platform().storage.get(STORAGE_KEY);
   return v === null ? true : v === "1";
 }
 
 /** Persist the on/off toggle (the Settings "Звук и вибрация" switch). */
 export function setNotifySoundEnabled(enabled: boolean): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, enabled ? "1" : "0");
+  platform().storage.set(STORAGE_KEY, enabled ? "1" : "0");
 }
 
 export type NotifKind = "message" | "call" | "request";
@@ -52,7 +56,7 @@ let audioCtx: AudioContext | null = null;
 
 /** Lazily create (and reuse) the one AudioContext, browser-only. */
 function getAudioCtx(): AudioContext | null {
-  if (typeof window === "undefined") return null;
+  if (!platform().hasDom) return null;
   const Ctor =
     window.AudioContext ??
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -89,7 +93,7 @@ function beep(freq: number, startAt = 0, durationSec = 0.18): void {
  * browser, blocked autoplay, etc.).
  */
 export function playNotifSound(kind: NotifKind): void {
-  if (typeof window === "undefined" || !isNotifySoundEnabled()) return;
+  if (!platform().hasDom || !isNotifySoundEnabled()) return;
   try {
     if (kind === "call") {
       // Two quick pips, closer to an actual ringtone than a single ping.
@@ -108,7 +112,7 @@ export function playNotifSound(kind: NotifKind): void {
  * {@link isNotifySoundEnabled}; guarded for unsupported browsers, never throws.
  */
 export function vibrate(pattern: number | number[]): void {
-  if (typeof navigator === "undefined" || !isNotifySoundEnabled()) return;
+  if (!platform().hasDom || !isNotifySoundEnabled()) return;
   if (typeof navigator.vibrate !== "function") return;
   try {
     navigator.vibrate(pattern);
@@ -119,7 +123,7 @@ export function vibrate(pattern: number | number[]): void {
 
 /** Cancel any in-flight vibration (e.g. when stopping a call ring). */
 function stopVibrate(): void {
-  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+  if (platform().hasDom && typeof navigator.vibrate === "function") {
     try {
       navigator.vibrate(0);
     } catch {

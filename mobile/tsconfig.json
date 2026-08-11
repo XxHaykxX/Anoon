@@ -4,7 +4,8 @@
     "strict": true,
     "paths": {
       "@/*": [
-        "./src/*"
+        "./src/*",
+        "../frontend/src/*"
       ],
       "@/assets/*": [
         "./assets/*"
@@ -14,6 +15,7 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "../frontend/src/types/tinode-sdk.d.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "nativewind-env.d.ts"

@@ -33,7 +33,8 @@
  * the service is live, the same code hits the real endpoints (the first successful
  * REST call clears mock mode).
  *
- * Env: NEXT_PUBLIC_COMPANION_URL (default http://127.0.0.1:6062 — NOT
+ * Env (read in `./platform.ts`, which is also where the native client swaps in
+ * its own values): NEXT_PUBLIC_COMPANION_URL (default http://127.0.0.1:6062 — NOT
  *      `localhost`: it resolves to `::1` first, and Docker's IPv6 port relay on
  *      this stack accepts the TCP connection and then never answers, so every
  *      call hangs instead of failing).
@@ -47,6 +48,7 @@
  * URL changes every restart — nothing is hard-coded to a host. Flag off (default)
  * keeps the classic absolute `http://localhost:6062` behavior for local dev.
  */
+import { platform } from "@/lib/platform";
 import { USE_TINODE } from "@/lib/tinode";
 import type {
   CompanionEvent,
@@ -57,36 +59,14 @@ import type {
   User,
 } from "@/types/companion";
 
-/** Single-origin mode: talk to the reverse proxy on relative same-origin paths. */
-const SAME_ORIGIN = process.env.NEXT_PUBLIC_SAME_ORIGIN === "1";
-
 /**
- * Base REST origin of the companion service. In same-origin mode this is the
- * relative prefix `/api` (the proxy strips it before hitting companion); `fetch`
- * resolves it against the current page origin, so the tunnel URL is irrelevant.
+ * Base REST origin of the companion service. On the web in same-origin mode
+ * this is the relative prefix `/api` (the proxy strips it before hitting
+ * companion); `fetch` resolves it against the current page origin, so the
+ * tunnel URL is irrelevant. The native client has no page origin and gets an
+ * absolute base from its own config — see `./platform.ts`.
  */
-export const COMPANION_URL = SAME_ORIGIN
-  ? "/api"
-  : process.env.NEXT_PUBLIC_COMPANION_URL ?? "http://127.0.0.1:6062";
-
-/** Derive the ws(s):// origin for the event socket from the http(s):// base. */
-function wsOrigin(httpBase: string): string {
-  return httpBase.replace(/^http/, "ws");
-}
-
-/**
- * Absolute ws(s):// base for the event socket. In same-origin mode it is built
- * from `window.location` (wss when the page is https), so it automatically
- * follows the tunnel host; otherwise it derives from the absolute REST base.
- * Browser-only — call sites are already guarded against SSR.
- */
-function eventsWsBase(restBase: string): string {
-  if (SAME_ORIGIN) {
-    const secure = window.location.protocol === "https:";
-    return `${secure ? "wss" : "ws"}://${window.location.host}/api`;
-  }
-  return wsOrigin(restBase);
-}
+export const COMPANION_URL = platform().companionUrl;
 
 /** Listener for the realtime companion event stream. */
 export type CompanionEventHandler = (event: CompanionEvent) => void;
@@ -917,7 +897,7 @@ export class CompanionClient {
    * receiving frames across the reconnect with no extra wiring.
    */
   connectEvents(): void {
-    if (typeof window === "undefined") return; // never during SSR
+    if (!platform().isClient) return; // never during SSR
     if (this.socket) return;
     // POL-1: don't open (and 403-retry) the socket before login — there's no
     // token to authenticate with yet. `setSessionToken` + `reconnectCompanionEvents`
@@ -926,7 +906,7 @@ export class CompanionClient {
     this.clearReconnectTimer();
     let sock: WebSocket;
     try {
-      const url = `${eventsWsBase(this.baseUrl)}/ws${
+      const url = `${platform().companionWsBase(this.baseUrl)}/ws${
         this.sessionToken ? `?token=${encodeURIComponent(this.sessionToken)}` : ""
       }`;
       sock = new WebSocket(url);
