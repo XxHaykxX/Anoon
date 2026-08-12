@@ -7,8 +7,8 @@ import {
   Composer,
   MessageActions,
   ReplyPreview,
-  pickAndUpload,
-  uploadVoice,
+  pickMedia,
+  voiceBlob,
   type RecordedVoice,
 } from '@/components/chat/composer';
 import { CHAT_COLORS, MoreIcon, ReportIcon } from '@/components/chat/icons';
@@ -53,7 +53,6 @@ export default function AnonChatScreen() {
   const anonViewed = useAnoonStore((s) => s.anonViewed);
   const anonPeerLeft = useAnoonStore((s) => s.anonPeerLeft);
   const sendAnonMessage = useAnoonStore((s) => s.sendAnonMessage);
-  const sendAnonMedia = useAnoonStore((s) => s.sendAnonMedia);
   const sendAnonReaction = useAnoonStore((s) => s.sendAnonReaction);
   const editAnonMessage = useAnoonStore((s) => s.editAnonMessage);
   const deleteAnonMessage = useAnoonStore((s) => s.deleteAnonMessage);
@@ -186,30 +185,25 @@ export default function AnonChatScreen() {
   const attach = async () => {
     const armed = viewOnceArmed;
     setViewOnceArmed(false);
-    try {
-      // Пир видит «отправляет медиа…», пока идёт загрузка.
-      useAnoonStore.getState().notifyAnonMediaSending();
-      const picked = await pickAndUpload();
-      if (!picked) return;
-      await sendAnonMedia(
-        picked.up,
-        picked.kind,
-        picked.extra,
-        armed && picked.kind === 'image' ? { viewOnce: true } : undefined,
-      );
-    } catch {
-      flash('Не удалось отправить');
-    }
+    const picked = await pickMedia().catch(() => null);
+    if (!picked) return;
+    // Загрузку ведёт стор: он же рисует прогресс в самой переписке и отвечает
+    // за отказ по размеру. См. uploadAndSendMedia.
+    const res = await useAnoonStore.getState().uploadAndSendMedia('anon', picked.blob, picked.kind, {
+      name: picked.name,
+      extra: picked.extra,
+      viewOnce: armed && picked.kind === 'image',
+    });
+    if (!res.ok) flash(res.reason);
   };
 
   const sendVoice = async (rec: RecordedVoice) => {
-    try {
-      useAnoonStore.getState().notifyAnonMediaSending();
-      const up = await uploadVoice(rec);
-      await sendAnonMedia(up, 'audio', { duration: rec.sec });
-    } catch {
-      flash('Не удалось отправить');
-    }
+    const { blob, name } = await voiceBlob(rec);
+    const res = await useAnoonStore.getState().uploadAndSendMedia('anon', blob, 'audio', {
+      name,
+      extra: { duration: rec.sec },
+    });
+    if (!res.ok) flash(res.reason);
   };
 
   // Звоним тем хендлом, который у нас законно есть: настоящий #ID после

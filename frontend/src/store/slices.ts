@@ -10,12 +10,16 @@ import { CompanionHttpError, getCompanionClient, type RegisterResult } from "@/l
 import {
   buildMediaDraft,
   getTinodeClient,
+  isTooLargeError,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MB,
   parseCallRecord,
   parseEditTarget,
   parseMediaParts,
   parseReaction,
   plainText,
   tinodeLoginFromEmail,
+  uploadFile,
   USE_TINODE,
   type CallRecord,
   type MediaKind,
@@ -114,6 +118,33 @@ declare module "./types" {
      * their side shows "отправляет медиа…". Call at upload START (ChatWiring).
      */
     notifyMediaSending: () => void;
+    /**
+     * Pick → upload → send, for BOTH chats (`scope`). The one path a picked
+     * file takes, because the two chat screens had a copy each and the copies
+     * shared the same two defects:
+     *
+     *  • the sender saw NOTHING while the file uploaded — the optimistic bubble
+     *    was only created after the upload resolved, so a phone-sized video was
+     *    a tap that did nothing for a minute, indistinguishable from "video
+     *    doesn't send" (the peer, meanwhile, got «отправляет медиа…»);
+     *  • an oversized file was refused by the server with a 413 that surfaced as
+     *    the same «Не удалось отправить» as every other failure, so the one
+     *    fixable cause was the one nobody could see.
+     *
+     * Resolves to the reason instead of throwing: the caller owns the flash.
+     */
+    uploadAndSendMedia: (
+      scope: "anon" | "friend",
+      // Blob, not just File: the Expo client reads a picked asset's `file://`
+      // URI into a Blob, which has no `name` — hence `opts.name`.
+      file: File | Blob,
+      kind: MediaKind,
+      opts?: {
+        viewOnce?: boolean;
+        extra?: { width?: number; height?: number; duration?: number };
+        name?: string;
+      },
+    ) => Promise<{ ok: true } | { ok: false; reason: string }>;
   }
   interface AnonChatSlice {
     /**
@@ -202,6 +233,14 @@ type Slice<T> = StateCreator<AnoonStore, [], [], T>;
 // on `t${Date.now()}` and produce duplicate React keys in the thread.
 let optimisticCounter = 0;
 const nextTmpId = () => `t${Date.now()}_${++optimisticCounter}`;
+
+/** What the sender's own upload line calls the thing being uploaded. */
+const UPLOAD_LABEL: Record<MediaKind, string> = {
+  image: "Фото",
+  video: "Видео",
+  audio: "Голосовое",
+  file: "Файл",
+};
 
 // Monotonic suffix for injected system-line ids (peer-left etc.), same collision
 // guard as optimistic message ids — two system lines in the same ms keep unique
@@ -1436,6 +1475,74 @@ export const createChatSlice: Slice<ChatSlice> = (set, get) => {
         getCompanionClient().notifyMessageSent(friend.hashId, friend.topic, "");
       } catch {
         // Leave it in the "sending" state so the user sees it didn't confirm.
+      }
+    },
+
+    uploadAndSendMedia: async (scope, file, kind, opts) => {
+      const anon = scope === "anon";
+      // Refuse locally what the server would refuse anyway, but say why and say
+      // it now — a 40 MB clip otherwise uploads for a minute to earn a 413.
+      if (file.size > MAX_UPLOAD_BYTES) {
+        return {
+          ok: false,
+          reason: `Файл больше ${MAX_UPLOAD_MB} МБ — выберите поменьше`,
+        };
+      }
+      const label = UPLOAD_LABEL[kind];
+      const tmpId = nextTmpId();
+      // The sender's own «идёт загрузка» line, in the thread where the finished
+      // attachment will land. It is a plain text bubble on purpose: no media
+      // part exists yet (there is no URL until the upload resolves), and a
+      // percentage in the bubble is the whole point — the peer's
+      // «отправляет медиа…» was previously the only sign anything was happening
+      // anywhere, and it was on the wrong screen.
+      const placeholder: TinodeMessageLite = {
+        id: tmpId,
+        mine: true,
+        text: `${label} · загрузка 0%`,
+        ts: Date.now(),
+        status: "sending",
+      };
+      const patch = (text: string) =>
+        set((s) =>
+          anon
+            ? { messages: s.messages.map((m) => (m.id === tmpId ? { ...m, text } : m)) }
+            : { chatMessages: s.chatMessages.map((m) => (m.id === tmpId ? { ...m, text } : m)) },
+        );
+      const drop = () =>
+        set((s) =>
+          anon
+            ? { messages: s.messages.filter((m) => m.id !== tmpId) }
+            : { chatMessages: s.chatMessages.filter((m) => m.id !== tmpId) },
+        );
+      set((s) =>
+        anon
+          ? { messages: [...s.messages, placeholder] }
+          : { chatMessages: [...s.chatMessages, placeholder] },
+      );
+      try {
+        if (anon) get().notifyAnonMediaSending();
+        else get().notifyMediaSending();
+        const name =
+          opts?.name ?? (file as File).name ?? `${kind}-${Date.now()}`;
+        const up = await uploadFile(file, name, file.type, (p) =>
+          patch(`${label} · загрузка ${p}%`),
+        );
+        // The real (media-bearing) optimistic bubble is created by
+        // send{Anon,Friend}Media — this one has served its purpose.
+        drop();
+        const viewOnceOpt = opts?.viewOnce ? { viewOnce: true } : undefined;
+        if (anon) await get().sendAnonMedia(up, kind, opts?.extra, viewOnceOpt);
+        else await get().sendFriendMedia(up, kind, opts?.extra, viewOnceOpt);
+        return { ok: true };
+      } catch (err) {
+        drop();
+        return {
+          ok: false,
+          reason: isTooLargeError(err)
+            ? `${label} больше ${MAX_UPLOAD_MB} МБ — сервер его не принял`
+            : "Не удалось отправить",
+        };
       }
     },
 

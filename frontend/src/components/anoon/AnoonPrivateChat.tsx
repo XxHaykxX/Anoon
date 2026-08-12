@@ -11,7 +11,7 @@ import MessageActions from "@/components/anoon/MessageActions";
 import ReplyPreview from "@/components/anoon/ReplyPreview";
 import VoiceRecorder from "@/components/anoon/VoiceRecorder";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
-import { USE_TINODE, uploadFile, authedFileUrl, type MediaKind, type MediaPart } from "@/lib/tinode";
+import { USE_TINODE, authedFileUrl, type MediaKind, type MediaPart } from "@/lib/tinode";
 import { useAnoonStore } from "@/store";
 import { useMediaViewerStore, type MediaViewerItem } from "@/store/mediaViewerStore";
 import { useCallStore } from "@/store/callStore";
@@ -372,7 +372,6 @@ export default function AnoonPrivateChat({ onBack }: { onBack?: () => void } = {
   const chatPeerLastSeen = useAnoonStore((s) => s.chatPeerLastSeen);
   const chatViewed = useAnoonStore((s) => s.chatViewed);
   const sendChatMessage = useAnoonStore((s) => s.sendChatMessage);
-  const sendFriendMedia = useAnoonStore((s) => s.sendFriendMedia);
   const sendChatReaction = useAnoonStore((s) => s.sendChatReaction);
   const editChatMessage = useAnoonStore((s) => s.editChatMessage);
   const deleteChatMessage = useAnoonStore((s) => s.deleteChatMessage);
@@ -664,14 +663,12 @@ export default function AnoonPrivateChat({ onBack }: { onBack?: () => void } = {
     if (!file) return;
     const useViewOnce = kind === "image" && viewOnceArmed;
     setViewOnceArmed(false);
-    try {
-      // Tell the peer we're uploading → they see «отправляет медиа…» (BUG-18).
-      useAnoonStore.getState().notifyMediaSending();
-      const up = await uploadFile(file, file.name, file.type);
-      await sendFriendMedia(up, kind, undefined, useViewOnce ? { viewOnce: true } : undefined);
-    } catch {
-      flash("Не удалось отправить");
-    }
+    // Shared with the anon chat — see uploadAndSendMedia in the store for why
+    // the upload's own progress bubble and the size wording live there.
+    const res = await useAnoonStore
+      .getState()
+      .uploadAndSendMedia("friend", file, kind, useViewOnce ? { viewOnce: true } : undefined);
+    if (!res.ok) flash(res.reason);
   };
 
   // Build the fullscreen viewer's item list from a row's media part, resolving
@@ -1182,14 +1179,12 @@ export default function AnoonPrivateChat({ onBack }: { onBack?: () => void } = {
           <VoiceRecorder
             onRecordingChange={setVoiceRecording}
             onRecorded={async (file, dur) => {
-              try {
-                // Peer sees «отправляет медиа…» while the voice note uploads (BUG-18).
-                useAnoonStore.getState().notifyMediaSending();
-                const up = await uploadFile(file, file.name, file.type);
-                await sendFriendMedia(up, "audio", { duration: Math.round(dur) });
-              } catch {
-                flash("Не удалось отправить");
-              }
+              const res = await useAnoonStore
+                .getState()
+                .uploadAndSendMedia("friend", file, "audio", {
+                  extra: { duration: Math.round(dur) },
+                });
+              if (!res.ok) flash(res.reason);
             }}
           />
         ) : (

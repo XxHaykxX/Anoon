@@ -1086,6 +1086,32 @@ export interface MediaPart {
 }
 
 /**
+ * Largest attachment the server will take, mirroring `media.max_size` in the
+ * Tinode config (server/docker/tinode/config.template). Kept here so a pick can
+ * be refused with a straight answer BEFORE a phone spends a minute uploading a
+ * clip the server was always going to reject with a bare 413 — which the UI
+ * could only report as «Не удалось отправить».
+ *
+ * If the server's limit is raised, raise this with it: too low turns working
+ * uploads away, too high brings back the silent minute.
+ */
+export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+
+/** {@link MAX_UPLOAD_BYTES} in whole megabytes, for user-facing copy. */
+export const MAX_UPLOAD_MB = Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024));
+
+/**
+ * True when `err` is the server refusing an upload for being too large.
+ * Tinode answers 413 (`ErrTooLarge`); the SDK's large-file helper surfaces that
+ * as an Error whose message carries the code and/or "too large", so match on
+ * both rather than on one exact string.
+ */
+export function isTooLargeError(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err ?? "");
+  return /413|too large|too big/i.test(text);
+}
+
+/**
  * Upload a file through the app-wide Tinode singleton (see {@link getTinodeClient}).
  * Thin module-level wrapper around {@link TinodeClient.uploadFile} for call
  * sites that don't hold a `TinodeClient` reference directly.

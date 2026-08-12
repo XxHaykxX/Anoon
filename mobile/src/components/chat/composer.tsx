@@ -11,7 +11,7 @@ import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 
 import { CloseIcon, MicIcon, PlusIcon, SendIcon, TrashIcon } from '@/components/icons';
 import { copyText } from '@/lib/clipboard';
-import { uploadFile, type MediaKind, type UploadedMedia } from '@/lib/tinode';
+import { type MediaKind } from '@/lib/tinode';
 
 import { CHAT_COLORS, CopyIcon, EditIcon, ReplyIcon } from './icons';
 import type { ChatRow } from './thread';
@@ -20,16 +20,21 @@ import type { ChatRow } from './thread';
 const QUICK_EMOJIS = ['\u{1F44D}', '❤️', '\u{1F602}', '\u{1F62E}', '\u{1F622}', '\u{1F525}'];
 
 /**
- * Выбрать фото/видео в галерее и загрузить на Tinode. Возвращает всё, что
- * нужно `sendAnonMedia`/`sendFriendMedia`, или `null`, если пользователь
- * отменил выбор либо не дал доступ.
+ * Выбрать фото/видео в галерее. Загрузку НЕ делает: её ведёт
+ * `uploadAndSendMedia` в общем сторе, который на время загрузки рисует
+ * отправителю его собственный прогресс и отдельно объясняет отказ по размеру.
+ * Раньше загрузка шла здесь, и на телефонном видео экран отправителя молчал
+ * всю минуту — ровно то, что владелец описал как «видео не отправляется».
+ *
+ * Возвращает `null`, если пользователь отменил выбор либо не дал доступ.
  *
  * Камеры здесь нет намеренно: `expo-camera` не установлен, а
  * `launchCameraAsync` из image-picker — это ещё одно разрешение и отдельная
  * ветка обработки; галереи хватает, чтобы отправка медиа работала.
  */
-export async function pickAndUpload(): Promise<{
-  up: UploadedMedia;
+export async function pickMedia(): Promise<{
+  blob: Blob;
+  name: string;
   kind: MediaKind;
   extra: { width?: number; height?: number; duration?: number };
 } | null> {
@@ -49,10 +54,12 @@ export async function pickAndUpload(): Promise<{
   // Tinode-загрузчик умеет File | Blob; у телефона есть только `file://`-путь,
   // поэтому читаем его в Blob — единственный способ отдать байты, не трогая
   // общий `lib/tinode.ts`.
-  const blob = await (await fetch(asset.uri)).blob();
-  const up = await uploadFile(blob, name, mime);
+  const raw = await (await fetch(asset.uri)).blob();
+  // Тип у Blob с `file://` бывает пустым, а он едет в Drafty как mime.
+  const blob = raw.type ? raw : new Blob([raw], { type: mime });
   return {
-    up,
+    blob,
+    name,
     kind,
     extra: {
       width: asset.width,
@@ -71,8 +78,8 @@ export interface RecordedVoice {
 }
 
 /**
- * Загрузить записанное голосовое на Tinode — тем же `uploadFile`, что и фото с
- * видео, чтобы формат и путь совпадали с вебом.
+ * Прочитать записанное голосовое в Blob — тем же путём, что фото и видео, чтобы
+ * формат совпадал с вебом. Отправляет его `uploadAndSendMedia`.
  *
  * `RecordingPresets.HIGH_QUALITY` пишет `.m4a`/AAC на обеих системах — это тот
  * же контейнер, что отдаёт `MediaRecorder` в Safari (`audio/mp4`), так что
@@ -80,13 +87,14 @@ export interface RecordedVoice {
  * на телефоне. Расширение читаем у самого файла, а не подставляем: врать про
  * mime — значит сломать воспроизведение у получателя.
  */
-export async function uploadVoice(rec: RecordedVoice): Promise<UploadedMedia> {
+export async function voiceBlob(rec: RecordedVoice): Promise<{ blob: Blob; name: string }> {
   const ext = rec.uri.split('.').pop()?.toLowerCase() || 'm4a';
   const mime = ext === 'm4a' || ext === 'mp4' ? 'audio/mp4' : `audio/${ext}`;
   // У телефона есть только `file://`-путь; читаем его в Blob — единственный
   // способ отдать байты, не трогая общий `lib/tinode.ts`.
-  const blob = await (await fetch(rec.uri)).blob();
-  return uploadFile(blob, `voice-${Date.now()}.${ext}`, mime);
+  const raw = await (await fetch(rec.uri)).blob();
+  const blob = raw.type ? raw : new Blob([raw], { type: mime });
+  return { blob, name: `voice-${Date.now()}.${ext}` };
 }
 
 /** Полоска над композером: цитата ответа или подсказка о правке. */

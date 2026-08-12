@@ -16,7 +16,6 @@ import AnoonRevealPrompt from "@/components/anoon/AnoonRevealPrompt";
 import { useAnoonNav } from "@/components/anoon/anoonNav";
 import {
   USE_TINODE,
-  uploadFile,
   authedFileUrl,
   getTinodeClient,
   type MediaKind,
@@ -379,7 +378,6 @@ export default function AnoonAnonChat() {
   const anonRevealPending = useAnoonStore((s) => s.anonRevealPending);
   const anonViewed = useAnoonStore((s) => s.anonViewed);
   const sendAnonMessage = useAnoonStore((s) => s.sendAnonMessage);
-  const sendAnonMedia = useAnoonStore((s) => s.sendAnonMedia);
   const sendAnonReaction = useAnoonStore((s) => s.sendAnonReaction);
   const editAnonMessage = useAnoonStore((s) => s.editAnonMessage);
   const deleteAnonMessage = useAnoonStore((s) => s.deleteAnonMessage);
@@ -839,14 +837,13 @@ export default function AnoonAnonChat() {
     if (!file) return;
     const useViewOnce = kind === "image" && viewOnceArmed;
     setViewOnceArmed(false);
-    try {
-      // Tell the peer we're uploading → they see «отправляет медиа…» (BUG-18).
-      useAnoonStore.getState().notifyAnonMediaSending();
-      const up = await uploadFile(file, file.name, file.type);
-      await sendAnonMedia(up, kind, undefined, useViewOnce ? { viewOnce: true } : undefined);
-    } catch {
-      flash("Не удалось отправить");
-    }
+    // The store owns the whole pick→upload→send path (see uploadAndSendMedia):
+    // the sender's own progress line and the size/413 wording live there so the
+    // friend chat cannot drift away from this one.
+    const res = await useAnoonStore
+      .getState()
+      .uploadAndSendMedia("anon", file, kind, useViewOnce ? { viewOnce: true } : undefined);
+    if (!res.ok) flash(res.reason);
   };
 
   // Attach: real mode opens the native photo/video picker and uploads for
@@ -1362,14 +1359,13 @@ export default function AnoonAnonChat() {
           <VoiceRecorder
             onRecordingChange={setVoiceRecording}
             onRecorded={async (file, dur) => {
-              try {
-                // Peer sees «отправляет медиа…» while the voice note uploads (BUG-18).
-                useAnoonStore.getState().notifyAnonMediaSending();
-                const up = await uploadFile(file, file.name, file.type);
-                await sendAnonMedia(up, "audio", { duration: Math.round(dur) });
-              } catch {
-                flash("Не удалось отправить");
-              }
+              // Same path as a picked photo/video (see uploadAndSendMedia): a
+              // long voice note is an upload too, and it used to be just as
+              // silent on the sender's own screen.
+              const res = await useAnoonStore
+                .getState()
+                .uploadAndSendMedia("anon", file, "audio", { extra: { duration: Math.round(dur) } });
+              if (!res.ok) flash(res.reason);
             }}
           />
         ) : (

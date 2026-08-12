@@ -7,8 +7,8 @@ import {
   Composer,
   MessageActions,
   ReplyPreview,
-  pickAndUpload,
-  uploadVoice,
+  pickMedia,
+  voiceBlob,
   type RecordedVoice,
 } from '@/components/chat/composer';
 import { CHAT_COLORS, MoreIcon, ReportIcon } from '@/components/chat/icons';
@@ -35,7 +35,6 @@ export default function PrivateChatScreen() {
   const chatPeerLastSeen = useAnoonStore((s) => s.chatPeerLastSeen);
   const chatViewed = useAnoonStore((s) => s.chatViewed);
   const sendChatMessage = useAnoonStore((s) => s.sendChatMessage);
-  const sendFriendMedia = useAnoonStore((s) => s.sendFriendMedia);
   const sendChatReaction = useAnoonStore((s) => s.sendChatReaction);
   const editChatMessage = useAnoonStore((s) => s.editChatMessage);
   const deleteChatMessage = useAnoonStore((s) => s.deleteChatMessage);
@@ -104,30 +103,25 @@ export default function PrivateChatScreen() {
   const attach = async () => {
     const armed = viewOnceArmed;
     setViewOnceArmed(false);
-    try {
-      // Пир видит «отправляет медиа…», пока идёт загрузка.
-      useAnoonStore.getState().notifyMediaSending();
-      const picked = await pickAndUpload();
-      if (!picked) return;
-      await sendFriendMedia(
-        picked.up,
-        picked.kind,
-        picked.extra,
-        armed && picked.kind === 'image' ? { viewOnce: true } : undefined,
-      );
-    } catch {
-      flash('Не удалось отправить');
-    }
+    const picked = await pickMedia().catch(() => null);
+    if (!picked) return;
+    // Загрузку ведёт стор: он же рисует прогресс в самой переписке и отвечает
+    // за отказ по размеру. См. uploadAndSendMedia.
+    const res = await useAnoonStore.getState().uploadAndSendMedia('friend', picked.blob, picked.kind, {
+      name: picked.name,
+      extra: picked.extra,
+      viewOnce: armed && picked.kind === 'image',
+    });
+    if (!res.ok) flash(res.reason);
   };
 
   const sendVoice = async (rec: RecordedVoice) => {
-    try {
-      useAnoonStore.getState().notifyMediaSending();
-      const up = await uploadVoice(rec);
-      await sendFriendMedia(up, 'audio', { duration: rec.sec });
-    } catch {
-      flash('Не удалось отправить');
-    }
+    const { blob, name } = await voiceBlob(rec);
+    const res = await useAnoonStore.getState().uploadAndSendMedia('friend', blob, 'audio', {
+      name,
+      extra: { duration: rec.sec },
+    });
+    if (!res.ok) flash(res.reason);
   };
 
   const startCall = (media: 'audio' | 'video') => {
