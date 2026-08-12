@@ -45,6 +45,9 @@ qa-shots/
 qa-shots-chat/
 .playwright-mcp/
 graphify-out/
+# Expo web export — built on demand for the mobile e2e project (tests/e2e/mobile),
+# 20+ MB of bundle that must never land in a commit.
+.expo-web/
 
 # ── Local tooling state ──────────────────────────────────────────────────────
 .gstack/
