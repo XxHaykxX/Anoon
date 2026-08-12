@@ -306,7 +306,10 @@ func (s *Server) handleRouletteStatus(w http.ResponseWriter, r *http.Request) {
 		left := m.RevealAsksLeft(u.ID)
 		resp.RevealAsksLeft = &left
 		resp.PeerHashID, resp.PeerDisplayName = revealedIdentity(resp.Reveal, peer)
-		resp.PeerOnline = s.Hub.Online(peer.ID)
+		// RecentlyOnline, not Online: a peer who is themselves mid-reload must
+		// still read as present, or two simultaneous reloads end a chat neither
+		// party left (see Hub.RecentlyOnline).
+		resp.PeerOnline = s.Hub.RecentlyOnline(peer.ID)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

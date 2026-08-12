@@ -491,3 +491,53 @@ func TestRouletteStatusOmitsIdentityKeysWhenAnon(t *testing.T) {
 		t.Errorf("anon status payload leaks the peer's real #ID: %s", buf)
 	}
 }
+
+// TestRecentlyOnlineCoversAReload is the read side of the same grace window
+// TestDisconnectGraceSurvivesAReconnect pins on the write side.
+//
+// `peerOnline` in the roulette status is not a decoration: restoreActiveMatch
+// (frontend store) ENDS the pairing when it reads false. Answering it with the
+// instantaneous socket count meant a peer who was themselves reloading — the
+// single most common reason for a missing socket — read as gone, so two people
+// reloading at the same moment each tore down a chat both were walking back
+// into, and neither could get it back.
+func TestRecentlyOnlineCoversAReload(t *testing.T) {
+	prev := wsDisconnectGrace
+	wsDisconnectGrace = 300 * time.Millisecond
+	defer func() { wsDisconnectGrace = prev }()
+
+	h := NewHub()
+	if h.RecentlyOnline(aliceID) {
+		t.Error("a user who never connected must not read as online")
+	}
+
+	c := &wsClient{send: make(chan []byte, 1)}
+	h.add(aliceID, c)
+	if !h.Online(aliceID) || !h.RecentlyOnline(aliceID) {
+		t.Fatal("a live socket must read as online both ways")
+	}
+
+	// The reload: socket gone, user coming back.
+	h.remove(aliceID, c)
+	if h.Online(aliceID) {
+		t.Error("Online must stay instantaneous — calls and push depend on it")
+	}
+	if !h.RecentlyOnline(aliceID) {
+		t.Error("a socket that died a moment ago is a reload, not a departure")
+	}
+
+	// Past the window it is a departure, and the chat is honestly empty.
+	time.Sleep(wsDisconnectGrace + 50*time.Millisecond)
+	if h.RecentlyOnline(aliceID) {
+		t.Error("the grace window must expire, or an abandoned chat never ends")
+	}
+
+	// Reconnecting clears the timestamp rather than leaving it to expire.
+	h.add(aliceID, c)
+	h.mu.RLock()
+	_, stale := h.gone[aliceID]
+	h.mu.RUnlock()
+	if stale {
+		t.Error("a reconnect must clear the disconnect timestamp")
+	}
+}

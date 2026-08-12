@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"sync"
+	"time"
 )
 
 // Hub routes realtime anoon events to the right user's live WebSocket
@@ -12,11 +13,17 @@ import (
 type Hub struct {
 	mu    sync.RWMutex
 	conns map[int64]map[*wsClient]struct{} // by companion user id
+	// gone records when a user's LAST socket went away, so RecentlyOnline can
+	// tell "reloading" apart from "left". Entries are dropped as soon as the
+	// user reconnects, and are only read within wsDisconnectGrace of the
+	// timestamp — a user who never comes back leaves at most one small entry
+	// behind per id, which the next connect clears.
+	gone map[int64]time.Time
 }
 
 // NewHub builds an empty Hub.
 func NewHub() *Hub {
-	return &Hub{conns: make(map[int64]map[*wsClient]struct{})}
+	return &Hub{conns: make(map[int64]map[*wsClient]struct{}), gone: make(map[int64]time.Time)}
 }
 
 // add registers a connection under a user id.
@@ -29,6 +36,7 @@ func (h *Hub) add(userID int64, c *wsClient) {
 		h.conns[userID] = set
 	}
 	set[c] = struct{}{}
+	delete(h.gone, userID)
 }
 
 // remove deregisters a connection.
@@ -39,6 +47,7 @@ func (h *Hub) remove(userID int64, c *wsClient) {
 		delete(set, c)
 		if len(set) == 0 {
 			delete(h.conns, userID)
+			h.gone[userID] = time.Now()
 		}
 	}
 }
@@ -50,6 +59,31 @@ func (h *Hub) Online(userID int64) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.conns[userID]) > 0
+}
+
+// RecentlyOnline is Online widened by the same grace window endMatchOnDisconnect
+// waits out (wsDisconnectGrace): a user whose last socket died seconds ago still
+// counts, because that is what a page reload looks like from the outside.
+//
+// Only the roulette-status `peerOnline` field uses it, and it exists because
+// that field decides whether a returning client RESTORES its anonymous chat or
+// ENDS it (see restoreActiveMatch in the frontend store). With the plain Online
+// check, two people reloading at once — or one reloading a beat after the
+// other — each read the other as gone and each tore down a chat both were
+// coming back to. The server itself never considered the pairing dead: it holds
+// the same 20s before ending it on a disconnect.
+//
+// Everything else (calls, push suppression, admin's online list) keeps the
+// instantaneous Online: ringing a phone that is not there, or skipping a push
+// because the recipient was online twenty seconds ago, are the wrong answers.
+func (h *Hub) RecentlyOnline(userID int64) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if len(h.conns[userID]) > 0 {
+		return true
+	}
+	gone, ok := h.gone[userID]
+	return ok && time.Since(gone) < wsDisconnectGrace
 }
 
 // Send marshals event to JSON and pushes it to every socket of userID.
