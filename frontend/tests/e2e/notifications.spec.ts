@@ -40,13 +40,24 @@ test("mark all notifications as read", async ({ page }) => {
   await expect(markAll).toBeHidden();
 });
 
-test("dismiss the enable-push banner", async ({ page }) => {
+test("the enable-push banner answers the tap, and «Закрыть» dismisses it", async ({ page }) => {
   await signInMock(page);
   await switchTab(page, "Уведомления");
 
   await expect(page.getByText("Включите уведомления")).toBeVisible();
-  // «Включить» requests browser notification permission (granted in config) and
-  // hides the banner.
+
+  // «Включить» subscribes for real. In mock mode there is no companion to
+  // register the subscription with, so it CANNOT succeed — and since a25d588
+  // the banner deliberately stays up and says so rather than pretending the
+  // switch flipped. Asserting the failure copy is what makes this test still
+  // catch a dead button: a tap that does nothing at all fails here too.
   await page.getByRole("button", { name: "Включить" }).click();
+  await expect(page.getByText("Не удалось включить — разрешите уведомления в браузере")).toBeVisible(
+    { timeout: 15_000 },
+  );
+  await expect(page.getByText("Включите уведомления")).toBeVisible();
+
+  // The X is the way out of a banner that cannot be satisfied.
+  await page.getByRole("button", { name: "Закрыть" }).click();
   await expect(page.getByText("Включите уведомления")).toBeHidden();
 });

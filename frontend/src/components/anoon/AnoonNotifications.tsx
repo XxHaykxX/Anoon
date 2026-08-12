@@ -334,10 +334,14 @@ export default function AnoonNotifications() {
               >
                 {pushBusy ? "Включаем…" : "Включить"}
               </button>
+              {/* The icon is 16px, so the button was a 15×15 hit area — half the
+                  24px minimum, and it sits next to «Включить», which is the one
+                  control you must not hit by accident. The negative margin keeps
+                  the banner's spacing identical. */}
               <button
                 type="button"
                 onClick={() => setShowPushBanner(false)}
-                className="shrink-0 cursor-pointer select-none text-muted-foreground transition-transform active:scale-95"
+                className="-m-2 shrink-0 cursor-pointer select-none p-2 text-muted-foreground transition-transform active:scale-95"
                 aria-label="Закрыть"
               >
                 <CloseIcon className="size-4" />

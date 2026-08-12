@@ -15,8 +15,10 @@ test("open wallet from Profile, see the default balance/tier, and go back", asyn
   await page.getByRole("button", { name: "Монеты и подписка" }).click();
   await expect(page.getByRole("heading", { name: "Монеты и подписка" })).toBeVisible();
 
-  // Default store state: no companion round-trip in mock mode.
-  await expect(page.getByText("0", { exact: true })).toBeVisible();
+  // Default store state: no companion round-trip in mock mode. Scoped to <main>
+  // because Next's dev overlay renders its own issue counter — a bare "0" that
+  // makes an unscoped exact-text lookup ambiguous under strict mode.
+  await expect(page.getByRole("main").getByText("0", { exact: true })).toBeVisible();
   await expect(page.getByText("Бесплатный")).toBeVisible();
 
   await page.getByRole("button", { name: "Назад" }).click();

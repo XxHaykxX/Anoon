@@ -175,10 +175,15 @@ export default function AnoonProfile() {
                 <CameraIcon className="size-4" />
               </button>
             </div>
+            {/* The text link's own box was 90×19 — under the 24px minimum for a
+                touch target (WCAG 2.5.8), so on a phone it was a coin-flip
+                between hitting it and hitting the avatar behind it. The padding
+                is what makes it hittable; `-my-` keeps the visible spacing
+                exactly where it was. */}
             <button
               type="button"
               onClick={openPhotoPicker}
-              className="text-sm font-medium text-primary transition-transform active:scale-95"
+              className="-my-2 px-3 py-2 text-sm font-medium text-primary transition-transform active:scale-95"
             >
               Сменить фото
             </button>

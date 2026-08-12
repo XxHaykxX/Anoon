@@ -42,7 +42,11 @@ function Switch({
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${
+      // The track is 44×24 — right at the 24px floor for a touch target, and it
+      // measured 23 in the sweep. `after:` grows the HIT area vertically without
+      // moving a pixel of the switch itself (a taller track would misalign every
+      // settings row).
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out after:absolute after:inset-x-0 after:-inset-y-2 after:content-[''] ${
         checked ? "bg-primary" : "bg-muted"
       }`}
     >
